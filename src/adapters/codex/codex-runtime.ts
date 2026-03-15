@@ -159,6 +159,7 @@ class AppServerCodexBackend implements CodexBackend {
       };
 
       const handleNotification = (method: string, params: Record<string, unknown>): void => {
+        void hooks?.onNotification?.({ method, params });
         if (String(params.threadId || "") !== resolvedSessionId) {
           return;
         }
@@ -285,6 +286,33 @@ class AppServerCodexBackend implements CodexBackend {
   async getSession(sessionId: string): Promise<boolean> {
     const filePath = await findSessionFile(this.config.sessionsDir, sessionId);
     return filePath !== undefined;
+  }
+
+  async readThread(
+    sessionId: string,
+    project: string,
+    includeTurns = false
+  ): Promise<Record<string, unknown> | undefined> {
+    const clientInfo = await this.getOrCreateClient(project, sessionId);
+    return clientInfo.client.readThread(sessionId, includeTurns);
+  }
+
+  async readAccountRateLimits(project: string): Promise<Record<string, unknown> | undefined> {
+    const client = new AppServerSessionClient(this.config, project);
+    try {
+      return await client.readAccountRateLimits();
+    } finally {
+      await client.shutdown().catch(() => undefined);
+    }
+  }
+
+  async readAccount(project: string): Promise<Record<string, unknown> | undefined> {
+    const client = new AppServerSessionClient(this.config, project);
+    try {
+      return await client.readAccount();
+    } finally {
+      await client.shutdown().catch(() => undefined);
+    }
   }
 
   private async getOrCreateClient(

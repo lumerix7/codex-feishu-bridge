@@ -15,6 +15,7 @@ export interface CodexRunHandle {
 export interface CodexRunHooks {
   onStatus?: (text: string) => Promise<void> | void;
   onUpdate?: (text: string) => Promise<void> | void;
+  onNotification?: (notification: CodexNotification) => Promise<void> | void;
   onServerRequest?: (
     request: CodexServerRequest
   ) => Promise<Record<string, unknown> | undefined> | Record<string, unknown> | undefined;
@@ -31,6 +32,11 @@ export interface CodexServerRequest {
   params: Record<string, unknown>;
 }
 
+export interface CodexNotification {
+  method: string;
+  params: Record<string, unknown>;
+}
+
 export interface CodexBackend {
   readonly mode: "spawn" | "terminal" | "app-server";
   createSession(project: string, options?: CodexTurnOptions): Promise<string>;
@@ -43,4 +49,11 @@ export interface CodexBackend {
   ): Promise<CodexRunHandle>;
   stop(runId: string): Promise<boolean>;
   getSession(sessionId: string): Promise<boolean>;
+  readThread?(
+    sessionId: string,
+    project: string,
+    includeTurns?: boolean
+  ): Promise<Record<string, unknown> | undefined>;
+  readAccount?(project: string): Promise<Record<string, unknown> | undefined>;
+  readAccountRateLimits?(project: string): Promise<Record<string, unknown> | undefined>;
 }

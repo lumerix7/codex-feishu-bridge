@@ -77,6 +77,27 @@ export class AppServerSessionClient {
     });
   }
 
+  async readThread(sessionId: string, includeTurns = false): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("thread/read", {
+      threadId: sessionId,
+      includeTurns
+    });
+    return isRecord(result) ? result : undefined;
+  }
+
+  async readAccountRateLimits(): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("account/rateLimits/read", {});
+    return isRecord(result) ? result : undefined;
+  }
+
+  async readAccount(): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("account/read", { refreshToken: false });
+    return isRecord(result) ? result : undefined;
+  }
+
   subscribe(handler: NotificationHandler): void {
     this.notificationHandlers.add(handler);
   }

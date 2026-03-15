@@ -25,6 +25,11 @@ export class App {
   private feishu?: FeishuGateway;
   private readonly activeRuns = new Map<string, ActiveRun>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
+  private readonly latestTokenUsage = new Map<string, Record<string, unknown>>();
+  private readonly latestPlan = new Map<string, { explanation?: string; plan: Array<Record<string, unknown>> }>();
+  private readonly latestModelReroute = new Map<string, { fromModel: string; toModel: string; reason?: string }>();
+  private latestAccountUpdate?: Record<string, unknown>;
+  private latestRateLimits?: Record<string, unknown>;
 
   constructor(private readonly config: AppConfig) {
     this.store = new BindingStore(path.resolve(this.config.storePath));
@@ -153,6 +158,9 @@ export class App {
         "",
         "- `/help` show commands",
         "- `/status` show current session and run state",
+        "- `/usage` show latest thread token usage and account rate limits when available",
+        "- `/thread [--turns]` show app-server thread metadata for the current bound session",
+        "- `/account` show app-server account and auth details when available",
         "- `/new` create and bind a fresh Codex session",
         "- `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help",
         "- `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project",
@@ -187,6 +195,14 @@ export class App {
           : undefined;
       const trustedProjects = await this.listTrustedProjects();
       const runtimeMeta = await getCodexRuntimeMeta(this.config.codex.home);
+      const threadInfo =
+        existing?.codexSessionId && this.codex.readThread
+          ? await this.codex.readThread(existing.codexSessionId, project, false).catch(() => undefined)
+          : undefined;
+      const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+      const usage = existing?.codexSessionId ? this.latestTokenUsage.get(existing.codexSessionId) : undefined;
+      const reroute = existing?.codexSessionId ? this.latestModelReroute.get(existing.codexSessionId) : undefined;
+      const plan = existing?.codexSessionId ? this.latestPlan.get(existing.codexSessionId) : undefined;
       const agentsPath = path.join(project, "AGENTS.md");
       const hasAgents = await fs
         .stat(agentsPath)
@@ -210,7 +226,127 @@ export class App {
         `- **run**: \`${activeRun ? `${activeRun.status}:${activeRun.runId}` : "idle"}\``,
         `- **session time**: ${session?.createdAt || "(unknown)"}`,
         `- **session cwd**: \`${session?.cwd || "(unknown)"}\``,
-        `- **session about**: ${session?.preview || "(no preview)"}`
+        `- **session about**: ${session?.preview || "(no preview)"}`,
+        ...(thread
+          ? [
+              `- **thread name**: ${this.readString(thread.name) || "(none)"}`,
+              `- **thread status**: \`${this.readString(thread.status) || "(unknown)"}\``,
+              `- **thread source**: \`${this.readString(thread.source) || "(unknown)"}\``
+            ]
+          : []),
+        ...(usage ? [`- **usage**: ${this.formatTokenUsageSummary(usage)}`] : []),
+        ...(reroute
+          ? [`- **model reroute**: \`${reroute.fromModel}\` -> \`${reroute.toModel}\`${reroute.reason ? ` (${reroute.reason})` : ""}`]
+          : []),
+        ...(plan?.plan.length
+          ? [`- **plan**: ${plan.plan.map((step) => `${this.readString(step.status) || "pending"}:${this.readString(step.step) || "(step)"}`).join(" | ")}`]
+          : [])
+      ].join("\n");
+    }
+
+    if (command?.name === "usage") {
+      const project = existing?.project || this.config.project.defaultProject;
+      const sessionId = existing?.codexSessionId;
+      const usage = sessionId ? this.latestTokenUsage.get(sessionId) : undefined;
+      const rateLimits =
+        this.codex.readAccountRateLimits
+          ? await this.codex.readAccountRateLimits(project).catch(() => this.latestRateLimits)
+          : this.latestRateLimits;
+      return [
+        "# Usage",
+        "",
+        `- **session**: \`${sessionId || "(none)"}\``,
+        ...(usage ? [`- **thread usage**: ${this.formatTokenUsageSummary(usage)}`] : ["- **thread usage**: `(unavailable)`"]),
+        ...(rateLimits ? this.formatRateLimitLines(rateLimits) : ["- **rate limits**: `(unavailable)`"])
+      ].join("\n");
+    }
+
+    if (command?.name === "thread") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return "# Thread\n\n- **usage**: `/thread [--turns]`";
+      }
+      const project = existing?.project || this.config.project.defaultProject;
+      const sessionId = existing?.codexSessionId;
+      if (!sessionId) {
+        return "# Thread\n\n- **error**: no session is currently bound.";
+      }
+      const includeTurns = command.args.includes("--turns");
+      const threadInfo =
+        this.codex.readThread
+          ? await this.codex.readThread(sessionId, project, includeTurns).catch(() => undefined)
+          : undefined;
+      const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+      if (!thread) {
+        return "# Thread\n\n- **error**: app-server thread details are unavailable for the current backend/session.";
+      }
+      const turns = Array.isArray(thread.turns)
+        ? thread.turns.filter((item): item is Record<string, unknown> => isRecord(item))
+        : [];
+      const gitInfo = asObjectRecord(thread.gitInfo);
+      return [
+        "# Thread",
+        "",
+        `- **session**: \`${sessionId}\``,
+        `- **thread id**: \`${this.readString(thread.id) || sessionId}\``,
+        `- **name**: ${this.readString(thread.name) || "(none)"}`,
+        `- **status**: \`${this.formatThreadStatus(thread.status)}\``,
+        `- **source**: \`${this.formatSessionSource(thread.source)}\``,
+        `- **cwd**: \`${this.readString(thread.cwd) || project}\``,
+        `- **path**: \`${this.readString(thread.path) || "(none)"}\``,
+        `- **preview**: ${this.readString(thread.preview) || "(none)"}`,
+        `- **created**: ${this.formatUnixTimestamp(thread.createdAt)}`,
+        `- **updated**: ${this.formatUnixTimestamp(thread.updatedAt)}`,
+        `- **model provider**: \`${this.readString(thread.modelProvider) || "(unknown)"}\``,
+        `- **ephemeral**: \`${thread.ephemeral ? "yes" : "no"}\``,
+        ...(gitInfo.branch || gitInfo.sha || gitInfo.originUrl
+          ? [
+              `- **git**: branch=\`${this.readString(gitInfo.branch) || "(unknown)"}\` sha=\`${this.readString(gitInfo.sha) || "(unknown)"}\`${this.readString(gitInfo.originUrl) ? ` origin=${this.readString(gitInfo.originUrl)}` : ""}`
+            ]
+          : []),
+        ...(includeTurns
+          ? [
+              `- **turn count**: \`${turns.length}\``,
+              ...turns.slice(0, 10).map((turn, index) => {
+                const items = Array.isArray(turn.items) ? turn.items.length : 0;
+                return `- **turn ${index + 1}**: \`${this.readString(turn.id) || "(unknown)"}\` status=\`${this.formatThreadStatus(turn.status)}\` items=\`${items}\``;
+              }),
+              ...(turns.length > 10 ? [`- **more turns**: \`${turns.length - 10}\` not shown`] : [])
+            ]
+          : [`- **turns**: \`${turns.length || 0}\`${turns.length === 0 ? " (use `--turns` to fetch them)" : ""}`])
+      ].join("\n");
+    }
+
+    if (command?.name === "account") {
+      const project = existing?.project || this.config.project.defaultProject;
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return "# Account\n\n- **usage**: `/account`";
+      }
+      const accountInfo =
+        this.codex.readAccount
+          ? await this.codex.readAccount(project).catch(() => undefined)
+          : undefined;
+      const account = asObjectRecord(accountInfo?.account);
+      const rateLimits =
+        this.codex.readAccountRateLimits
+          ? await this.codex.readAccountRateLimits(project).catch(() => this.latestRateLimits)
+          : this.latestRateLimits;
+      const accountUpdate = this.latestAccountUpdate || {};
+      const accountType = this.readString(account.type) || "(none)";
+      const authMode = this.readString(accountUpdate.authMode) || "(unknown)";
+      const planType =
+        this.readString(account.planType) ||
+        this.readString(accountUpdate.planType) ||
+        "(unknown)";
+      return [
+        "# Account",
+        "",
+        `- **backend**: \`${this.codex.mode}\``,
+        `- **account type**: \`${accountType}\``,
+        `- **auth mode**: \`${authMode}\``,
+        `- **plan**: \`${planType}\``,
+        ...(this.readString(account.email) ? [`- **email**: \`${this.readString(account.email)}\``] : []),
+        `- **requires openai auth**: \`${accountInfo?.requiresOpenaiAuth ? "yes" : "no"}\``,
+        ...(rateLimits ? this.formatRateLimitLines(rateLimits) : ["- **rate limits**: `(unavailable)`"])
       ].join("\n");
     }
 
@@ -716,6 +852,13 @@ export class App {
         {
           onStatus: onUpdate,
           onUpdate,
+          onNotification: async (notification) => {
+            this.recordCodexNotification(key, notification);
+            const maybeUpdate = this.renderCodexNotificationUpdate(notification);
+            if (maybeUpdate && onUpdate) {
+              await onUpdate(maybeUpdate);
+            }
+          },
           onServerRequest: (request) =>
             this.requestApprovalFromFeishu(
               key,
@@ -783,6 +926,12 @@ export class App {
         return "Bridge Help";
       case "status":
         return "Bridge Status";
+      case "usage":
+        return "Usage";
+      case "thread":
+        return "Thread";
+      case "account":
+        return "Account";
       case "new":
         return "New Session";
       case "session":
@@ -829,6 +978,9 @@ export class App {
     switch (commandName) {
       case "help":
       case "status":
+      case "usage":
+      case "thread":
+      case "account":
       case "session":
       case "project":
       case "approvals":
@@ -1158,6 +1310,138 @@ export class App {
       `- **kind**: \`${label}\``,
       `- **answer**: ${summary || "`sent`"}`
     ].join("\n");
+  }
+
+  private recordCodexNotification(key: string, notification: { method: string; params: Record<string, unknown> }): void {
+    const threadId = this.readString(notification.params.threadId);
+    if (notification.method === "thread/tokenUsage/updated" && threadId) {
+      const tokenUsage = asObjectRecord(notification.params.tokenUsage);
+      this.latestTokenUsage.set(threadId, tokenUsage);
+      return;
+    }
+    if (notification.method === "turn/plan/updated" && threadId) {
+      const rawPlan = Array.isArray(notification.params.plan)
+        ? notification.params.plan.filter((item): item is Record<string, unknown> => isRecord(item))
+        : [];
+      this.latestPlan.set(threadId, {
+        explanation: this.readString(notification.params.explanation),
+        plan: rawPlan
+      });
+      return;
+    }
+    if (notification.method === "model/rerouted" && threadId) {
+      this.latestModelReroute.set(threadId, {
+        fromModel: this.readString(notification.params.fromModel) || "(unknown)",
+        toModel: this.readString(notification.params.toModel) || "(unknown)",
+        reason: this.readString(notification.params.reason)
+      });
+      return;
+    }
+    if (notification.method === "account/rateLimits/updated") {
+      this.latestRateLimits = notification.params;
+      return;
+    }
+    if (notification.method === "account/updated") {
+      this.latestAccountUpdate = notification.params;
+      return;
+    }
+    if (notification.method === "thread/closed" && threadId) {
+      this.latestPlan.delete(threadId);
+    }
+    void key;
+  }
+
+  private renderCodexNotificationUpdate(notification: { method: string; params: Record<string, unknown> }): string | undefined {
+    if (notification.method === "model/rerouted") {
+      const fromModel = this.readString(notification.params.fromModel) || "(unknown)";
+      const toModel = this.readString(notification.params.toModel) || "(unknown)";
+      const reason = this.readString(notification.params.reason);
+      return `# Model Rerouted\n\n- **from**: \`${fromModel}\`\n- **to**: \`${toModel}\`${reason ? `\n- **reason**: ${reason}` : ""}`;
+    }
+    if (notification.method === "turn/plan/updated") {
+      const plan = Array.isArray(notification.params.plan)
+        ? notification.params.plan.filter((item): item is Record<string, unknown> => isRecord(item))
+        : [];
+      if (plan.length === 0) return undefined;
+      return [
+        "# Plan Updated",
+        "",
+        ...(this.readString(notification.params.explanation) ? [`- **note**: ${this.readString(notification.params.explanation)}`] : []),
+        ...plan.map((step, index) => `${index + 1}. [${this.readString(step.status) || "pending"}] ${this.readString(step.step) || "(step)"}`)
+      ].join("\n");
+    }
+    return undefined;
+  }
+
+  private formatTokenUsageSummary(tokenUsage: Record<string, unknown>): string {
+    const total = asObjectRecord(tokenUsage.total);
+    const last = asObjectRecord(tokenUsage.last);
+    const totalTokens = Number(total.totalTokens || 0);
+    const inputTokens = Number(total.inputTokens || 0);
+    const outputTokens = Number(total.outputTokens || 0);
+    const lastTokens = Number(last.totalTokens || 0);
+    return `total=\`${totalTokens}\` input=\`${inputTokens}\` output=\`${outputTokens}\` last-turn=\`${lastTokens}\``;
+  }
+
+  private formatRateLimitLines(rateLimitPayload: Record<string, unknown>): string[] {
+    const buckets = asObjectRecord(rateLimitPayload.rateLimitsByLimitId);
+    const entries = Object.entries(buckets);
+    if (entries.length === 0) {
+      const snapshot = asObjectRecord(rateLimitPayload.rateLimits);
+      return [`- **rate limits**: ${this.formatRateLimitSnapshot(snapshot)}`];
+    }
+    return entries.map(([key, value]) => `- **rate ${key}**: ${this.formatRateLimitSnapshot(asObjectRecord(value))}`);
+  }
+
+  private formatRateLimitSnapshot(snapshot: Record<string, unknown>): string {
+    const primary = asObjectRecord(snapshot.primary);
+    const secondary = asObjectRecord(snapshot.secondary);
+    const credits = asObjectRecord(snapshot.credits);
+    const parts = [
+      snapshot.limitName ? `name=\`${String(snapshot.limitName)}\`` : undefined,
+      primary.usedPercent !== undefined ? `primary=\`${Number(primary.usedPercent).toFixed(1)}%\`` : undefined,
+      secondary.usedPercent !== undefined ? `secondary=\`${Number(secondary.usedPercent).toFixed(1)}%\`` : undefined,
+      credits.balance ? `credits=\`${String(credits.balance)}\`` : undefined,
+      snapshot.planType ? `plan=\`${String(snapshot.planType)}\`` : undefined
+    ].filter((item): item is string => Boolean(item));
+    return parts.join(" ") || "`(unavailable)`";
+  }
+
+  private formatThreadStatus(value: unknown): string {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (isRecord(value)) {
+      const type = this.readString(value.type) || "(unknown)";
+      const activeFlags = Array.isArray(value.activeFlags)
+        ? value.activeFlags.map((item) => String(item)).filter(Boolean)
+        : [];
+      return activeFlags.length > 0 ? `${type}:${activeFlags.join(",")}` : type;
+    }
+    return "(unknown)";
+  }
+
+  private formatSessionSource(value: unknown): string {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (isRecord(value)) {
+      if (this.readString(value.custom)) {
+        return `custom:${this.readString(value.custom)}`;
+      }
+      if (value.subAgent) {
+        return `subAgent:${JSON.stringify(value.subAgent)}`;
+      }
+    }
+    return "(unknown)";
+  }
+
+  private formatUnixTimestamp(value: unknown): string {
+    const numeric = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return "(unknown)";
+    }
+    return new Date(numeric * 1000).toISOString();
   }
 
   private buildPendingApproval(

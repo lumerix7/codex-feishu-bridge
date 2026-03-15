@@ -37,6 +37,9 @@ Thin Feishu-native relay for Codex native sessions.
 
 - `/help`
 - `/status`
+- `/usage`
+- `/thread`
+- `/account`
 - `/new`
 - `/resume`
 - `/session`
@@ -51,11 +54,14 @@ Working v1 bridge:
 - Feishu long-connection receive/send
 - DM receive plus interactive-card replies
 - conversation to native Codex session binding
-- `/help` `/status` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/log`
+- `/help` `/status` `/usage` `/thread` `/account` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/log`
 - `/search` `/model` `/profile`
 - `/git` `/pwd` `/ls` `/cat` `/tree` `/find` `/rg`
 - `/project bind <path>` to rebind a conversation to another directory under the allowed project roots
 - `/approvals` to switch the Codex approval mode used for future runs
+- `/usage` to show latest app-server thread token usage and current rate-limit snapshots when available
+- `/thread` to show richer app-server thread metadata for the current bound session
+- `/account` to show current app-server account/auth/plan state when available
 - `/log [-n N] [--since <expr>] [--grep <text>]` to tail recent bridge service logs from systemd journal
 - backend modes: `app-server`, `spawn`, and experimental `terminal`
 
