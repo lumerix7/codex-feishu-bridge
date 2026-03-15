@@ -108,7 +108,9 @@ npm run install:local
 - `project.defaultSearchEnabled=true` makes new conversations and `/new`
   sessions default to live web search enabled.
 - The checked-in JSON template defaults to `codex.backendMode = "app-server"`
-  and `codex.sandboxMode = "default"` so approvals can be mediated in Feishu.
+  and `codex.sandboxMode = "danger-full-access"` for the lowest-friction
+  bridge experience. Switch to `default` if you specifically want Feishu-mediated
+  approval prompts.
 - The script asks for confirmation, then installs or updates the unit, reloads user systemd,
   enables the service, and performs a hard restart.
 
@@ -131,6 +133,8 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - In `spawn`, `codex.sandboxMode = "danger-full-access"` maps to Codex `--dangerously-bypass-approvals-and-sandbox`.
 - In `app-server`, `codex.sandboxMode = "default"` maps to `sandbox=workspace-write` plus `approvalPolicy=on-request`.
 - In `app-server`, `codex.sandboxMode = "danger-full-access"` maps to `sandbox=danger-full-access` plus `approvalPolicy=never`.
+- In `app-server`, only `default` and `full-access` are advertised in `/approvals`.
+  `auto` is still accepted as a compatibility alias for `default`.
 - `codex.approvalTimeoutMs` controls how long the bridge waits for a Feishu approval or user-input reply before sending a timeout-safe response back to Codex.
 - `codex.runTimeoutMs` controls the maximum lifetime of one active Codex run
   before the bridge terminates it.

@@ -568,6 +568,9 @@ export class App {
     }
 
     if (command?.name === "approvals") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.approvalsHelpText();
+      }
       if (command.args.length === 0) {
         return [
           "# Approvals",
@@ -978,7 +981,7 @@ export class App {
 
   private approvalChoicesText(): string {
     return this.codex.mode === "app-server"
-      ? "`auto`, `default`, `full-access`"
+      ? "`default`, `full-access`"
       : "`auto`, `workspace`, `full-access`";
   }
 
@@ -993,6 +996,36 @@ export class App {
       return "Codex will use `--dangerously-bypass-approvals-and-sandbox` on new runs.";
     }
     return "Codex will use `--full-auto` on new runs.";
+  }
+
+  private approvalsHelpText(): string {
+    return [
+      "# Approvals",
+      "",
+      "Show or change the Codex approval mode for future runs.",
+      "",
+      "## Usage",
+      "",
+      "- `/approvals`",
+      ...(this.codex.mode === "app-server"
+        ? ["- `/approvals default`", "- `/approvals full-access`"]
+        : ["- `/approvals auto`", "- `/approvals workspace`", "- `/approvals full-access`"]),
+      "- `/approvals -h`",
+      "",
+      "## Notes",
+      "",
+      ...(this.codex.mode === "app-server"
+        ? [
+            "- In `app-server`, `auto` is still accepted as a compatibility alias for `default`, but is not advertised.",
+            "- `default` uses `approvalPolicy=on-request` with `sandbox=workspace-write`.",
+            "- `full-access` uses `approvalPolicy=never` with `sandbox=danger-full-access`."
+          ]
+        : [
+            "- In `spawn`, `auto` maps to `workspace`.",
+            "- `workspace` uses Codex `--full-auto`.",
+            "- `full-access` uses Codex `--dangerously-bypass-approvals-and-sandbox`."
+          ])
+    ].join("\n");
   }
 
   private async requestApprovalFromFeishu(

@@ -19,7 +19,7 @@
     "home": "$HOME/.codex-feishu-bridge",
     "sessionsDir": "$HOME/.codex-feishu-bridge/sessions",
     "backendMode": "app-server",
-    "sandboxMode": "default",
+    "sandboxMode": "danger-full-access",
     "runTimeoutMs": 600000,
     "approvalTimeoutMs": 180000,
     "spawn": {
