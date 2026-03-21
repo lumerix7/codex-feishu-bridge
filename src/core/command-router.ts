@@ -3,9 +3,7 @@ import { IncomingMessage } from "../types/domain.js";
 export type CommandName =
   | "help"
   | "status"
-  | "usage"
   | "thread"
-  | "account"
   | "new"
   | "resume"
   | "session"
@@ -38,9 +36,7 @@ export function parseCommand(message: IncomingMessage): ParsedCommand | undefine
     [
       "help",
       "status",
-      "usage",
       "thread",
-      "account",
       "new",
       "resume",
       "session",

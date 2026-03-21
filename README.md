@@ -34,19 +34,26 @@ Thin Feishu-native relay for Codex native sessions.
 - Heavy card UX or product shell behavior
 - Image-first message support beyond plain text/card rendering; this is worth revisiting later, but it likely increases token and payload cost enough that it should stay opt-in
 
-## Initial command ideas
+## Commands
 
-- `/help`
-- `/status`
-- `/usage`
-- `/thread`
-- `/account`
-- `/new`
-- `/resume`
-- `/session`
-- `/stop`
-- `/project`
-- `/approvals`
+```markdown
+- `/help [-h|--help]` show commands
+- `/status [-h|--help]` show current session and run state
+- `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session
+- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
+- `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help
+- `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project
+- `/stop [-h|--help]` stop the current active run
+- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects
+- `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage
+- `/feishu [ws|send|doctor|-h|--help]` show Feishu websocket and outbound send diagnostics
+- `/log [-n N] [--since <expr>] [--grep <text>] [-h|--help]` show recent bridge service logs from systemd journal
+- `/pwd [-h|--help]`, `/ls [args...]`, `/cat <path...>`, `/tree [args...]`, `/find [args...]`, `/rg [args...]` run local project commands
+- `/approvals [...] [-h|--help]` show or change Codex approvals for the active backend
+- `/search [on|off] [-h|--help]` show or change live web search for this conversation
+- `/model [--list|name|clear] [-h|--help]` show, list, or change the Codex model for this conversation
+- `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation
+```
 
 ## Status
 
@@ -55,7 +62,7 @@ Working v1 bridge:
 - Feishu long-connection receive/send
 - DM receive plus interactive-card replies
 - conversation to native Codex session binding
-- `/help` `/status` `/usage` `/thread` `/account` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/feishu` `/log`
+- `/help` `/status` `/thread` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/feishu` `/log`
 - `/search` `/model` `/profile`
 - `/git` `/pwd` `/ls` `/cat` `/tree` `/find` `/rg`
 - `/new -C <path>` to switch/bind to another project and create a fresh session in one step
@@ -63,9 +70,7 @@ Working v1 bridge:
 - `/project unbind <path>` to remove stored bridge bindings for a specific project path; the current conversation project is rejected
 - `/approvals` to switch the Codex approval mode used for future runs
 - `/model --list` to query available models from Codex app-server when supported, with a bridge-side fallback list otherwise
-- `/usage` to show latest app-server thread token usage and current rate-limit snapshots when available
 - `/thread` to show richer app-server thread metadata for the current bound session
-- `/account` to show current app-server account/auth/plan state when available
 - `/log [-n N] [--since <expr>] [--grep <text>]` to tail recent bridge service logs from systemd journal
 - `/feishu`, `/feishu ws`, `/feishu send`, and `/feishu doctor` to inspect Feishu websocket readiness, outbound retry/failure counters, and a quick transport health verdict
 - backend modes: `app-server`, `spawn`, and experimental `terminal`

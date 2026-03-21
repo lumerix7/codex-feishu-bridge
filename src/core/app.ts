@@ -179,9 +179,7 @@ export class App {
         "",
         "- `/help [-h|--help]` show commands",
         "- `/status [-h|--help]` show current session and run state",
-        "- `/usage [-h|--help]` show latest thread token usage and account rate limits when available",
         "- `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session",
-        "- `/account [-h|--help]` show app-server account and auth details when available",
         "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
         "- `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help",
         "- `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project",
@@ -220,6 +218,16 @@ export class App {
           : undefined;
       const trustedProjects = await this.listTrustedProjects();
       const runtimeMeta = await getCodexRuntimeMeta(this.config.codex.home);
+      const accountInfo =
+        this.codex.readAccount
+          ? await this.codex.readAccount(project).catch(() => undefined)
+          : undefined;
+      const account = asObjectRecord(accountInfo?.account);
+      const rateLimits =
+        this.codex.readAccountRateLimits
+          ? await this.codex.readAccountRateLimits(project).catch(() => this.latestRateLimits)
+          : this.latestRateLimits;
+      const accountUpdate = this.latestAccountUpdate || {};
       const threadInfo =
         existing?.codexSessionId && this.codex.readThread
           ? await this.codex.readThread(existing.codexSessionId, project, false).catch(() => undefined)
@@ -233,20 +241,37 @@ export class App {
         .stat(agentsPath)
         .then((stats) => stats.isFile())
         .catch(() => false);
+      const effectiveModel =
+        reroute?.toModel ||
+        existing?.model ||
+        this.readString(threadInfo?.model) ||
+        this.readString(thread?.model) ||
+        "(default)";
+      const planType =
+        this.readString(account.planType) || this.readString(accountUpdate.planType) || "(unknown)";
+      const accountSummary = this.formatAccountSummary(account, planType);
       return [
         "# Bridge Status",
         "",
-        `- **conversation**: \`${key}\``,
-        `- **session**: \`${sessionId}\``,
-        `- **project**: \`${project}\``,
-        `- **trusted**: \`${trustedProjects.includes(project) ? "yes" : "no"}\``,
-        `- **backend**: \`${this.codex.mode}\``,
-        `- **codex**: \`${runtimeMeta.version || "(unknown)"}\``,
-        `- **sandbox**: \`${this.config.codex.sandboxMode}\``,
-        `- **auth**: \`${runtimeMeta.authMode || "(unknown)"}\``,
+        "## Codex",
+        "",
+        ...(runtimeMeta.version ? [`- **codex**: \`${runtimeMeta.version}\``] : []),
+        `- **model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`,
+        `- **directory**: \`${project}\``,
+        `- **permissions**: \`${this.formatSandboxLabel(this.config.codex.sandboxMode)}\``,
         `- **agents.md**: \`${hasAgents ? agentsPath : "<none>"}\``,
+        ...(accountSummary ? [`- **account**: ${accountSummary}`] : []),
+        `- **session**: \`${sessionId}\``,
+        ...(usage ? [this.formatContextWindowStatusLine(usage)] : []),
+        ...(rateLimits ? this.formatRateLimitStatusLines(rateLimits) : []),
+        "",
+        "## Bridge",
+        "",
+        `- **conversation**: \`${key}\``,
+        `- **backend**: \`${this.codex.mode}\``,
+        `- **project trusted**: \`${trustedProjects.includes(project) ? "yes" : "no"}\``,
+        `- **auth**: \`${runtimeMeta.authMode || "(unknown)"}\``,
         `- **search**: \`${existing?.searchEnabled ? "on" : "off"}\``,
-        `- **model**: \`${existing?.model || "(default)"}\``,
         `- **profile**: \`${existing?.profile || "(default)"}\``,
         `- **run**: \`${activeRun ? `${activeRun.status}:${activeRun.runId}` : "idle"}\``,
         ...(this.feishu ? [`- **feishu**: ${this.formatFeishuStatusSummary(this.feishu.diagnostics())}`] : []),
@@ -260,33 +285,12 @@ export class App {
               `- **thread source**: \`${this.readString(thread.source) || "(unknown)"}\``
             ]
           : []),
-        ...(usage ? [`- **usage**: ${this.formatTokenUsageSummary(usage)}`] : []),
         ...(reroute
           ? [`- **model reroute**: \`${reroute.fromModel}\` -> \`${reroute.toModel}\`${reroute.reason ? ` (${reroute.reason})` : ""}`]
           : []),
         ...(plan?.plan.length
           ? [`- **plan**: ${plan.plan.map((step) => `${this.readString(step.status) || "pending"}:${this.readString(step.step) || "(step)"}`).join(" | ")}`]
           : [])
-      ].join("\n");
-    }
-
-    if (command?.name === "usage") {
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
-        return this.usageHelpText();
-      }
-      const project = existing?.project || this.config.project.defaultProject;
-      const sessionId = existing?.codexSessionId;
-      const usage = sessionId ? this.latestTokenUsage.get(sessionId) : undefined;
-      const rateLimits =
-        this.codex.readAccountRateLimits
-          ? await this.codex.readAccountRateLimits(project).catch(() => this.latestRateLimits)
-          : this.latestRateLimits;
-      return [
-        "# Usage",
-        "",
-        `- **session**: \`${sessionId || "(none)"}\``,
-        ...(usage ? [`- **thread usage**: ${this.formatTokenUsageSummary(usage)}`] : ["- **thread usage**: `(unavailable)`"]),
-        ...(rateLimits ? this.formatRateLimitLines(rateLimits) : ["- **rate limits**: `(unavailable)`"])
       ].join("\n");
     }
 
@@ -342,40 +346,6 @@ export class App {
               ...(turns.length > 10 ? [`- **more turns**: \`${turns.length - 10}\` not shown`] : [])
             ]
           : [`- **turns**: \`${turns.length || 0}\`${turns.length === 0 ? " (use `--turns` to fetch them)" : ""}`])
-      ].join("\n");
-    }
-
-    if (command?.name === "account") {
-      const project = existing?.project || this.config.project.defaultProject;
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
-        return this.accountHelpText();
-      }
-      const accountInfo =
-        this.codex.readAccount
-          ? await this.codex.readAccount(project).catch(() => undefined)
-          : undefined;
-      const account = asObjectRecord(accountInfo?.account);
-      const rateLimits =
-        this.codex.readAccountRateLimits
-          ? await this.codex.readAccountRateLimits(project).catch(() => this.latestRateLimits)
-          : this.latestRateLimits;
-      const accountUpdate = this.latestAccountUpdate || {};
-      const accountType = this.readString(account.type) || "(none)";
-      const authMode = this.readString(accountUpdate.authMode) || "(unknown)";
-      const planType =
-        this.readString(account.planType) ||
-        this.readString(accountUpdate.planType) ||
-        "(unknown)";
-      return [
-        "# Account",
-        "",
-        `- **backend**: \`${this.codex.mode}\``,
-        `- **account type**: \`${accountType}\``,
-        `- **auth mode**: \`${authMode}\``,
-        `- **plan**: \`${planType}\``,
-        ...(this.readString(account.email) ? [`- **email**: \`${this.readString(account.email)}\``] : []),
-        `- **requires openai auth**: \`${accountInfo?.requiresOpenaiAuth ? "yes" : "no"}\``,
-        ...(rateLimits ? this.formatRateLimitLines(rateLimits) : ["- **rate limits**: `(unavailable)`"])
       ].join("\n");
     }
 
@@ -693,7 +663,7 @@ export class App {
         if (!requested) {
           return "Usage: `/project unbind <path>`";
         }
-        const project = await this.resolveProject(requested, currentProject);
+        const project = await this.resolveProject(requested, currentProject, false, false);
         if (project === currentProject) {
           return [
             "# Project",
@@ -1048,12 +1018,8 @@ export class App {
         return "Bridge Help";
       case "status":
         return "Bridge Status";
-      case "usage":
-        return "Usage";
       case "thread":
         return "Thread";
-      case "account":
-        return "Account";
       case "new":
         return "New Session";
       case "session":
@@ -1102,9 +1068,7 @@ export class App {
     switch (commandName) {
       case "help":
       case "status":
-      case "usage":
       case "thread":
-      case "account":
       case "session":
       case "project":
       case "approvals":
@@ -1230,7 +1194,8 @@ export class App {
   private async resolveProject(
     requested: string,
     currentProject: string,
-    createMissing = false
+    createMissing = false,
+    requireExists = true
   ): Promise<string> {
     const resolved = path.resolve(
       requested.startsWith("/")
@@ -1247,12 +1212,12 @@ export class App {
       );
     }
 
-    let stats = await fs.stat(resolved).catch(() => null);
+    let stats = requireExists ? await fs.stat(resolved).catch(() => null) : null;
     if (!stats && createMissing) {
       await fs.mkdir(resolved, { recursive: true });
       stats = await fs.stat(resolved).catch(() => null);
     }
-    if (!stats?.isDirectory()) {
+    if (requireExists && !stats?.isDirectory()) {
       throw new Error(`Project does not exist: ${resolved}`);
     }
     return resolved;
@@ -1530,6 +1495,17 @@ export class App {
     return `total=\`${totalTokens}\` input=\`${inputTokens}\` output=\`${outputTokens}\` last-turn=\`${lastTokens}\``;
   }
 
+  private formatContextWindowStatusLine(tokenUsage: Record<string, unknown>): string {
+    const total = asObjectRecord(tokenUsage.total);
+    const usedTokens = Number(total.totalTokens || 0);
+    const contextWindow = Number(tokenUsage.modelContextWindow || 0);
+    if (!Number.isFinite(contextWindow) || contextWindow <= 0) {
+      return `- **context window**: ${this.formatTokenUsageSummary(tokenUsage)}`;
+    }
+    const leftPercent = Math.max(0, ((contextWindow - usedTokens) / contextWindow) * 100);
+    return `- **context window**: \`${leftPercent.toFixed(0)}%\` left (${this.formatCompactTokenCount(usedTokens)} used / ${this.formatCompactTokenCount(contextWindow)})`;
+  }
+
   private formatRateLimitLines(rateLimitPayload: Record<string, unknown>): string[] {
     const buckets = asObjectRecord(rateLimitPayload.rateLimitsByLimitId);
     const entries = Object.entries(buckets);
@@ -1552,6 +1528,119 @@ export class App {
       snapshot.planType ? `plan=\`${String(snapshot.planType)}\`` : undefined
     ].filter((item): item is string => Boolean(item));
     return parts.join(" ") || "`(unavailable)`";
+  }
+
+  private formatRateLimitStatusLines(rateLimitPayload: Record<string, unknown>): string[] {
+    const buckets = asObjectRecord(rateLimitPayload.rateLimitsByLimitId);
+    const entries = Object.entries(buckets).filter(([, value]) => isRecord(value));
+    if (entries.length > 0) {
+      return entries.flatMap(([key, value]) =>
+        this.formatRateLimitBucketStatusLines(asObjectRecord(value), key)
+      );
+    }
+    const snapshot = asObjectRecord(rateLimitPayload.rateLimits);
+    return this.formatRateLimitBucketStatusLines(snapshot);
+  }
+
+  private formatRateLimitBucketStatusLines(
+    snapshot: Record<string, unknown>,
+    bucketId?: string
+  ): string[] {
+    const primary = asObjectRecord(snapshot.primary);
+    const secondary = asObjectRecord(snapshot.secondary);
+    const prefix = this.formatRateLimitBucketPrefix(snapshot, bucketId);
+    return [
+      this.formatRateLimitWindowStatusLine(prefix, primary),
+      this.formatRateLimitWindowStatusLine(prefix, secondary)
+    ].filter((line): line is string => Boolean(line));
+  }
+
+  private formatRateLimitBucketPrefix(snapshot: Record<string, unknown>, bucketId?: string): string {
+    const limitName = this.readString(snapshot.limitName);
+    if (limitName) return limitName;
+    if (bucketId && bucketId !== "codex") return bucketId;
+    return "";
+  }
+
+  private formatRateLimitWindowStatusLine(
+    prefix: string,
+    window: Record<string, unknown>
+  ): string | undefined {
+    const usedPercent = Number(window.usedPercent);
+    if (!Number.isFinite(usedPercent)) {
+      return undefined;
+    }
+    const leftPercent = Math.max(0, 100 - usedPercent);
+    const label = this.formatRateLimitWindowLabel(window);
+    const titledLabel = prefix ? `${prefix} ${label}` : label;
+    const resetSuffix = this.formatRateLimitResetSuffix(window.resetsAt);
+    return `- **${titledLabel}**: \`${leftPercent.toFixed(0)}%\` left${resetSuffix ? ` (${resetSuffix})` : ""}`;
+  }
+
+  private formatRateLimitWindowLabel(window: Record<string, unknown>): string {
+    const mins = Number(window.windowDurationMins);
+    if (!Number.isFinite(mins) || mins <= 0) {
+      return "limit";
+    }
+    if (mins % (60 * 24 * 7) === 0) {
+      const weeks = mins / (60 * 24 * 7);
+      return weeks === 1 ? "weekly limit" : `${weeks}w limit`;
+    }
+    if (mins % (60 * 24) === 0) {
+      const days = mins / (60 * 24);
+      return days === 1 ? "daily limit" : `${days}d limit`;
+    }
+    if (mins % 60 === 0) {
+      const hours = mins / 60;
+      return `${hours}h limit`;
+    }
+    return `${mins}m limit`;
+  }
+
+  private formatRateLimitResetSuffix(value: unknown): string | undefined {
+    const numeric = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return undefined;
+    }
+    const date = new Date(numeric * 1000);
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = date.toLocaleString("en-US", { month: "short" });
+    return `resets ${hours}:${minutes} on ${day} ${month}`;
+  }
+
+  private formatSandboxLabel(value: AppConfig["codex"]["sandboxMode"]): string {
+    switch (value) {
+      case "danger-full-access":
+        return "Full Access";
+      case "default":
+        return "Default";
+      default:
+        return "Workspace Write";
+    }
+  }
+
+  private formatAccountSummary(account: Record<string, unknown>, planType: string): string | undefined {
+    const email = this.readString(account.email);
+    if (email) {
+      return `\`${email}\` (\`${planType}\`)`;
+    }
+    if (planType && planType !== "(unknown)") {
+      return `plan=\`${planType}\``;
+    }
+    return undefined;
+  }
+
+  private formatCompactTokenCount(value: number): string {
+    if (!Number.isFinite(value) || value < 0) {
+      return "0";
+    }
+    if (value >= 1000) {
+      const compact = value / 1000;
+      return `${compact % 1 === 0 ? compact.toFixed(0) : compact.toFixed(1)}K`;
+    }
+    return String(Math.round(value));
   }
 
   private formatThreadStatus(value: unknown): string {
@@ -2521,25 +2610,6 @@ export class App {
     return `retries=\`${diagnostics.outboundRetryCount}\` failures=\`${diagnostics.outboundFailureCount}\` streaming=\`${diagnostics.activeStreamingCards}\`${diagnostics.lastSendError ? ` error=${diagnostics.lastSendError}` : ""}`;
   }
 
-  private usageHelpText(): string {
-    return [
-      "# Usage",
-      "",
-      "Show latest app-server token usage and account rate-limit snapshots for the current bound project.",
-      "",
-      "## Usage",
-      "",
-      "- `/usage`",
-      "- `/usage -h`",
-      "- `/usage --help`",
-      "",
-      "## Notes",
-      "",
-      "- Uses the current bound session when available.",
-      "- In non-`app-server` backends, some fields may be unavailable."
-    ].join("\n");
-  }
-
   private threadHelpText(): string {
     return [
       "# Thread",
@@ -2557,25 +2627,6 @@ export class App {
       "",
       "- `--turns` fetches turn details and prints a compact turn summary.",
       "- Requires a currently bound session and `app-server` support."
-    ].join("\n");
-  }
-
-  private accountHelpText(): string {
-    return [
-      "# Account",
-      "",
-      "Show app-server account, auth, plan, and rate-limit details when available.",
-      "",
-      "## Usage",
-      "",
-      "- `/account`",
-      "- `/account -h`",
-      "- `/account --help`",
-      "",
-      "## Notes",
-      "",
-      "- Includes account type, auth mode, plan, email when available, and rate limits.",
-      "- In non-`app-server` backends, some fields may be unavailable."
     ].join("\n");
   }
 
