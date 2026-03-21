@@ -35,6 +35,7 @@ const CREATE_SESSION_PROMPT =
   "Initialize a new bridge session. Reply with exactly: READY";
 const STREAMED_OUTPUT_DEDUPE_WINDOW = 4;
 const APP_SERVER_CLIENT_IDLE_SHUTDOWN_MS = 60_000;
+const APP_SERVER_STREAM_UPDATE_INTERVAL_MS = 120;
 
 function formatStatusWithProject(
   config: AppConfig["codex"],
@@ -145,12 +146,35 @@ class AppServerCodexBackend implements CodexBackend {
       let finalOutput = "";
       const agentTextById = new Map<string, string>();
       const streamedOutputs: string[] = [];
+      let pendingStreamText = "";
+      let lastStreamFlushAt = 0;
+      let streamFlushTimer: NodeJS.Timeout | undefined;
+
+      const flushStreamText = (force = false): void => {
+        const text = pendingStreamText.trim();
+        if (!text) return;
+        const now = Date.now();
+        if (!force && now - lastStreamFlushAt < APP_SERVER_STREAM_UPDATE_INTERVAL_MS) {
+          if (!streamFlushTimer) {
+            streamFlushTimer = setTimeout(() => {
+              streamFlushTimer = undefined;
+              flushStreamText(true);
+            }, APP_SERVER_STREAM_UPDATE_INTERVAL_MS - (now - lastStreamFlushAt));
+            streamFlushTimer.unref();
+          }
+          return;
+        }
+        lastStreamFlushAt = now;
+        pendingStreamText = text;
+        sendUpdate(text);
+      };
 
       const finish = (fn: () => void): void => {
         if (settled) return;
         settled = true;
         if (active.timeout) clearTimeout(active.timeout);
         if (active.heartbeat) clearInterval(active.heartbeat);
+        if (streamFlushTimer) clearTimeout(streamFlushTimer);
         active.client.setServerRequestHandler(undefined);
         this.activeRuns.delete(runId);
         active.client.unsubscribe(handleNotification);
@@ -178,7 +202,10 @@ class AppServerCodexBackend implements CodexBackend {
           const itemId = String(params.itemId || "").trim();
           if (!itemId) return;
           const prior = agentTextById.get(itemId) || "";
-          agentTextById.set(itemId, `${prior}${String(params.delta || "")}`);
+          const next = `${prior}${String(params.delta || "")}`;
+          agentTextById.set(itemId, next);
+          pendingStreamText = next;
+          flushStreamText();
           return;
         }
 
@@ -189,12 +216,13 @@ class AppServerCodexBackend implements CodexBackend {
           const text = String(item.text || agentTextById.get(itemId) || "").trim();
           if (!text) return;
           finalOutput = text;
+          pendingStreamText = text;
+          flushStreamText(true);
           if (!streamedOutputs.includes(text)) {
             streamedOutputs.push(text);
             if (streamedOutputs.length > STREAMED_OUTPUT_DEDUPE_WINDOW) {
               streamedOutputs.shift();
             }
-            sendUpdate(text);
           }
           return;
         }
@@ -220,6 +248,7 @@ class AppServerCodexBackend implements CodexBackend {
         }
 
         if (method === "turn/completed") {
+          flushStreamText(true);
           const output =
             finalOutput ||
             Array.from(agentTextById.values())

@@ -171,6 +171,22 @@ but new config should use the structured schema.
 - The card body keeps the same markdown content string the bridge generates, plus a raw fenced markdown appendix for clients that do not render every markdown feature consistently.
 - Long replies are split on markdown block boundaries so fenced code blocks stay valid across chunks.
 
+## Streaming Replies
+
+- The bridge now uses Feishu CardKit streaming cards when possible.
+- Bridge command replies such as `/status` use synthetic streaming for one-shot output:
+  line-by-line when practical, with long lines split into smaller visible steps.
+- Codex `app-server` replies use real upstream stream updates from Codex. The bridge accumulates text and updates one live Feishu card for the turn instead of sending a new card for each update.
+- The streamed card keeps the same final content shape as normal cards:
+  rendered markdown, a raw fenced markdown appendix, and the footer/meta block.
+- If CardKit create or update fails, the bridge falls back to the normal interactive-card send path.
+- Current practical limits:
+  - one streaming card per reply context
+  - large replies may still fall back to the normal chunked path
+  - live Codex delta updates are throttled before sending to Feishu to stay within CardKit update limits
+- Required Feishu permission for streaming cards:
+  - `cardkit:card:write`
+
 ## Codex Profile Mode
 
 - `codex.profileMode = "isolated"` gives the bridge its own Codex home. This is

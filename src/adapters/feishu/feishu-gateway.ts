@@ -148,49 +148,55 @@ export class FeishuGateway {
 
     const rendered = (message.text || "").trim();
     if (rendered && rendered !== active.lastText) {
-      await this.client.cardkit.v1.cardElement.content({
-        path: {
-          card_id: active.cardId,
-          element_id: STREAMING_MARKDOWN_ELEMENT_ID
-        },
-        data: {
-          content: rendered,
-          sequence: active.sequence
-        }
-      });
+      await this.withFeishuRetry(async () =>
+        this.client.cardkit.v1.cardElement.content({
+          path: {
+            card_id: active.cardId,
+            element_id: STREAMING_MARKDOWN_ELEMENT_ID
+          },
+          data: {
+            content: rendered,
+            sequence: active.sequence
+          }
+        })
+      );
       active.sequence += 1;
       active.lastText = rendered;
     }
 
     if (message.finalizeStreaming) {
-      await this.client.cardkit.v1.cardElement.update({
-        path: {
-          card_id: active.cardId,
-          element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
-        },
-        data: {
-          element: JSON.stringify({
-            tag: "markdown",
-            content: wrapRawMarkdown(rendered),
+      await this.withFeishuRetry(async () =>
+        this.client.cardkit.v1.cardElement.update({
+          path: {
+            card_id: active.cardId,
             element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
-          }),
-          sequence: active.sequence
-        }
-      });
+          },
+          data: {
+            element: JSON.stringify({
+              tag: "markdown",
+              content: wrapRawMarkdown(rendered),
+              element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
+            }),
+            sequence: active.sequence
+          }
+        })
+      );
       active.sequence += 1;
-      await this.client.cardkit.v1.card.settings({
-        path: {
-          card_id: active.cardId
-        },
-        data: {
-          settings: JSON.stringify({
-            config: {
-              streaming_mode: false
-            }
-          }),
-          sequence: active.sequence
-        }
-      });
+      await this.withFeishuRetry(async () =>
+        this.client.cardkit.v1.card.settings({
+          path: {
+            card_id: active.cardId
+          },
+          data: {
+            settings: JSON.stringify({
+              config: {
+                streaming_mode: false
+              }
+            }),
+            sequence: active.sequence
+          }
+        })
+      );
       this.activeStreamingCards.delete(streamKey);
     }
 
@@ -209,51 +215,57 @@ export class FeishuGateway {
     const active = await this.createStreamingCard(message);
     const lineFrames = buildStreamingLineFrames(rendered, STREAMING_MAX_LINE_UPDATES);
     for (const frame of lineFrames) {
-      await this.client.cardkit.v1.cardElement.content({
-        path: {
-          card_id: active.cardId,
-          element_id: STREAMING_MARKDOWN_ELEMENT_ID
-        },
-        data: {
-          content: frame,
-          sequence: active.sequence
-        }
-      });
+      await this.withFeishuRetry(async () =>
+        this.client.cardkit.v1.cardElement.content({
+          path: {
+            card_id: active.cardId,
+            element_id: STREAMING_MARKDOWN_ELEMENT_ID
+          },
+          data: {
+            content: frame,
+            sequence: active.sequence
+          }
+        })
+      );
       active.sequence += 1;
       if (lineFrames.length > 1) {
         await sleep(STREAMING_LINE_DELAY_MS);
       }
     }
 
-    await this.client.cardkit.v1.cardElement.update({
-      path: {
-        card_id: active.cardId,
-        element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
-      },
-      data: {
-        element: JSON.stringify({
-          tag: "markdown",
-          content: wrapRawMarkdown(rendered),
+    await this.withFeishuRetry(async () =>
+      this.client.cardkit.v1.cardElement.update({
+        path: {
+          card_id: active.cardId,
           element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
-        }),
-        sequence: active.sequence
-      }
-    });
+        },
+        data: {
+          element: JSON.stringify({
+            tag: "markdown",
+            content: wrapRawMarkdown(rendered),
+            element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
+          }),
+          sequence: active.sequence
+        }
+      })
+    );
     active.sequence += 1;
 
-    await this.client.cardkit.v1.card.settings({
-      path: {
-        card_id: active.cardId
-      },
-      data: {
-        settings: JSON.stringify({
-          config: {
-            streaming_mode: false
-          }
-        }),
-        sequence: active.sequence
-      }
-    });
+    await this.withFeishuRetry(async () =>
+      this.client.cardkit.v1.card.settings({
+        path: {
+          card_id: active.cardId
+        },
+        data: {
+          settings: JSON.stringify({
+            config: {
+              streaming_mode: false
+            }
+          }),
+          sequence: active.sequence
+        }
+      })
+    );
 
     console.log("Feishu outbound streaming card sent", {
       chatId: message.chatId,
@@ -267,40 +279,44 @@ export class FeishuGateway {
     const rendered = (message.text || "").trim();
     const footer = message.footer || buildCardMetaMarkdown(message.title);
     const summary = buildCardSummary(message.title, rendered);
-    const card = await this.client.cardkit.v1.card.create({
-      data: {
-        type: "card_json",
-        data: JSON.stringify(
-          buildStreamingCard(
-            "",
-            message.title,
-            message.template,
-            footer,
-            summary
+    const card = await this.withFeishuRetry(async () =>
+      this.client.cardkit.v1.card.create({
+        data: {
+          type: "card_json",
+          data: JSON.stringify(
+            buildStreamingCard(
+              "",
+              message.title,
+              message.template,
+              footer,
+              summary
+            )
           )
-        )
-      }
-    });
+        }
+      })
+    );
     const cardId = String(card.data?.card_id || "").trim();
     if (!cardId) {
       throw new Error("Feishu CardKit create returned no card_id");
     }
 
-    await this.client.im.v1.message.create({
-      params: {
-        receive_id_type: "chat_id"
-      },
-      data: {
-        receive_id: message.chatId,
-        msg_type: "interactive",
-        content: JSON.stringify({
-          type: "card",
-          data: {
-            card_id: cardId
-          }
-        })
-      }
-    });
+    await this.withFeishuRetry(async () =>
+      this.client.im.v1.message.create({
+        params: {
+          receive_id_type: "chat_id"
+        },
+        data: {
+          receive_id: message.chatId,
+          msg_type: "interactive",
+          content: JSON.stringify({
+            type: "card",
+            data: {
+              card_id: cardId
+            }
+          })
+        }
+      })
+    );
 
     return {
       cardId,
@@ -308,6 +324,40 @@ export class FeishuGateway {
       lastText: "",
       chatId: message.chatId
     };
+  }
+
+  private async withFeishuRetry<T>(action: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    const configuredAttempts = this.config.sendRetryMaxAttempts;
+    const attempts = Math.max(1, configuredAttempts);
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await action();
+      } catch (error) {
+        lastError = error;
+        if (shouldResetFeishuClient(error)) {
+          this.client = this.createClient();
+        }
+        if (!shouldRetryFeishuError(error) || attempt >= attempts) {
+          break;
+        }
+        const delayMs = computeRetryDelayMs(
+          attempt,
+          this.config.sendRetryBaseDelayMs,
+          this.config.sendRetryMultiplier,
+          this.config.sendRetryMaxDelayMs
+        );
+        console.warn(
+          `Feishu streaming retry ${attempt}/${Math.max(0, attempts - 1)} in ${delayMs}ms: ${formatFeishuError(error)}`
+        );
+        await sleep(delayMs);
+      }
+    }
+
+    throw new Error(
+      `Feishu streaming send failed after ${attempts} attempt${attempts === 1 ? "" : "s"}${configuredAttempts === 0 ? " (retry disabled)" : ""}: ${formatFeishuError(lastError)}`
+    );
   }
 
   async sendStartupReady(text: string, footer?: string): Promise<void> {
