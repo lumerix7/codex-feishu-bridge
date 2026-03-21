@@ -188,6 +188,7 @@ export class App {
         "- `/stop [-h|--help]` stop the current active run",
         "- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects",
         "- `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage",
+        "- `/feishu [ws|send|doctor|-h|--help]` show Feishu websocket and outbound send diagnostics",
         "- `/log [-n N] [--since <expr>] [--grep <text>] [-h|--help]` show recent bridge service logs from systemd journal",
         "- `/pwd [-h|--help]`, `/ls [args...]`, `/cat <path...>`, `/tree [args...]`, `/find [args...]`, `/rg [args...]` run local project commands",
         "- `/approvals [...] [-h|--help]` show or change Codex approvals for the active backend",
@@ -248,6 +249,7 @@ export class App {
         `- **model**: \`${existing?.model || "(default)"}\``,
         `- **profile**: \`${existing?.profile || "(default)"}\``,
         `- **run**: \`${activeRun ? `${activeRun.status}:${activeRun.runId}` : "idle"}\``,
+        ...(this.feishu ? [`- **feishu**: ${this.formatFeishuStatusSummary(this.feishu.diagnostics())}`] : []),
         `- **session time**: ${session?.createdAt || "(unknown)"}`,
         `- **session cwd**: \`${session?.cwd || "(unknown)"}\``,
         `- **session about**: ${session?.preview || "(no preview)"}`,
@@ -374,6 +376,35 @@ export class App {
         ...(this.readString(account.email) ? [`- **email**: \`${this.readString(account.email)}\``] : []),
         `- **requires openai auth**: \`${accountInfo?.requiresOpenaiAuth ? "yes" : "no"}\``,
         ...(rateLimits ? this.formatRateLimitLines(rateLimits) : ["- **rate limits**: `(unavailable)`"])
+      ].join("\n");
+    }
+
+    if (command?.name === "feishu") {
+      const feishuMode = command.args[0];
+      if (feishuMode === "-h" || feishuMode === "--help") {
+        return this.feishuHelpText();
+      }
+      const diagnostics = this.feishu?.diagnostics();
+      if (!diagnostics) {
+        return "# Feishu\n\n- **status**: `(gateway unavailable)`";
+      }
+      if (!feishuMode) {
+        return this.renderFeishuSummary(diagnostics);
+      }
+      if (feishuMode === "ws") {
+        return this.renderFeishuWs(diagnostics);
+      }
+      if (feishuMode === "send") {
+        return this.renderFeishuSend(diagnostics);
+      }
+      if (feishuMode === "doctor") {
+        return this.renderFeishuDoctor(diagnostics);
+      }
+      return [
+        "# Feishu",
+        "",
+        `- **error**: unknown subcommand \`${feishuMode}\``,
+        "- **choices**: `ws`, `send`, `doctor`"
       ].join("\n");
     }
 
@@ -990,6 +1021,7 @@ export class App {
   }
 
   private buildStartupReadyMessage(title = "Bridge Ready", currentProject?: string): string {
+    const feishuDiagnostics = this.feishu?.diagnostics();
     return [
       `# ${title}`,
       "",
@@ -998,7 +1030,8 @@ export class App {
       `- **default project**: \`${this.config.project.defaultProject}\``,
       ...(currentProject ? [`- **current project**: \`${currentProject}\``] : []),
       `- **sandbox**: \`${this.config.codex.sandboxMode}\``,
-      `- **search default**: \`${this.config.project.defaultSearchEnabled ? "on" : "off"}\``
+      `- **search default**: \`${this.config.project.defaultSearchEnabled ? "on" : "off"}\``,
+      ...(feishuDiagnostics ? [`- **feishu**: ${this.formatFeishuStatusSummary(feishuDiagnostics)}`] : [])
     ].join("\n");
   }
 
@@ -1028,6 +1061,8 @@ export class App {
         return "Log";
       case "git":
         return "Git";
+      case "feishu":
+        return "Feishu";
       case "pwd":
         return "PWD";
       case "ls":
@@ -1066,6 +1101,7 @@ export class App {
       case "session":
       case "project":
       case "approvals":
+      case "feishu":
       case "log":
       case "search":
       case "model":
@@ -2306,6 +2342,30 @@ export class App {
     ].join("\n");
   }
 
+  private feishuHelpText(): string {
+    return [
+      "# Feishu",
+      "",
+      "Show Feishu websocket and outbound send diagnostics for the running bridge.",
+      "",
+      "## Usage",
+      "",
+      "- `/feishu`",
+      "- `/feishu ws`",
+      "- `/feishu send`",
+      "- `/feishu doctor`",
+      "- `/feishu -h`",
+      "- `/feishu --help`",
+      "",
+      "## Notes",
+      "",
+      "- `/feishu` shows a compact summary.",
+      "- `/feishu ws` focuses on websocket readiness and recent inbound timing.",
+      "- `/feishu send` focuses on outbound retry/failure and streaming-card state.",
+      "- `/feishu doctor` gives a quick health verdict with simple checks."
+    ].join("\n");
+  }
+
   private statusHelpText(): string {
     return [
       "# Status",
@@ -2320,9 +2380,115 @@ export class App {
       "",
       "## Notes",
       "",
-      "- Includes bound session, project, search/model/profile, and current run state.",
+      "- Includes bound session, project, search/model/profile, current run state, and a compact Feishu transport summary.",
       "- In `app-server`, includes thread metadata, token usage, latest reroute, and plan when available."
     ].join("\n");
+  }
+
+  private renderFeishuSummary(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
+    return [
+      "# Feishu",
+      "",
+      `- **status**: ${this.formatFeishuDoctorVerdict(diagnostics)}`,
+      `- **ws**: ${this.formatFeishuWsSummary(diagnostics)}`,
+      `- **send**: ${this.formatFeishuSendSummary(diagnostics)}`,
+      "",
+      "## More",
+      "",
+      "- `/feishu ws`",
+      "- `/feishu send`",
+      "- `/feishu doctor`"
+    ].join("\n");
+  }
+
+  private renderFeishuWs(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
+    return [
+      "# Feishu WS",
+      "",
+      `- **connected once**: \`${diagnostics.wsConnectedOnce ? "yes" : "no"}\``,
+      `- **reconnecting**: \`${diagnostics.wsReconnecting ? "yes" : "no"}\``,
+      `- **logger level**: \`${this.config.feishu.wsLoggerLevel}\``,
+      `- **reconnect debounce ms**: \`${this.config.feishu.reconnectReadyDebounceMs}\``,
+      `- **last ws ready**: ${diagnostics.lastWsReadyAt || "(unknown)"}`,
+      `- **last reconnect ready**: ${diagnostics.lastReconnectReadyAt || "(never)"}`,
+      `- **last inbound message**: ${diagnostics.lastInboundMessageAt || "(unknown)"}`,
+      `- **last inbound message id**: \`${diagnostics.lastInboundMessageId || "(unknown)"}\``
+    ].join("\n");
+  }
+
+  private renderFeishuSend(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
+    return [
+      "# Feishu Send",
+      "",
+      `- **retry max attempts**: \`${this.config.feishu.sendRetryMaxAttempts}\``,
+      `- **retry base delay ms**: \`${this.config.feishu.sendRetryBaseDelayMs}\``,
+      `- **retry multiplier**: \`${this.config.feishu.sendRetryMultiplier}\``,
+      `- **retry max delay ms**: \`${this.config.feishu.sendRetryMaxDelayMs}\``,
+      `- **outbound retries**: \`${diagnostics.outboundRetryCount}\``,
+      `- **outbound failures**: \`${diagnostics.outboundFailureCount}\``,
+      `- **active streaming cards**: \`${diagnostics.activeStreamingCards}\``,
+      `- **last send error**: ${diagnostics.lastSendError || "(none)"}`
+    ].join("\n");
+  }
+
+  private renderFeishuDoctor(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
+    const findings: string[] = [];
+    if (!diagnostics.wsConnectedOnce) {
+      findings.push("- websocket has not connected yet");
+    }
+    if (diagnostics.wsReconnecting) {
+      findings.push("- websocket is currently reconnecting");
+    }
+    if (diagnostics.outboundFailureCount > 0) {
+      findings.push(`- outbound send failures observed: \`${diagnostics.outboundFailureCount}\``);
+    }
+    if ((diagnostics.lastSendError || "").includes("Missing access token")) {
+      findings.push("- last send error suggests Feishu auth or token handling is failing");
+    }
+    if (diagnostics.activeStreamingCards > 10) {
+      findings.push(`- active streaming cards is high: \`${diagnostics.activeStreamingCards}\``);
+    }
+    if (!diagnostics.lastInboundMessageAt) {
+      findings.push("- no inbound Feishu message has been observed since startup");
+    }
+    return [
+      "# Feishu Doctor",
+      "",
+      `- **verdict**: ${this.formatFeishuDoctorVerdict(diagnostics)}`,
+      `- **ws summary**: ${this.formatFeishuWsSummary(diagnostics)}`,
+      `- **send summary**: ${this.formatFeishuSendSummary(diagnostics)}`,
+      "",
+      "## Findings",
+      "",
+      ...(findings.length ? findings : ["- no obvious transport issues from the current in-memory diagnostics"])
+    ].join("\n");
+  }
+
+  private formatFeishuStatusSummary(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
+    return `${this.formatFeishuDoctorVerdict(diagnostics)}; ${this.formatFeishuWsSummary(diagnostics)}; ${this.formatFeishuSendSummary(diagnostics)}`;
+  }
+
+  private formatFeishuDoctorVerdict(
+    diagnostics: ReturnType<FeishuGateway["diagnostics"]>
+  ): string {
+    if (!diagnostics.wsConnectedOnce) {
+      return "`attention` (ws not connected yet)";
+    }
+    if (diagnostics.wsReconnecting) {
+      return "`attention` (reconnecting)";
+    }
+    if (diagnostics.outboundFailureCount > 0) {
+      return "`attention` (outbound failures seen)";
+    }
+    return "`ok`";
+  }
+
+  private formatFeishuWsSummary(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
+    return `connected=\`${diagnostics.wsConnectedOnce ? "yes" : "no"}\` reconnecting=\`${diagnostics.wsReconnecting ? "yes" : "no"}\` lastReady=${diagnostics.lastWsReadyAt || "(unknown)"} lastInbound=${diagnostics.lastInboundMessageAt || "(unknown)"}`;
+  }
+
+  private formatFeishuSendSummary(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
+    return `retries=\`${diagnostics.outboundRetryCount}\` failures=\`${diagnostics.outboundFailureCount}\` streaming=\`${diagnostics.activeStreamingCards}\`${diagnostics.lastSendError ? ` error=${diagnostics.lastSendError}` : ""}`;
   }
 
   private usageHelpText(): string {

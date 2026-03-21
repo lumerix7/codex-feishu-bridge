@@ -19,6 +19,7 @@ export type CommandName =
   | "find"
   | "rg"
   | "approvals"
+  | "feishu"
   | "log"
   | "search"
   | "model"
@@ -53,6 +54,7 @@ export function parseCommand(message: IncomingMessage): ParsedCommand | undefine
       "find",
       "rg",
       "approvals",
+      "feishu",
       "log",
       "search",
       "model",

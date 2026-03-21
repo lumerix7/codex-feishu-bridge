@@ -54,7 +54,7 @@ Working v1 bridge:
 - Feishu long-connection receive/send
 - DM receive plus interactive-card replies
 - conversation to native Codex session binding
-- `/help` `/status` `/usage` `/thread` `/account` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/log`
+- `/help` `/status` `/usage` `/thread` `/account` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/feishu` `/log`
 - `/search` `/model` `/profile`
 - `/git` `/pwd` `/ls` `/cat` `/tree` `/find` `/rg`
 - `/new -C <path>` to switch/bind to another project and create a fresh session in one step
@@ -65,7 +65,24 @@ Working v1 bridge:
 - `/thread` to show richer app-server thread metadata for the current bound session
 - `/account` to show current app-server account/auth/plan state when available
 - `/log [-n N] [--since <expr>] [--grep <text>]` to tail recent bridge service logs from systemd journal
+- `/feishu`, `/feishu ws`, `/feishu send`, and `/feishu doctor` to inspect Feishu websocket readiness, outbound retry/failure counters, and a quick transport health verdict
 - backend modes: `app-server`, `spawn`, and experimental `terminal`
+
+## Feishu Transport Notes
+
+- Inbound Feishu events use long-connection mode over the Feishu SDK websocket client.
+- Outbound bridge replies use Feishu HTTPS OpenAPI calls. Streaming replies use CardKit streaming update APIs over HTTPS.
+- The bridge now uses keep-alive HTTP/HTTPS agents for Feishu SDK transport and detaches inbound event processing from the websocket callback so the handler returns quickly.
+- `/feishu` is the quickest way to inspect recent websocket readiness, reconnect state, inbound message timing, and outbound retry/failure counters.
+
+Useful official references:
+
+- Long connection mode: <https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/event-subscription-guide/long-connection-mode>
+- Handle events: <https://open.feishu.cn/document/server-side-sdk/python--sdk/handle-events>
+- Handle callbacks: <https://open.feishu.cn/document/server-side-sdk/python--sdk/handle-callbacks>
+- Scenario examples: <https://open.feishu.cn/document/server-side-sdk/python--sdk/scenario-example>
+- Message create API: <https://open.feishu.cn/document/server-docs/im-v1/message/create>
+- CardKit streaming updates: <https://open.feishu.cn/document/cardkit-v1/streaming-updates-openapi-overview>
 
 ## Run
 

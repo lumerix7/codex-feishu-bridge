@@ -1,4 +1,6 @@
 import * as Lark from "@larksuiteoapi/node-sdk";
+import http from "node:http";
+import https from "node:https";
 import { AppConfig } from "../../config/env.js";
 import { IncomingMessage, OutgoingMessage } from "../../types/domain.js";
 
@@ -22,15 +24,38 @@ const STREAMING_LONG_LINE_STEP = 120;
 export class FeishuGateway {
   private client: Lark.Client;
   private wsClient: Lark.WSClient;
+  private readonly httpAgent: http.Agent;
+  private readonly httpsAgent: https.Agent;
   private readonly recentMessages = new Map<string, number>();
   private readonly activeStreamingCards = new Map<string, ActiveStreamingCard>();
   private cleanupTimer?: NodeJS.Timeout;
   private reconnecting = false;
   private readyOnce = false;
   private lastReconnectReadyAt = 0;
+  private lastWsReadyAt?: string;
+  private lastInboundMessageAt?: string;
+  private lastInboundMessageId?: string;
+  private sendRetryCount = 0;
+  private sendFailureCount = 0;
+  private lastSendError?: string;
   private reconnectHandler?: ReconnectHandler;
 
   constructor(private readonly config: AppConfig["feishu"]) {
+    this.httpAgent = new http.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 30_000,
+      maxSockets: 100,
+      maxFreeSockets: 20
+    });
+    this.httpsAgent = new https.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 30_000,
+      maxSockets: 100,
+      maxFreeSockets: 20
+    });
+    Lark.defaultHttpInstance.defaults.timeout = 30_000;
+    Lark.defaultHttpInstance.defaults.httpAgent = this.httpAgent;
+    Lark.defaultHttpInstance.defaults.httpsAgent = this.httpsAgent;
     this.client = this.createClient();
     this.wsClient = this.createWsClient();
   }
@@ -80,9 +105,13 @@ export class FeishuGateway {
           threadId: message.threadId,
           textPreview: previewText(message.text)
         });
+        this.lastInboundMessageAt = new Date().toISOString();
+        this.lastInboundMessageId = message.messageId;
 
-        void onMessage(message).catch((error: unknown) => {
-          console.error("failed to process Feishu message", error);
+        setImmediate(() => {
+          void onMessage(message).catch((error: unknown) => {
+            console.error("failed to process Feishu message", error);
+          });
         });
       },
       "im.message.message_read_v1": async () => {
@@ -351,10 +380,14 @@ export class FeishuGateway {
         console.warn(
           `Feishu streaming retry ${attempt}/${Math.max(0, attempts - 1)} in ${delayMs}ms: ${formatFeishuError(error)}`
         );
+        this.sendRetryCount += 1;
+        this.lastSendError = formatFeishuError(error);
         await sleep(delayMs);
       }
     }
 
+    this.sendFailureCount += 1;
+    this.lastSendError = formatFeishuError(lastError);
     throw new Error(
       `Feishu streaming send failed after ${attempts} attempt${attempts === 1 ? "" : "s"}${configuredAttempts === 0 ? " (retry disabled)" : ""}: ${formatFeishuError(lastError)}`
     );
@@ -433,10 +466,14 @@ export class FeishuGateway {
         console.warn(
           `Feishu send retry ${attempt}/${Math.max(0, attempts - 1)} in ${delayMs}ms: ${formatFeishuError(error)}`
         );
+        this.sendRetryCount += 1;
+        this.lastSendError = formatFeishuError(error);
         await sleep(delayMs);
       }
     }
 
+    this.sendFailureCount += 1;
+    this.lastSendError = formatFeishuError(lastError);
     throw new Error(
       `Feishu send failed after ${attempts} attempt${attempts === 1 ? "" : "s"}${configuredAttempts === 0 ? " (retry disabled)" : ""}: ${formatFeishuError(lastError)}`
     );
@@ -454,6 +491,8 @@ export class FeishuGateway {
     return new Lark.WSClient({
       appId: this.config.appId,
       appSecret: this.config.appSecret,
+      httpInstance: Lark.defaultHttpInstance,
+      agent: this.httpsAgent,
       logger: this.createLarkLogger()
     });
   }
@@ -511,6 +550,7 @@ export class FeishuGateway {
     const wasReconnect = this.readyOnce && this.reconnecting;
     this.readyOnce = true;
     this.reconnecting = false;
+    this.lastWsReadyAt = new Date().toISOString();
     if (!wasReconnect) return;
 
     const now = Date.now();
@@ -530,6 +570,34 @@ export class FeishuGateway {
       trace: 4
     } as const;
     return rank[level] <= rank[this.config.wsLoggerLevel];
+  }
+
+  diagnostics(): {
+    wsConnectedOnce: boolean;
+    wsReconnecting: boolean;
+    lastWsReadyAt?: string;
+    lastReconnectReadyAt?: string;
+    lastInboundMessageAt?: string;
+    lastInboundMessageId?: string;
+    outboundRetryCount: number;
+    outboundFailureCount: number;
+    lastSendError?: string;
+    activeStreamingCards: number;
+  } {
+    return {
+      wsConnectedOnce: this.readyOnce,
+      wsReconnecting: this.reconnecting,
+      lastWsReadyAt: this.lastWsReadyAt,
+      lastReconnectReadyAt: this.lastReconnectReadyAt
+        ? new Date(this.lastReconnectReadyAt).toISOString()
+        : undefined,
+      lastInboundMessageAt: this.lastInboundMessageAt,
+      lastInboundMessageId: this.lastInboundMessageId,
+      outboundRetryCount: this.sendRetryCount,
+      outboundFailureCount: this.sendFailureCount,
+      lastSendError: this.lastSendError,
+      activeStreamingCards: this.activeStreamingCards.size
+    };
   }
 }
 
