@@ -1,29 +1,28 @@
-# Roadmap Draft
+# Roadmap
 
-## Phase 0 — design
-- define architecture
-- define session model
-- define minimal command set
-- define project restrictions
+## Current state
 
-## Phase 1 — minimal relay
-- Feishu websocket receive/send
-- DM-only support
-- plain text in / plain text out
-- create/resume Codex native sessions
-- bind DM/thread to native session
-- `/help` `/status` `/new` `/resume` `/stop`
+Already implemented:
 
-## Phase 2 — usability
-- streaming output
-- better formatting for long output
-- project selection and shortcuts
-- persistent binding store
-- better error handling and retry behavior
+- Feishu websocket ingress plus HTTPS outbound replies
+- persistent conversation/session binding
+- `app-server` preferred backend
+- `spawn` fallback backend
+- streaming-first Feishu replies
+- Feishu transport diagnostics via `/feishu`
+- native-style status via `/status`
+- session/project switching and session listing
+- Feishu-mediated approvals for `app-server` default mode
 
-## Phase 3 — polish
-- thread-aware UX improvements
-- optional interactive cards
-- admin controls
-- health checks and restart scripts
-- systemd or service supervision
+## Near-term ideas
+
+- broader docs cleanup so contract notes match the live bridge more closely
+- better large-output UX beyond paged streaming cards
+- more diagnostics around update checks and runtime provenance
+- optional image/file support if the token and payload cost is justified
+
+## Non-goals
+
+- synthetic transcript storage as a second source of truth
+- a separate assistant/session layer above Codex
+- heavy product-shell behavior inside the bridge

@@ -13,4 +13,4 @@
 
 ## Short product description
 
-A thin Feishu-native bridge for Codex native sessions.
+Feishu-native control surface for real Codex sessions.

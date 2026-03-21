@@ -1,4 +1,6 @@
-# Repo Layout Draft
+# Repo Layout
+
+> High-level layout note. The repository now includes more runtime features than this short sketch originally described, but the directory split remains broadly accurate.
 
 ## Top level
 
@@ -7,6 +9,8 @@
 - `.env.example` — runtime config template
 - `src/` — implementation
 - `docs/` — architecture and design notes
+- `deploy/` — install templates and runtime config templates
+- `install.sh` — local install/update entrypoint
 
 ## `src/`
 

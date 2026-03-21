@@ -1,6 +1,8 @@
 # codex-feishu-bridge
 
-Thin Feishu-native relay for Codex native sessions.
+Feishu-native control surface for real Codex sessions.
+
+Routes Feishu messages into local Codex sessions and streams Codex output back without inventing a second conversation layer.
 
 ## Goal
 

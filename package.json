@@ -2,7 +2,7 @@
   "name": "codex-feishu-bridge",
   "version": "0.1.0",
   "private": true,
-  "description": "Thin Feishu-native bridge for Codex native sessions.",
+  "description": "Feishu-native control surface for real Codex sessions.",
   "type": "module",
   "bin": {
     "codex-feishu-bridge": "./bin/codex-feishu-bridge.js"

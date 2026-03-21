@@ -1,4 +1,6 @@
-# Architecture Draft
+# Architecture
+
+> High-level architecture note. This document still reflects the intended boundaries well, but some implementation details and filenames have moved. Use `../README.md` for the live runtime surface.
 
 ## One-line definition
 
