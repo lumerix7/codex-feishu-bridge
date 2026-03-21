@@ -145,13 +145,14 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 
 ## Backend Mode
 
+- `codex.backendMode = "app-server"` is the preferred backend now and the checked-in default for new installs.
+- `app-server` keeps a local `codex app-server` subprocess per bound native session and talks to it over
+  stdio JSON-RPC for `thread/start`, `thread/resume`, `turn/start`,
+  `turn/interrupt`, approval callbacks, user-input requests, live token usage, thread/account reads, and model listing.
 - `codex.backendMode = "spawn"` starts one `codex exec` or `codex exec resume`
   process per turn while the bridge persists the native session id.
+- `spawn` is still useful as a simpler fallback backend when you want fewer moving parts and do not need the richer `app-server` features.
 - `spawn` now emits lightweight progress updates such as session start, thinking, long-run heartbeat, and upstream websocket retry notices when Codex exposes them.
-- `codex.backendMode = "app-server"` keeps a local
-  `codex app-server` subprocess per bound native session and talks to it over
-  stdio JSON-RPC for `thread/start`, `thread/resume`, `turn/start`,
-  `turn/interrupt`, approval callbacks, and user-input requests.
 - `codex.backendMode = "terminal"` is experimental. It is intended for a
   terminal-derived Codex experience projected into Feishu, but the current
   Codex interactive CLI is still a full-screen TUI and not yet reliable enough
