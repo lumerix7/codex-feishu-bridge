@@ -4,7 +4,15 @@
     "port": 3300
   },
   "feishu": {
-    "wsLoggerLevel": "info",
+    "wsAutoReconnect": true,
+    "wsLoggerLevel": "debug",
+    "wsAgent": {
+      "keepAliveMsecs": 90000,
+      "maxSockets": 100,
+      "maxFreeSockets": 1
+    },
+    "wsConnectWarnAfterMs": 30000,
+    "wsReconnectWarnThreshold": 3,
     "reconnectReadyDebounceMs": 60000,
     "sendRetry": {
       "maxAttempts": 5,

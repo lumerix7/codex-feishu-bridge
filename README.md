@@ -32,6 +32,7 @@ Thin Feishu-native relay for Codex native sessions.
 - Synthetic conversation storage
 - Multi-provider orchestration
 - Heavy card UX or product shell behavior
+- Image-first message support beyond plain text/card rendering; this is worth revisiting later, but it likely increases token and payload cost enough that it should stay opt-in
 
 ## Initial command ideas
 
@@ -61,6 +62,7 @@ Working v1 bridge:
 - `/project bind <path>` to rebind a conversation to another directory under the allowed project roots
 - `/project unbind <path>` to remove stored bridge bindings for a specific project path; the current conversation project is rejected
 - `/approvals` to switch the Codex approval mode used for future runs
+- `/model --list` to query available models from Codex app-server when supported, with a bridge-side fallback list otherwise
 - `/usage` to show latest app-server thread token usage and current rate-limit snapshots when available
 - `/thread` to show richer app-server thread metadata for the current bound session
 - `/account` to show current app-server account/auth/plan state when available
@@ -160,6 +162,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - In `app-server`, `codex.sandboxMode = "danger-full-access"` maps to `sandbox=danger-full-access` plus `approvalPolicy=never`.
 - In `app-server`, only `default` and `full-access` are advertised in `/approvals`.
   `auto` is still accepted as a compatibility alias for `default`.
+- In `app-server`, `/model --list` now uses the native `model/list` RPC when available.
 - `codex.approvalTimeoutMs` controls how long the bridge waits for a Feishu approval or user-input reply before sending a timeout-safe response back to Codex.
 - `codex.runTimeoutMs` controls the maximum lifetime of one active Codex run
   before the bridge terminates it.
@@ -169,8 +172,13 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
   `feishu.sendRetry.multiplier`, and `feishu.sendRetry.maxDelayMs` control
   retry/backoff for transient Feishu send failures such as `502`, `429`, and
   short network errors. `maxAttempts = 0` means one send attempt with no retry.
-- `feishu.wsLoggerLevel` controls how much of the Feishu SDK websocket lifecycle is mirrored into the service logs.
+- `feishu.wsAutoReconnect` controls the Feishu SDK websocket auto-reconnect switch.
+- `feishu.wsLoggerLevel` controls how much of the Feishu SDK websocket lifecycle is mirrored into the service logs. The checked-in default is currently `debug` for easier live troubleshooting, but `warn` is the quieter long-term setting if the host is stable.
+- `feishu.wsAgent.keepAliveMsecs`, `feishu.wsAgent.maxSockets`, and `feishu.wsAgent.maxFreeSockets` control the keep-alive HTTP/HTTPS agent used by the Feishu SDK transport.
+- `feishu.wsConnectWarnAfterMs` is the doctor threshold for “still not ready after startup”.
+- `feishu.wsReconnectWarnThreshold` is the doctor threshold for repeated reconnects after startup.
 - `feishu.reconnectReadyDebounceMs` controls how often the bridge may send a Feishu `Reconnected` ready card after websocket recovery.
+- `/feishu ws` and `/feishu doctor` include reconnect counters so you can tell the difference between an occasional reconnect and a flapping long-connection session.
 - Outbound Feishu replies currently use interactive cards with a schema `2.0` markdown body, card title, chat-list summary, and per-reply header template color.
 - `codex.terminal.flushIdleMs` controls the quiet window before terminal output
   is projected back to Feishu as one reply.

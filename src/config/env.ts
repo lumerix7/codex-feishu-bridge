@@ -27,7 +27,13 @@ export interface AppConfig {
     botOpenId: string;
     startupNotifyChatId?: string;
     connectionMode: "websocket";
+    wsAutoReconnect: boolean;
     wsLoggerLevel: "error" | "warn" | "info" | "debug" | "trace";
+    wsAgentKeepAliveMsecs: number;
+    wsAgentMaxSockets: number;
+    wsAgentMaxFreeSockets: number;
+    wsConnectWarnAfterMs: number;
+    wsReconnectWarnThreshold: number;
     reconnectReadyDebounceMs: number;
     sendRetryMaxAttempts: number;
     sendRetryBaseDelayMs: number;
@@ -67,7 +73,15 @@ interface JsonConfigShape {
     logLevel?: unknown;
   };
   feishu?: {
+    wsAutoReconnect?: unknown;
     wsLoggerLevel?: unknown;
+    wsAgent?: {
+      keepAliveMsecs?: unknown;
+      maxSockets?: unknown;
+      maxFreeSockets?: unknown;
+    };
+    wsConnectWarnAfterMs?: unknown;
+    wsReconnectWarnThreshold?: unknown;
     reconnectReadyDebounceMs?: unknown;
     sendRetry?: {
       maxAttempts?: unknown;
@@ -165,8 +179,49 @@ export function loadConfig(): AppConfig {
       botOpenId: required("FEISHU_BOT_OPEN_ID"),
       startupNotifyChatId: optional("FEISHU_STARTUP_NOTIFY_CHAT_ID", "").trim() || undefined,
       connectionMode: "websocket",
+      wsAutoReconnect: readBooleanSetting(
+        "FEISHU_WS_AUTO_RECONNECT",
+        true,
+        jsonConfig,
+        ["feishu", "wsAutoReconnect"]
+      ),
       wsLoggerLevel: normalizeFeishuLoggerLevel(
-        readTextSetting("FEISHU_WS_LOGGER_LEVEL", "info", jsonConfig, ["feishu", "wsLoggerLevel"])
+        readTextSetting("FEISHU_WS_LOGGER_LEVEL", "debug", jsonConfig, ["feishu", "wsLoggerLevel"])
+      ),
+      wsAgentKeepAliveMsecs: readIntegerSetting(
+        "FEISHU_WS_AGENT_KEEP_ALIVE_MSECS",
+        30000,
+        jsonConfig,
+        ["feishu", "wsAgent", "keepAliveMsecs"],
+        { min: 1 }
+      ),
+      wsAgentMaxSockets: readIntegerSetting(
+        "FEISHU_WS_AGENT_MAX_SOCKETS",
+        100,
+        jsonConfig,
+        ["feishu", "wsAgent", "maxSockets"],
+        { min: 1 }
+      ),
+      wsAgentMaxFreeSockets: readIntegerSetting(
+        "FEISHU_WS_AGENT_MAX_FREE_SOCKETS",
+        20,
+        jsonConfig,
+        ["feishu", "wsAgent", "maxFreeSockets"],
+        { min: 1 }
+      ),
+      wsConnectWarnAfterMs: readIntegerSetting(
+        "FEISHU_WS_CONNECT_WARN_AFTER_MS",
+        30000,
+        jsonConfig,
+        ["feishu", "wsConnectWarnAfterMs"],
+        { min: 0 }
+      ),
+      wsReconnectWarnThreshold: readIntegerSetting(
+        "FEISHU_WS_RECONNECT_WARN_THRESHOLD",
+        3,
+        jsonConfig,
+        ["feishu", "wsReconnectWarnThreshold"],
+        { min: 0 }
       ),
       reconnectReadyDebounceMs: readIntegerSetting(
         "FEISHU_RECONNECT_READY_DEBOUNCE_MS",
@@ -381,10 +436,10 @@ function readBooleanSetting(
   jsonPath: string[]
 ): boolean {
   const envValue = process.env[name];
-  if (envValue) return parseBooleanSetting(name, envValue);
+  if (envValue !== undefined) return parseBooleanSetting(name, envValue);
   const jsonValue = readJsonValue(jsonConfig, jsonPath, [name]);
   if (typeof jsonValue === "boolean") return jsonValue;
-  if (typeof jsonValue === "string" && jsonValue.trim()) {
+  if (typeof jsonValue === "string") {
     return parseBooleanSetting(name, jsonValue);
   }
   return fallback;

@@ -193,7 +193,7 @@ export class App {
         "- `/pwd [-h|--help]`, `/ls [args...]`, `/cat <path...>`, `/tree [args...]`, `/find [args...]`, `/rg [args...]` run local project commands",
         "- `/approvals [...] [-h|--help]` show or change Codex approvals for the active backend",
         "- `/search [on|off] [-h|--help]` show or change live web search for this conversation",
-        "- `/model [name|clear] [-h|--help]` show or change the Codex model for this conversation",
+        "- `/model [--list|name|clear] [-h|--help]` show, list, or change the Codex model for this conversation",
         "- `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation"
       ].join("\n");
     }
@@ -873,6 +873,13 @@ export class App {
     if (command?.name === "model") {
       if (command.args[0] === "-h" || command.args[0] === "--help") {
         return this.modelHelpText();
+      }
+      if (command.args[0] === "--list" || command.args[0] === "list") {
+        const project = binding?.project || this.config.project.defaultProject;
+        const liveModels = this.codex.listModels
+          ? await this.codex.listModels(project, { includeHidden: false, limit: 100 }).catch(() => undefined)
+          : undefined;
+        return this.modelListText(liveModels);
       }
       const current = binding?.model || "(default)";
       if (command.args.length === 0) {
@@ -2407,8 +2414,16 @@ export class App {
       "",
       `- **connected once**: \`${diagnostics.wsConnectedOnce ? "yes" : "no"}\``,
       `- **reconnecting**: \`${diagnostics.wsReconnecting ? "yes" : "no"}\``,
+      `- **reconnect count**: \`${diagnostics.reconnectCount}\``,
+      `- **auto reconnect**: \`${this.config.feishu.wsAutoReconnect ? "yes" : "no"}\``,
       `- **logger level**: \`${this.config.feishu.wsLoggerLevel}\``,
+      `- **agent keepalive ms**: \`${this.config.feishu.wsAgentKeepAliveMsecs}\``,
+      `- **agent max sockets**: \`${this.config.feishu.wsAgentMaxSockets}\``,
+      `- **agent max free sockets**: \`${this.config.feishu.wsAgentMaxFreeSockets}\``,
+      `- **connect warn after ms**: \`${this.config.feishu.wsConnectWarnAfterMs}\``,
+      `- **reconnect warn threshold**: \`${this.config.feishu.wsReconnectWarnThreshold}\``,
       `- **reconnect debounce ms**: \`${this.config.feishu.reconnectReadyDebounceMs}\``,
+      `- **last reconnect started**: ${diagnostics.lastReconnectStartedAt || "(never)"}`,
       `- **last ws ready**: ${diagnostics.lastWsReadyAt || "(unknown)"}`,
       `- **last reconnect ready**: ${diagnostics.lastReconnectReadyAt || "(never)"}`,
       `- **last inbound message**: ${diagnostics.lastInboundMessageAt || "(unknown)"}`,
@@ -2433,11 +2448,26 @@ export class App {
 
   private renderFeishuDoctor(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
     const findings: string[] = [];
+    const startedAtMs = Date.parse(diagnostics.startedAt);
     if (!diagnostics.wsConnectedOnce) {
       findings.push("- websocket has not connected yet");
     }
+    if (
+      !diagnostics.wsConnectedOnce &&
+      Number.isFinite(startedAtMs) &&
+      Date.now() - startedAtMs >= this.config.feishu.wsConnectWarnAfterMs
+    ) {
+      findings.push(
+        `- websocket has not become ready within \`${this.config.feishu.wsConnectWarnAfterMs}\` ms since startup`
+      );
+    }
     if (diagnostics.wsReconnecting) {
       findings.push("- websocket is currently reconnecting");
+    }
+    if (diagnostics.reconnectCount >= this.config.feishu.wsReconnectWarnThreshold) {
+      findings.push(
+        `- websocket has reconnected multiple times since startup: \`${diagnostics.reconnectCount}\` (threshold \`${this.config.feishu.wsReconnectWarnThreshold}\`)`
+      );
     }
     if (diagnostics.outboundFailureCount > 0) {
       findings.push(`- outbound send failures observed: \`${diagnostics.outboundFailureCount}\``);
@@ -2484,7 +2514,7 @@ export class App {
   }
 
   private formatFeishuWsSummary(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
-    return `connected=\`${diagnostics.wsConnectedOnce ? "yes" : "no"}\` reconnecting=\`${diagnostics.wsReconnecting ? "yes" : "no"}\` lastReady=${diagnostics.lastWsReadyAt || "(unknown)"} lastInbound=${diagnostics.lastInboundMessageAt || "(unknown)"}`;
+    return `connected=\`${diagnostics.wsConnectedOnce ? "yes" : "no"}\` reconnecting=\`${diagnostics.wsReconnecting ? "yes" : "no"}\` reconnects=\`${diagnostics.reconnectCount}\` lastReady=${diagnostics.lastWsReadyAt || "(unknown)"} lastInbound=${diagnostics.lastInboundMessageAt || "(unknown)"}`;
   }
 
   private formatFeishuSendSummary(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
@@ -2619,6 +2649,7 @@ export class App {
       "## Usage",
       "",
       "- `/model`",
+      "- `/model --list`",
       "- `/model gpt-5.4`",
       "- `/model clear`",
       "- `/model -h`",
@@ -2627,7 +2658,53 @@ export class App {
       "## Notes",
       "",
       "- `clear`, `default`, and `reset` remove the conversation-level override.",
+      "- `/model --list` shows common model IDs you can try; exact availability depends on your Codex account/backend.",
       "- The configured override is used for future turns."
+    ].join("\n");
+  }
+
+  private modelListText(modelList?: Record<string, unknown>): string {
+    const liveModels = Array.isArray(modelList?.data)
+      ? modelList.data.filter((item): item is Record<string, unknown> => isRecord(item))
+      : [];
+    if (liveModels.length > 0) {
+      return [
+        "# Model List",
+        "",
+        ...liveModels.map((model) => {
+          const id = this.readString(model.model) || this.readString(model.id) || "(unknown)";
+          const displayName = this.readString(model.displayName);
+          const defaultFlag = model.isDefault ? " default" : "";
+          const description = this.readString(model.description);
+          return `- \`${id}\`${displayName && displayName !== id ? ` (${displayName}${defaultFlag})` : defaultFlag ? ` (${defaultFlag.trim()})` : ""}${description ? `: ${description}` : ""}`;
+        }),
+        "",
+        "## Notes",
+        "",
+        "- This list comes from Codex app-server `model/list`.",
+        "- Exact availability still depends on your current account and server-side routing.",
+        "- Use `/model <name>` to set one for future turns in this conversation.",
+        "- Use `/model clear` to remove the override."
+      ].join("\n");
+    }
+
+    return [
+      "# Model List",
+      "",
+      "- `gpt-5.4`",
+      "- `gpt-5.4-mini`",
+      "- `gpt-5.3-codex`",
+      "- `gpt-5.2-codex`",
+      "- `gpt-5.2`",
+      "- `gpt-5.1-codex-max`",
+      "- `gpt-5.1-codex-mini`",
+      "",
+      "## Notes",
+      "",
+      "- This is a bridge-side fallback list because a live app-server model list was unavailable.",
+      "- Exact availability depends on your current Codex account, backend, and server-side routing.",
+      "- Use `/model <name>` to set one for future turns in this conversation.",
+      "- Use `/model clear` to remove the override."
     ].join("\n");
   }
 

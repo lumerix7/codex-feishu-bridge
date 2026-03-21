@@ -56,4 +56,8 @@ export interface CodexBackend {
   ): Promise<Record<string, unknown> | undefined>;
   readAccount?(project: string): Promise<Record<string, unknown> | undefined>;
   readAccountRateLimits?(project: string): Promise<Record<string, unknown> | undefined>;
+  listModels?(
+    project: string,
+    options?: { includeHidden?: boolean; limit?: number }
+  ): Promise<Record<string, unknown> | undefined>;
 }

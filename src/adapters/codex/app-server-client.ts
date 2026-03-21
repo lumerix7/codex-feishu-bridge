@@ -98,6 +98,18 @@ export class AppServerSessionClient {
     return isRecord(result) ? result : undefined;
   }
 
+  async listModels(options?: {
+    includeHidden?: boolean;
+    limit?: number;
+  }): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("model/list", {
+      ...(options?.includeHidden !== undefined ? { includeHidden: options.includeHidden } : {}),
+      ...(options?.limit ? { limit: options.limit } : {})
+    });
+    return isRecord(result) ? result : undefined;
+  }
+
   subscribe(handler: NotificationHandler): void {
     this.notificationHandlers.add(handler);
   }

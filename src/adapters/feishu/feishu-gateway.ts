@@ -24,6 +24,7 @@ const STREAMING_LONG_LINE_STEP = 120;
 export class FeishuGateway {
   private client: Lark.Client;
   private wsClient: Lark.WSClient;
+  private readonly startedAt = Date.now();
   private readonly httpAgent: http.Agent;
   private readonly httpsAgent: https.Agent;
   private readonly recentMessages = new Map<string, number>();
@@ -32,6 +33,8 @@ export class FeishuGateway {
   private reconnecting = false;
   private readyOnce = false;
   private lastReconnectReadyAt = 0;
+  private lastReconnectStartedAt?: string;
+  private reconnectCount = 0;
   private lastWsReadyAt?: string;
   private lastInboundMessageAt?: string;
   private lastInboundMessageId?: string;
@@ -43,15 +46,15 @@ export class FeishuGateway {
   constructor(private readonly config: AppConfig["feishu"]) {
     this.httpAgent = new http.Agent({
       keepAlive: true,
-      keepAliveMsecs: 30_000,
-      maxSockets: 100,
-      maxFreeSockets: 20
+      keepAliveMsecs: this.config.wsAgentKeepAliveMsecs,
+      maxSockets: this.config.wsAgentMaxSockets,
+      maxFreeSockets: this.config.wsAgentMaxFreeSockets
     });
     this.httpsAgent = new https.Agent({
       keepAlive: true,
-      keepAliveMsecs: 30_000,
-      maxSockets: 100,
-      maxFreeSockets: 20
+      keepAliveMsecs: this.config.wsAgentKeepAliveMsecs,
+      maxSockets: this.config.wsAgentMaxSockets,
+      maxFreeSockets: this.config.wsAgentMaxFreeSockets
     });
     Lark.defaultHttpInstance.defaults.timeout = 30_000;
     Lark.defaultHttpInstance.defaults.httpAgent = this.httpAgent;
@@ -126,32 +129,17 @@ export class FeishuGateway {
 
   async send(message: OutgoingMessage): Promise<void> {
     const text = message.text || "";
-    if (message.streaming && text.length <= FEISHU_POST_SOFT_LIMIT) {
-      if (message.streamKey) {
-        const sent = await this.sendOrUpdateStreamingCard(message).catch((error) => {
-          console.warn("Feishu live streaming card send failed; falling back to normal card send", {
-            chatId: message.chatId,
-            title: message.title,
-            streamKey: message.streamKey,
-            error: formatFeishuError(error)
-          });
-          return false;
-        });
-        if (sent) {
-          return;
-        }
-      }
-      const sent = await this.sendStreamingCard(message).catch((error) => {
-        console.warn("Feishu streaming card send failed; falling back to normal card send", {
+    if (message.streaming) {
+      const sent = await this.sendStreamingFirst(message).catch((error) => {
+        console.warn("Feishu streaming-first send failed; falling back to normal card send", {
           chatId: message.chatId,
           title: message.title,
+          streamKey: message.streamKey,
           error: formatFeishuError(error)
         });
         return false;
       });
-      if (sent) {
-        return;
-      }
+      if (sent) return;
     }
     const chunks = splitMessageText(text, FEISHU_POST_SOFT_LIMIT);
     for (const [index, chunk] of chunks.entries()) {
@@ -163,6 +151,40 @@ export class FeishuGateway {
         formatChunkFooter(message.footer, index, chunks.length)
       );
     }
+  }
+
+  private async sendStreamingFirst(message: OutgoingMessage): Promise<boolean> {
+    const text = message.text || "";
+    const chunks = splitMessageText(text, FEISHU_POST_SOFT_LIMIT);
+    if (message.streamKey) {
+      for (const [index, chunk] of chunks.entries()) {
+        const pageMessage: OutgoingMessage = {
+          ...message,
+          text: chunk,
+          footer: formatChunkFooter(message.footer, index, chunks.length),
+          streamKey: `${message.streamKey}:page:${index + 1}`,
+          finalizeStreaming: message.finalizeStreaming
+        };
+        const sent = await this.sendOrUpdateStreamingCard(pageMessage);
+        if (!sent) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    for (const [index, chunk] of chunks.entries()) {
+      const pageMessage: OutgoingMessage = {
+        ...message,
+        text: chunk,
+        footer: formatChunkFooter(message.footer, index, chunks.length)
+      };
+      const sent = await this.sendStreamingCard(pageMessage);
+      if (!sent) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private async sendOrUpdateStreamingCard(message: OutgoingMessage): Promise<boolean> {
@@ -493,6 +515,7 @@ export class FeishuGateway {
       appSecret: this.config.appSecret,
       httpInstance: Lark.defaultHttpInstance,
       agent: this.httpsAgent,
+      autoReconnect: this.config.wsAutoReconnect,
       logger: this.createLarkLogger()
     });
   }
@@ -535,6 +558,8 @@ export class FeishuGateway {
 
     if (detail === "reconnect") {
       this.reconnecting = true;
+      this.reconnectCount += 1;
+      this.lastReconnectStartedAt = new Date().toISOString();
       return;
     }
     if (detail === "ws client ready" || detail === "reconnect success") {
@@ -575,6 +600,9 @@ export class FeishuGateway {
   diagnostics(): {
     wsConnectedOnce: boolean;
     wsReconnecting: boolean;
+    startedAt: string;
+    reconnectCount: number;
+    lastReconnectStartedAt?: string;
     lastWsReadyAt?: string;
     lastReconnectReadyAt?: string;
     lastInboundMessageAt?: string;
@@ -587,6 +615,9 @@ export class FeishuGateway {
     return {
       wsConnectedOnce: this.readyOnce,
       wsReconnecting: this.reconnecting,
+      startedAt: new Date(this.startedAt).toISOString(),
+      reconnectCount: this.reconnectCount,
+      lastReconnectStartedAt: this.lastReconnectStartedAt,
       lastWsReadyAt: this.lastWsReadyAt,
       lastReconnectReadyAt: this.lastReconnectReadyAt
         ? new Date(this.lastReconnectReadyAt).toISOString()

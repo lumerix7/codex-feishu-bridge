@@ -344,6 +344,18 @@ class AppServerCodexBackend implements CodexBackend {
     }
   }
 
+  async listModels(
+    project: string,
+    options?: { includeHidden?: boolean; limit?: number }
+  ): Promise<Record<string, unknown> | undefined> {
+    const client = new AppServerSessionClient(this.config, project);
+    try {
+      return await client.listModels(options);
+    } finally {
+      await client.shutdown().catch(() => undefined);
+    }
+  }
+
   private async getOrCreateClient(
     project: string,
     sessionId: string | undefined,
