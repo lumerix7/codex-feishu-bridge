@@ -57,7 +57,9 @@ Working v1 bridge:
 - `/help` `/status` `/usage` `/thread` `/account` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/log`
 - `/search` `/model` `/profile`
 - `/git` `/pwd` `/ls` `/cat` `/tree` `/find` `/rg`
+- `/new -C <path>` to switch/bind to another project and create a fresh session in one step
 - `/project bind <path>` to rebind a conversation to another directory under the allowed project roots
+- `/project unbind <path>` to remove stored bridge bindings for a specific project path; the current conversation project is rejected
 - `/approvals` to switch the Codex approval mode used for future runs
 - `/usage` to show latest app-server thread token usage and current rate-limit snapshots when available
 - `/thread` to show richer app-server thread metadata for the current bound session

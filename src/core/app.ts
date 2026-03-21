@@ -66,37 +66,56 @@ export class App {
         try {
           let streamed = false;
           let lastUpdateText: string | undefined;
+          let accumulatedStreamText = "";
+          let updateChain = Promise.resolve();
+          const streamKey = `${message.chatId}:${message.threadId || "root"}:${message.messageId}:${command?.name || "codex"}`;
           const sendUpdateSafely = async (update: string): Promise<void> => {
-            try {
-              const latestBinding =
-                (await this.store.get(conversationKeyFor(message))) || currentBinding;
-              await this.feishu?.send({
-                chatId: message.chatId,
-                title: messageTitle,
-                template: messageTemplate,
-                footer: command?.name
-                  ? this.footerForMessage(command?.name, latestBinding)
-                  : this.footerForCodexReply(latestBinding),
-                text: formatForFeishu(update),
-                replyToMessageId: message.messageId,
-                threadId: message.threadId
-              });
-              streamed = true;
-              lastUpdateText = formatForFeishu(update);
-            } catch (error) {
-              console.error("failed to send Feishu update", {
-                messageId: message.messageId,
-                chatId: message.chatId,
-                threadId: message.threadId,
-                textPreview: this.previewText(update),
-                error
-              });
-            }
+            updateChain = updateChain.then(async () => {
+              try {
+                const latestBinding =
+                  (await this.store.get(conversationKeyFor(message))) || currentBinding;
+                const formattedUpdate = formatForFeishu(update);
+                const outgoingText = command?.name
+                  ? formattedUpdate
+                  : this.mergeStreamingText(accumulatedStreamText, formattedUpdate);
+                await this.feishu?.send({
+                  chatId: message.chatId,
+                  title: messageTitle,
+                  template: messageTemplate,
+                  footer: command?.name
+                    ? this.footerForMessage(command?.name, latestBinding)
+                    : this.footerForCodexReply(latestBinding),
+                  text: outgoingText,
+                  replyToMessageId: message.messageId,
+                  threadId: message.threadId,
+                  streaming: true,
+                  ...(command?.name ? {} : { streamKey })
+                });
+                streamed = true;
+                lastUpdateText = outgoingText;
+                if (!command?.name) {
+                  accumulatedStreamText = outgoingText;
+                }
+              } catch (error) {
+                console.error("failed to send Feishu update", {
+                  messageId: message.messageId,
+                  chatId: message.chatId,
+                  threadId: message.threadId,
+                  textPreview: this.previewText(update),
+                  error
+                });
+              }
+            });
+            await updateChain;
           };
 
           const text = await this.handleIncoming(message, sendUpdateSafely);
-          const formattedText = formatForFeishu(text);
-          if ((formattedText && formattedText !== lastUpdateText) || !streamed) {
+          await updateChain;
+          const formattedText = command?.name
+            ? formatForFeishu(text)
+            : accumulatedStreamText || formatForFeishu(text);
+          const shouldFinalizeLiveStream = !command?.name && streamed;
+          if ((formattedText && formattedText !== lastUpdateText) || !streamed || shouldFinalizeLiveStream) {
             const latestBinding =
               (await this.store.get(conversationKeyFor(message))) || currentBinding;
             const finalFooter = command?.name
@@ -109,7 +128,9 @@ export class App {
               footer: finalFooter,
               text: formattedText,
               replyToMessageId: message.messageId,
-              threadId: message.threadId
+              threadId: message.threadId,
+              streaming: true,
+              ...(command?.name ? {} : { streamKey, finalizeStreaming: true })
             });
           }
           console.log("bridge handled message", {
@@ -156,23 +177,23 @@ export class App {
       return [
         "# Bridge Help",
         "",
-        "- `/help` show commands",
-        "- `/status` show current session and run state",
-        "- `/usage` show latest thread token usage and account rate limits when available",
-        "- `/thread [--turns]` show app-server thread metadata for the current bound session",
-        "- `/account` show app-server account and auth details when available",
-        "- `/new` create and bind a fresh Codex session",
+        "- `/help [-h|--help]` show commands",
+        "- `/status [-h|--help]` show current session and run state",
+        "- `/usage [-h|--help]` show latest thread token usage and account rate limits when available",
+        "- `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session",
+        "- `/account [-h|--help]` show app-server account and auth details when available",
+        "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
         "- `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help",
         "- `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project",
-        "- `/stop` stop the current active run",
-        "- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|-h]` show, list, or bind projects",
-        "- `/git [args...]` run `git` in the current bound project; use `/git -h` for bridge usage",
+        "- `/stop [-h|--help]` stop the current active run",
+        "- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects",
+        "- `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage",
         "- `/log [-n N] [--since <expr>] [--grep <text>] [-h|--help]` show recent bridge service logs from systemd journal",
-        "- `/pwd`, `/ls [args...]`, `/cat <path...>`, `/tree [args...]`, `/find [args...]`, `/rg [args...]` run local project commands",
-        "- `/approvals [...]` show or change Codex approvals for the active backend",
-        "- `/search [on|off]` show or change live web search for this conversation",
-        "- `/model [name|clear]` show or change the Codex model for this conversation",
-        "- `/profile [name|clear]` show or change the Codex profile for this conversation"
+        "- `/pwd [-h|--help]`, `/ls [args...]`, `/cat <path...>`, `/tree [args...]`, `/find [args...]`, `/rg [args...]` run local project commands",
+        "- `/approvals [...] [-h|--help]` show or change Codex approvals for the active backend",
+        "- `/search [on|off] [-h|--help]` show or change live web search for this conversation",
+        "- `/model [name|clear] [-h|--help]` show or change the Codex model for this conversation",
+        "- `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation"
       ].join("\n");
     }
 
@@ -187,6 +208,9 @@ export class App {
     };
 
     if (command?.name === "status") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.statusHelpText();
+      }
       const project = existing?.project || this.config.project.defaultProject;
       const sessionId = existing?.codexSessionId || "(none)";
       const session =
@@ -245,6 +269,9 @@ export class App {
     }
 
     if (command?.name === "usage") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.usageHelpText();
+      }
       const project = existing?.project || this.config.project.defaultProject;
       const sessionId = existing?.codexSessionId;
       const usage = sessionId ? this.latestTokenUsage.get(sessionId) : undefined;
@@ -263,7 +290,7 @@ export class App {
 
     if (command?.name === "thread") {
       if (command.args[0] === "-h" || command.args[0] === "--help") {
-        return "# Thread\n\n- **usage**: `/thread [--turns]`";
+        return this.threadHelpText();
       }
       const project = existing?.project || this.config.project.defaultProject;
       const sessionId = existing?.codexSessionId;
@@ -319,7 +346,7 @@ export class App {
     if (command?.name === "account") {
       const project = existing?.project || this.config.project.defaultProject;
       if (command.args[0] === "-h" || command.args[0] === "--help") {
-        return "# Account\n\n- **usage**: `/account`";
+        return this.accountHelpText();
       }
       const accountInfo =
         this.codex.readAccount
@@ -547,10 +574,26 @@ export class App {
 
     const binding = existing;
     if (command?.name === "new") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.newHelpText();
+      }
       if (activeRun) {
         return `Cannot create a new session while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
       }
-      const project = binding?.project || this.config.project.defaultProject;
+      const newArgs = [...command.args];
+      const cdIndex = newArgs.findIndex((arg) => arg === "-C" || arg === "--cd");
+      let project = binding?.project || this.config.project.defaultProject;
+      if (cdIndex >= 0) {
+        const requestedProject = newArgs[cdIndex + 1];
+        if (!requestedProject) {
+          return "Usage: `/new [-C|--cd <dir>]`";
+        }
+        project = await this.resolveProject(requestedProject, project);
+        newArgs.splice(cdIndex, 2);
+      }
+      if (newArgs.length > 0) {
+        return "Usage: `/new [-C|--cd <dir>]`";
+      }
       await sendEarlyUpdate(`creating a new Codex session for project \`${project}\`...`);
       const sessionId = await this.codex.createSession(project, this.resolveTurnOptions(binding));
       const nextBinding = this.makeBinding(key, sessionId, project, binding);
@@ -567,6 +610,9 @@ export class App {
     }
 
     if (command?.name === "stop") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.stopHelpText();
+      }
       if (!activeRun) {
         return "No active run for this conversation.";
       }
@@ -606,6 +652,33 @@ export class App {
           return "# Projects\n\n- No projects found.";
         }
         return this.renderProjectList("Projects", projects, currentProject);
+      }
+
+      if (command.args[0] === "unbind") {
+        if (activeRun) {
+          return `Cannot change project while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
+        }
+        const requested = command.args.slice(1).join(" ").trim();
+        if (!requested) {
+          return "Usage: `/project unbind <path>`";
+        }
+        const project = await this.resolveProject(requested, currentProject);
+        if (project === currentProject) {
+          return [
+            "# Project",
+            "",
+            `- **error**: refusing to unbind the current conversation project \`${project}\``,
+            "- Bind this conversation to another project first if you want to remove stored bindings for this project."
+          ].join("\n");
+        }
+        await sendEarlyUpdate(`removing stored bindings for project \`${project}\`...`);
+        const removed = await this.store.deleteProject(project);
+        return [
+          "# Project",
+          "",
+          `- **project**: \`${project}\``,
+          `- **removed bindings**: \`${removed}\``
+        ].join("\n");
       }
 
       if (command.args[0] !== "bind") {
@@ -696,7 +769,7 @@ export class App {
     ) {
       const localCommandName = command.name;
       const project = binding?.project || this.config.project.defaultProject;
-      if (localCommandName !== "pwd" && (command.args[0] === "-h" || command.args[0] === "--help")) {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
         return this.localCommandHelpText(localCommandName);
       }
       await sendEarlyUpdate(`running ${localCommandName} in project \`${project}\`...`);
@@ -739,6 +812,9 @@ export class App {
     }
 
     if (command?.name === "search") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.searchHelpText();
+      }
       const enabled = binding?.searchEnabled ?? this.config.project.defaultSearchEnabled;
       if (command.args.length === 0) {
         return `# Search\n\n- **mode**: \`${enabled ? "on" : "off"}\``;
@@ -764,6 +840,9 @@ export class App {
     }
 
     if (command?.name === "model") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.modelHelpText();
+      }
       const current = binding?.model || "(default)";
       if (command.args.length === 0) {
         return `# Model\n\n- **model**: \`${current}\``;
@@ -794,6 +873,9 @@ export class App {
     }
 
     if (command?.name === "profile") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.profileHelpText();
+      }
       const current = binding?.profile || "(default)";
       if (command.args.length === 0) {
         return `# Profile\n\n- **profile**: \`${current}\``;
@@ -1015,6 +1097,28 @@ export class App {
       return "";
     }
     return normalized.slice(firstNewline + 1).replace(/^\n+/, "");
+  }
+
+  private mergeStreamingText(existing: string, next: string): string {
+    const normalizedExisting = existing.trim();
+    const normalizedNext = next.trim();
+    if (!normalizedNext) {
+      return normalizedExisting;
+    }
+    if (!normalizedExisting) {
+      return normalizedNext;
+    }
+    if (
+      normalizedExisting === normalizedNext ||
+      normalizedExisting.endsWith(`\n\n${normalizedNext}`) ||
+      normalizedExisting.endsWith(normalizedNext)
+    ) {
+      return normalizedExisting;
+    }
+    if (normalizedNext.startsWith(normalizedExisting)) {
+      return normalizedNext;
+    }
+    return `${normalizedExisting}\n\n${normalizedNext}`;
   }
 
   private footerForMessage(commandName: string | undefined, binding?: SessionBinding): string | undefined {
@@ -1921,7 +2025,9 @@ export class App {
       "- `/project bind <path>`",
       "- `/project bind -m <path>`",
       "- `/project bind -n 3`",
+      "- `/project unbind <path>`",
       "- `/project -h`",
+      "- `/project --help`",
       "",
       "## Notes",
       "",
@@ -1929,6 +2035,8 @@ export class App {
       "- `/project list --all` includes trusted Codex projects that are not currently bound in the bridge store.",
       "- `/project list --trusted` shows trusted Codex projects from `config.toml` under the allowed roots.",
       "- `/project bind -n <index>` uses the current `/project list` ordering.",
+      "- `/project unbind <path>` removes stored bridge bindings for that project path.",
+      "- The bridge rejects unbinding the current conversation project; switch this conversation elsewhere first.",
       `- **allowed roots**: ${this.config.project.allowedRoots.map((root) => `\`${root}\``).join(", ")}`,
       "- Missing projects are rejected unless you use `-m` or `--mkdir`."
     ].join("\n");
@@ -1952,6 +2060,7 @@ export class App {
       "- `/git commit -m message`",
       "- `/git push`",
       "- `/git -h`",
+      "- `/git --help`",
       "",
       "## Notes",
       "",
@@ -1963,7 +2072,7 @@ export class App {
 
   private localCommandHelpText(name: "pwd" | "ls" | "cat" | "tree" | "find" | "rg"): string {
     const examples: Record<typeof name, string[]> = {
-      pwd: ["- `/pwd`"],
+      pwd: ["- `/pwd`", "- `/pwd -h`", "- `/pwd --help`"],
       ls: ["- `/ls`", "- `/ls -la`", "- `/ls src`"],
       cat: ["- `/cat README.md`", "- `/cat src/core/app.ts`"],
       tree: ["- `/tree`", "- `/tree -L 2`", "- `/tree src`"],
@@ -2003,6 +2112,7 @@ export class App {
       "- `/resume --all --project /path/to/project`",
       "- `/resume --last -C subdir`",
       "- `/resume -h`",
+      "- `/resume --help`",
       "- `/resume --all`",
       "",
       "## Notes",
@@ -2036,6 +2146,7 @@ export class App {
       "- `/session list --project /path/to/project`",
       "- `/session list --all --project /path/to/project`",
       "- `/session -h`",
+      "- `/session --help`",
       "",
       "## Notes",
       "",
@@ -2184,6 +2295,7 @@ export class App {
       "- `/log --since 30m`",
       "- `/log --since today --grep reconnect`",
       "- `/log -h`",
+      "- `/log --help`",
       "",
       "## Notes",
       "",
@@ -2191,6 +2303,186 @@ export class App {
       "- `-n` accepts values from `1` to `2000`.",
       "- `--since` accepts multi-word values like `30 minutes ago`, plus compact forms like `30m`, `2h`, and `1d`.",
       "- `--grep` filters the fetched journal output case-insensitively."
+    ].join("\n");
+  }
+
+  private statusHelpText(): string {
+    return [
+      "# Status",
+      "",
+      "Show current bridge conversation state, bound session, project, and live run details.",
+      "",
+      "## Usage",
+      "",
+      "- `/status`",
+      "- `/status -h`",
+      "- `/status --help`",
+      "",
+      "## Notes",
+      "",
+      "- Includes bound session, project, search/model/profile, and current run state.",
+      "- In `app-server`, includes thread metadata, token usage, latest reroute, and plan when available."
+    ].join("\n");
+  }
+
+  private usageHelpText(): string {
+    return [
+      "# Usage",
+      "",
+      "Show latest app-server token usage and account rate-limit snapshots for the current bound project.",
+      "",
+      "## Usage",
+      "",
+      "- `/usage`",
+      "- `/usage -h`",
+      "- `/usage --help`",
+      "",
+      "## Notes",
+      "",
+      "- Uses the current bound session when available.",
+      "- In non-`app-server` backends, some fields may be unavailable."
+    ].join("\n");
+  }
+
+  private threadHelpText(): string {
+    return [
+      "# Thread",
+      "",
+      "Show app-server thread metadata for the current bound session.",
+      "",
+      "## Usage",
+      "",
+      "- `/thread`",
+      "- `/thread --turns`",
+      "- `/thread -h`",
+      "- `/thread --help`",
+      "",
+      "## Notes",
+      "",
+      "- `--turns` fetches turn details and prints a compact turn summary.",
+      "- Requires a currently bound session and `app-server` support."
+    ].join("\n");
+  }
+
+  private accountHelpText(): string {
+    return [
+      "# Account",
+      "",
+      "Show app-server account, auth, plan, and rate-limit details when available.",
+      "",
+      "## Usage",
+      "",
+      "- `/account`",
+      "- `/account -h`",
+      "- `/account --help`",
+      "",
+      "## Notes",
+      "",
+      "- Includes account type, auth mode, plan, email when available, and rate limits.",
+      "- In non-`app-server` backends, some fields may be unavailable."
+    ].join("\n");
+  }
+
+  private newHelpText(): string {
+    return [
+      "# New",
+      "",
+      "Create and bind a fresh Codex session for the current bound project.",
+      "",
+      "## Usage",
+      "",
+      "- `/new`",
+      "- `/new -C /path/to/project`",
+      "- `/new -h`",
+      "- `/new --help`",
+      "",
+      "## Notes",
+      "",
+      "- Uses the current bound project from `/project` unless you pass `-C` or `--cd`.",
+      "- `-C, --cd <dir>` switches the conversation project before creating the new session.",
+      "- Carries the current conversation search/model/profile settings into the new session."
+    ].join("\n");
+  }
+
+  private stopHelpText(): string {
+    return [
+      "# Stop",
+      "",
+      "Stop the active Codex run for this conversation.",
+      "",
+      "## Usage",
+      "",
+      "- `/stop`",
+      "- `/stop -h`",
+      "- `/stop --help`",
+      "",
+      "## Notes",
+      "",
+      "- Cancels any pending approval for the active run.",
+      "- Does not unbind the current session."
+    ].join("\n");
+  }
+
+  private searchHelpText(): string {
+    return [
+      "# Search",
+      "",
+      "Show or change live web search for future turns in this conversation.",
+      "",
+      "## Usage",
+      "",
+      "- `/search`",
+      "- `/search on`",
+      "- `/search off`",
+      "- `/search -h`",
+      "- `/search --help`",
+      "",
+      "## Notes",
+      "",
+      "- This setting is stored in the bridge binding for the current conversation.",
+      "- New and resumed turns use the latest saved setting."
+    ].join("\n");
+  }
+
+  private modelHelpText(): string {
+    return [
+      "# Model",
+      "",
+      "Show or change the Codex model override for this conversation.",
+      "",
+      "## Usage",
+      "",
+      "- `/model`",
+      "- `/model gpt-5.4`",
+      "- `/model clear`",
+      "- `/model -h`",
+      "- `/model --help`",
+      "",
+      "## Notes",
+      "",
+      "- `clear`, `default`, and `reset` remove the conversation-level override.",
+      "- The configured override is used for future turns."
+    ].join("\n");
+  }
+
+  private profileHelpText(): string {
+    return [
+      "# Profile",
+      "",
+      "Show or change the Codex profile override for this conversation.",
+      "",
+      "## Usage",
+      "",
+      "- `/profile`",
+      "- `/profile personal`",
+      "- `/profile clear`",
+      "- `/profile -h`",
+      "- `/profile --help`",
+      "",
+      "## Notes",
+      "",
+      "- `clear`, `default`, and `reset` remove the conversation-level override.",
+      "- The configured override is used for future turns."
     ].join("\n");
   }
 

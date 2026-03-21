@@ -38,4 +38,7 @@ export interface OutgoingMessage {
   footer?: string;
   replyToMessageId?: string;
   threadId?: string;
+  streaming?: boolean;
+  streamKey?: string;
+  finalizeStreaming?: boolean;
 }

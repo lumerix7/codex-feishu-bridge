@@ -39,6 +39,17 @@ export class BindingStore {
     return data.bindings;
   }
 
+  async deleteProject(project: string): Promise<number> {
+    const data = await this.read();
+    const before = data.bindings.length;
+    data.bindings = data.bindings.filter((item) => item.project !== project);
+    const removed = before - data.bindings.length;
+    if (removed > 0) {
+      await this.write(data);
+    }
+    return removed;
+  }
+
   private async read(): Promise<StoreShape> {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");

@@ -12,11 +12,18 @@ type LarkLogger = {
   trace: (...msg: unknown[]) => void;
 };
 const FEISHU_POST_SOFT_LIMIT = 3500;
+const STREAMING_MARKDOWN_ELEMENT_ID = "markdown_stream";
+const STREAMING_RAW_MARKDOWN_ELEMENT_ID = "markdown_raw";
+const STREAMING_FOOTER_ELEMENT_ID = "footer_meta";
+const STREAMING_LINE_DELAY_MS = 40;
+const STREAMING_MAX_LINE_UPDATES = 64;
+const STREAMING_LONG_LINE_STEP = 120;
 
 export class FeishuGateway {
   private client: Lark.Client;
   private wsClient: Lark.WSClient;
   private readonly recentMessages = new Map<string, number>();
+  private readonly activeStreamingCards = new Map<string, ActiveStreamingCard>();
   private cleanupTimer?: NodeJS.Timeout;
   private reconnecting = false;
   private readyOnce = false;
@@ -90,6 +97,33 @@ export class FeishuGateway {
 
   async send(message: OutgoingMessage): Promise<void> {
     const text = message.text || "";
+    if (message.streaming && text.length <= FEISHU_POST_SOFT_LIMIT) {
+      if (message.streamKey) {
+        const sent = await this.sendOrUpdateStreamingCard(message).catch((error) => {
+          console.warn("Feishu live streaming card send failed; falling back to normal card send", {
+            chatId: message.chatId,
+            title: message.title,
+            streamKey: message.streamKey,
+            error: formatFeishuError(error)
+          });
+          return false;
+        });
+        if (sent) {
+          return;
+        }
+      }
+      const sent = await this.sendStreamingCard(message).catch((error) => {
+        console.warn("Feishu streaming card send failed; falling back to normal card send", {
+          chatId: message.chatId,
+          title: message.title,
+          error: formatFeishuError(error)
+        });
+        return false;
+      });
+      if (sent) {
+        return;
+      }
+    }
     const chunks = splitMessageText(text, FEISHU_POST_SOFT_LIMIT);
     for (const [index, chunk] of chunks.entries()) {
       await this.sendChunkWithRetry(
@@ -100,6 +134,180 @@ export class FeishuGateway {
         formatChunkFooter(message.footer, index, chunks.length)
       );
     }
+  }
+
+  private async sendOrUpdateStreamingCard(message: OutgoingMessage): Promise<boolean> {
+    const streamKey = message.streamKey;
+    if (!streamKey) return false;
+
+    let active = this.activeStreamingCards.get(streamKey);
+    if (!active) {
+      active = await this.createStreamingCard(message);
+      this.activeStreamingCards.set(streamKey, active);
+    }
+
+    const rendered = (message.text || "").trim();
+    if (rendered && rendered !== active.lastText) {
+      await this.client.cardkit.v1.cardElement.content({
+        path: {
+          card_id: active.cardId,
+          element_id: STREAMING_MARKDOWN_ELEMENT_ID
+        },
+        data: {
+          content: rendered,
+          sequence: active.sequence
+        }
+      });
+      active.sequence += 1;
+      active.lastText = rendered;
+    }
+
+    if (message.finalizeStreaming) {
+      await this.client.cardkit.v1.cardElement.update({
+        path: {
+          card_id: active.cardId,
+          element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
+        },
+        data: {
+          element: JSON.stringify({
+            tag: "markdown",
+            content: wrapRawMarkdown(rendered),
+            element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
+          }),
+          sequence: active.sequence
+        }
+      });
+      active.sequence += 1;
+      await this.client.cardkit.v1.card.settings({
+        path: {
+          card_id: active.cardId
+        },
+        data: {
+          settings: JSON.stringify({
+            config: {
+              streaming_mode: false
+            }
+          }),
+          sequence: active.sequence
+        }
+      });
+      this.activeStreamingCards.delete(streamKey);
+    }
+
+    console.log("Feishu outbound live streaming card updated", {
+      chatId: message.chatId,
+      cardId: active.cardId,
+      streamKey,
+      final: Boolean(message.finalizeStreaming),
+      textPreview: previewText(rendered)
+    });
+    return true;
+  }
+
+  private async sendStreamingCard(message: OutgoingMessage): Promise<boolean> {
+    const rendered = (message.text || "").trim();
+    const active = await this.createStreamingCard(message);
+    const lineFrames = buildStreamingLineFrames(rendered, STREAMING_MAX_LINE_UPDATES);
+    for (const frame of lineFrames) {
+      await this.client.cardkit.v1.cardElement.content({
+        path: {
+          card_id: active.cardId,
+          element_id: STREAMING_MARKDOWN_ELEMENT_ID
+        },
+        data: {
+          content: frame,
+          sequence: active.sequence
+        }
+      });
+      active.sequence += 1;
+      if (lineFrames.length > 1) {
+        await sleep(STREAMING_LINE_DELAY_MS);
+      }
+    }
+
+    await this.client.cardkit.v1.cardElement.update({
+      path: {
+        card_id: active.cardId,
+        element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
+      },
+      data: {
+        element: JSON.stringify({
+          tag: "markdown",
+          content: wrapRawMarkdown(rendered),
+          element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
+        }),
+        sequence: active.sequence
+      }
+    });
+    active.sequence += 1;
+
+    await this.client.cardkit.v1.card.settings({
+      path: {
+        card_id: active.cardId
+      },
+      data: {
+        settings: JSON.stringify({
+          config: {
+            streaming_mode: false
+          }
+        }),
+        sequence: active.sequence
+      }
+    });
+
+    console.log("Feishu outbound streaming card sent", {
+      chatId: message.chatId,
+      cardId: active.cardId,
+      textPreview: previewText(rendered)
+    });
+    return true;
+  }
+
+  private async createStreamingCard(message: OutgoingMessage): Promise<ActiveStreamingCard> {
+    const rendered = (message.text || "").trim();
+    const footer = message.footer || buildCardMetaMarkdown(message.title);
+    const summary = buildCardSummary(message.title, rendered);
+    const card = await this.client.cardkit.v1.card.create({
+      data: {
+        type: "card_json",
+        data: JSON.stringify(
+          buildStreamingCard(
+            "",
+            message.title,
+            message.template,
+            footer,
+            summary
+          )
+        )
+      }
+    });
+    const cardId = String(card.data?.card_id || "").trim();
+    if (!cardId) {
+      throw new Error("Feishu CardKit create returned no card_id");
+    }
+
+    await this.client.im.v1.message.create({
+      params: {
+        receive_id_type: "chat_id"
+      },
+      data: {
+        receive_id: message.chatId,
+        msg_type: "interactive",
+        content: JSON.stringify({
+          type: "card",
+          data: {
+            card_id: cardId
+          }
+        })
+      }
+    });
+
+    return {
+      cardId,
+      sequence: 1,
+      lastText: "",
+      chatId: message.chatId
+    };
   }
 
   async sendStartupReady(text: string, footer?: string): Promise<void> {
@@ -273,6 +481,13 @@ export class FeishuGateway {
     } as const;
     return rank[level] <= rank[this.config.wsLoggerLevel];
   }
+}
+
+interface ActiveStreamingCard {
+  cardId: string;
+  sequence: number;
+  lastText: string;
+  chatId: string;
 }
 
 function normalizeIncoming(data: any): IncomingMessage | undefined {
@@ -452,6 +667,114 @@ function buildInteractiveCardContent(
       ]
     }
   });
+}
+
+function buildStreamingCard(
+  text: string,
+  title?: string,
+  template: OutgoingMessage["template"] = "blue",
+  footer?: string,
+  summary?: string
+): Record<string, unknown> {
+  return {
+    schema: "2.0",
+    config: {
+      streaming_mode: true,
+      summary: {
+        content: summary || buildCardSummary(title, text)
+      },
+      streaming_config: {
+        print_frequency_ms: {
+          default: 70,
+          android: 70,
+          ios: 70,
+          pc: 70
+        },
+        print_step: {
+          default: 1,
+          android: 1,
+          ios: 1,
+          pc: 1
+        },
+        print_strategy: "fast"
+      },
+      wide_screen_mode: true,
+      width_mode: "fill",
+      enable_forward: true,
+      update_multi: true
+    },
+    header: {
+      template,
+      title: {
+        tag: "plain_text",
+        content: title?.trim() || "Codex"
+      }
+    },
+    body: {
+      direction: "vertical",
+      padding: "12px 8px 12px 8px",
+      vertical_spacing: "8px",
+      elements: [
+        {
+          tag: "markdown",
+          content: text,
+          element_id: STREAMING_MARKDOWN_ELEMENT_ID
+        },
+        {
+          tag: "markdown",
+          content: "",
+          element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
+        },
+        {
+          tag: "markdown",
+          content: footer || buildCardMetaMarkdown(title),
+          element_id: STREAMING_FOOTER_ELEMENT_ID
+        }
+      ]
+    }
+  };
+}
+
+function buildStreamingLineFrames(text: string, maxFrames: number): string[] {
+  if (!text) return [""];
+  const frames: string[] = [];
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  let current = "";
+
+  const pushFrame = (value: string): void => {
+    if (!value || frames[frames.length - 1] === value) return;
+    frames.push(value);
+  };
+
+  for (const line of lines) {
+    const prefix = current ? `${current}\n` : "";
+    if (line.length <= STREAMING_LONG_LINE_STEP) {
+      current = `${prefix}${line}`;
+      pushFrame(current);
+      continue;
+    }
+
+    for (let index = STREAMING_LONG_LINE_STEP; index < line.length; index += STREAMING_LONG_LINE_STEP) {
+      pushFrame(`${prefix}${line.slice(0, index)}`);
+    }
+    current = `${prefix}${line}`;
+    pushFrame(current);
+  }
+
+  if (frames.length <= maxFrames) {
+    return frames.length > 0 ? frames : [text];
+  }
+
+  const reduced: string[] = [];
+  const step = Math.max(1, Math.ceil(frames.length / maxFrames));
+  for (let index = step; index < frames.length; index += step) {
+    reduced.push(frames[index - 1]);
+  }
+  const full = frames[frames.length - 1] || text;
+  if (reduced[reduced.length - 1] !== full) {
+    reduced.push(full);
+  }
+  return reduced;
 }
 
 function buildCardSummary(title: string | undefined, rendered: string): string {
