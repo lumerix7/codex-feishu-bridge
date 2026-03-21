@@ -178,7 +178,7 @@ export class App {
         "# Bridge Help",
         "",
         "- `/help [-h|--help]` show commands",
-        "- `/status [-h|--help]` show current session and run state",
+        "- `/status [check-update] [-h|--help]` show current session and run state",
         "- `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session",
         "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
         "- `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help",
@@ -210,14 +210,45 @@ export class App {
       if (command.args[0] === "-h" || command.args[0] === "--help") {
         return this.statusHelpText();
       }
+      const checkUpdates = this.statusRequestsUpdateCheck(command.args);
+      await sendEarlyUpdate(
+        checkUpdates
+          ? "collecting status and checking npm registry for Codex and Feishu SDK updates..."
+          : "collecting current Codex, bridge, and Feishu status..."
+      );
       const project = existing?.project || this.config.project.defaultProject;
+      const runtimeMeta = await getCodexRuntimeMeta(this.config.codex.home);
+      const feishuSdkVersion = await this.readInstalledPackageVersion("@larksuiteoapi/node-sdk");
+      const feishuSdkRange = await this.readDeclaredPackageRange("@larksuiteoapi/node-sdk");
+      if (checkUpdates) {
+        const updateStatus = await this.readStatusUpdates(runtimeMeta.version, feishuSdkVersion, feishuSdkRange);
+        return [
+          "# Bridge Status",
+          "",
+          "## Codex",
+          "",
+          `- **status**: ${this.formatUpdateStatusBadge(updateStatus.codex.status)}`,
+          `- **package**: \`${updateStatus.codex.packageName}\``,
+          `- **current**: \`${updateStatus.codex.current || "(unknown)"}\``,
+          `- **latest**: \`${updateStatus.codex.latest || "(unavailable)"}\``,
+          `- **note**: ${updateStatus.codex.detail}`,
+          "",
+          "## Feishu",
+          "",
+          `- **status**: ${this.formatUpdateStatusBadge(updateStatus.feishu.status)}`,
+          `- **package**: \`${updateStatus.feishu.packageName}\``,
+          ...(updateStatus.feishu.declared ? [`- **declared**: \`${updateStatus.feishu.declared}\``] : []),
+          `- **installed**: \`${updateStatus.feishu.current || "(unknown)"}\``,
+          `- **latest**: \`${updateStatus.feishu.latest || "(unavailable)"}\``,
+          `- **note**: ${updateStatus.feishu.detail}`
+        ].join("\n");
+      }
       const sessionId = existing?.codexSessionId || "(none)";
       const session =
         existing?.codexSessionId
           ? await getSessionSummary(this.config.codex.sessionsDir, existing.codexSessionId)
           : undefined;
       const trustedProjects = await this.listTrustedProjects();
-      const runtimeMeta = await getCodexRuntimeMeta(this.config.codex.home);
       const accountInfo =
         this.codex.readAccount
           ? await this.codex.readAccount(project).catch(() => undefined)
@@ -250,6 +281,7 @@ export class App {
       const planType =
         this.readString(account.planType) || this.readString(accountUpdate.planType) || "(unknown)";
       const accountSummary = this.formatAccountSummary(account, planType);
+      const feishuDiagnostics = this.feishu?.diagnostics();
       return [
         "# Bridge Status",
         "",
@@ -274,8 +306,7 @@ export class App {
         `- **search**: \`${existing?.searchEnabled ? "on" : "off"}\``,
         `- **profile**: \`${existing?.profile || "(default)"}\``,
         `- **run**: \`${activeRun ? `${activeRun.status}:${activeRun.runId}` : "idle"}\``,
-        ...(this.feishu ? [`- **feishu**: ${this.formatFeishuStatusSummary(this.feishu.diagnostics())}`] : []),
-        `- **session time**: ${session?.createdAt || "(unknown)"}`,
+        `- **session time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
         `- **session cwd**: \`${session?.cwd || "(unknown)"}\``,
         `- **session about**: ${session?.preview || "(no preview)"}`,
         ...(thread
@@ -290,7 +321,14 @@ export class App {
           : []),
         ...(plan?.plan.length
           ? [`- **plan**: ${plan.plan.map((step) => `${this.readString(step.status) || "pending"}:${this.readString(step.step) || "(step)"}`).join(" | ")}`]
-          : [])
+          : []),
+        "",
+        "## Feishu",
+        "",
+        `- **sdk**: \`${feishuSdkVersion || "(unknown)"}\``,
+        ...(feishuDiagnostics ? [`- **status**: ${this.formatFeishuDoctorVerdict(feishuDiagnostics)}`] : []),
+        ...(feishuDiagnostics ? [`- **ws**: ${this.formatFeishuWsSummary(feishuDiagnostics)}`] : []),
+        ...(feishuDiagnostics ? [`- **send**: ${this.formatFeishuSendSummary(feishuDiagnostics)}`] : [])
       ].join("\n");
     }
 
@@ -517,7 +555,7 @@ export class App {
         ...(resumeIndex ? [`- **index**: \`${resumeIndex}\``] : []),
         `- **session**: \`${binding.codexSessionId}\``,
         `- **project**: \`${binding.project}\``,
-        `- **time**: ${session?.createdAt || "(unknown)"}`,
+        `- **time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
         `- **cwd**: \`${session?.cwd || "(unknown)"}\``,
         `- **about**: ${session?.preview || "(no preview)"}`,
         ...(resumeWarning ? [`- **warning**: ${resumeWarning}`] : [])
@@ -567,7 +605,7 @@ export class App {
         "",
         `- **session**: \`${existing.codexSessionId}\``,
         `- **project**: \`${existing.project || this.config.project.defaultProject}\``,
-        `- **time**: ${session?.createdAt || "(unknown)"}`,
+        `- **time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
         `- **cwd**: \`${session?.cwd || "(unknown)"}\``,
         `- **about**: ${session?.preview || "(no preview)"}`
       ].join("\n");
@@ -1603,11 +1641,7 @@ export class App {
       return undefined;
     }
     const date = new Date(numeric * 1000);
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const month = date.toLocaleString("en-US", { month: "short" });
-    return `resets ${hours}:${minutes} on ${day} ${month}`;
+    return `resets ${this.formatLocalIsoTimestamp(date)}`;
   }
 
   private formatSandboxLabel(value: AppConfig["codex"]["sandboxMode"]): string {
@@ -1677,8 +1711,20 @@ export class App {
     if (!Number.isFinite(numeric) || numeric <= 0) {
       return "(unknown)";
     }
-    return new Date(numeric * 1000).toISOString();
+    return this.formatLocalIsoTimestamp(new Date(numeric * 1000));
   }
+
+  private formatAnyTimestamp(value: unknown, fallback = "(unknown)"): string {
+    if (typeof value !== "string" || !value.trim()) {
+      return fallback;
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+    return this.formatLocalIsoTimestamp(parsed);
+  }
+
 
   private buildPendingApproval(
     request: CodexServerRequest,
@@ -2350,7 +2396,7 @@ export class App {
         `${index + 1}. \`${session.sessionId}\`${flags.length ? ` (${flags.join(", ")})` : ""}`
       );
       lines.push(`   - project: \`${escapeMarkdownCell(session.cwd || "(unknown)")}\``);
-      lines.push(`   - time: ${escapeMarkdownCell(session.createdAt || "(unknown)")}`);
+      lines.push(`   - time: ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))}`);
       lines.push(`   - about: ${escapeMarkdownCell(session.preview || "(no preview)")}`);
     }
     return lines.join("\n");
@@ -2471,14 +2517,22 @@ export class App {
       "## Usage",
       "",
       "- `/status`",
+      "- `/status check-update`",
       "- `/status -h`",
       "- `/status --help`",
       "",
       "## Notes",
       "",
-      "- Includes bound session, project, search/model/profile, current run state, and a compact Feishu transport summary.",
+      "- Includes native-style Codex status, bridge state, and a separate Feishu diagnostics section.",
+      "- Sends a short progress update first because `/status` may read local metadata and app-server state.",
       "- In `app-server`, includes thread metadata, token usage, latest reroute, and plan when available."
+      ,
+      "- `/status check-update` is a lightweight update-only view for Codex and Feishu package versions."
     ].join("\n");
+  }
+
+  private statusRequestsUpdateCheck(args: string[]): boolean {
+    return args.includes("check-update") || args.includes("--check-update") || args.includes("update");
   }
 
   private renderFeishuSummary(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
@@ -2512,10 +2566,10 @@ export class App {
       `- **connect warn after ms**: \`${this.config.feishu.wsConnectWarnAfterMs}\``,
       `- **reconnect warn threshold**: \`${this.config.feishu.wsReconnectWarnThreshold}\``,
       `- **reconnect debounce ms**: \`${this.config.feishu.reconnectReadyDebounceMs}\``,
-      `- **last reconnect started**: ${diagnostics.lastReconnectStartedAt || "(never)"}`,
-      `- **last ws ready**: ${diagnostics.lastWsReadyAt || "(unknown)"}`,
-      `- **last reconnect ready**: ${diagnostics.lastReconnectReadyAt || "(never)"}`,
-      `- **last inbound message**: ${diagnostics.lastInboundMessageAt || "(unknown)"}`,
+      `- **last reconnect started**: ${this.formatAnyTimestamp(diagnostics.lastReconnectStartedAt, "(never)")}`,
+      `- **last ws ready**: ${this.formatAnyTimestamp(diagnostics.lastWsReadyAt)}`,
+      `- **last reconnect ready**: ${this.formatAnyTimestamp(diagnostics.lastReconnectReadyAt, "(never)")}`,
+      `- **last inbound message**: ${this.formatAnyTimestamp(diagnostics.lastInboundMessageAt)}`,
       `- **last inbound message id**: \`${diagnostics.lastInboundMessageId || "(unknown)"}\``
     ].join("\n");
   }
@@ -2603,11 +2657,105 @@ export class App {
   }
 
   private formatFeishuWsSummary(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
-    return `connected=\`${diagnostics.wsConnectedOnce ? "yes" : "no"}\` reconnecting=\`${diagnostics.wsReconnecting ? "yes" : "no"}\` reconnects=\`${diagnostics.reconnectCount}\` lastReady=${diagnostics.lastWsReadyAt || "(unknown)"} lastInbound=${diagnostics.lastInboundMessageAt || "(unknown)"}`;
+    return `connected=\`${diagnostics.wsConnectedOnce ? "yes" : "no"}\` reconnecting=\`${diagnostics.wsReconnecting ? "yes" : "no"}\` reconnects=\`${diagnostics.reconnectCount}\` lastReady=${this.formatAnyTimestamp(diagnostics.lastWsReadyAt)} lastInbound=${this.formatAnyTimestamp(diagnostics.lastInboundMessageAt)}`;
   }
 
   private formatFeishuSendSummary(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
     return `retries=\`${diagnostics.outboundRetryCount}\` failures=\`${diagnostics.outboundFailureCount}\` streaming=\`${diagnostics.activeStreamingCards}\`${diagnostics.lastSendError ? ` error=${diagnostics.lastSendError}` : ""}`;
+  }
+
+  private async readStatusUpdates(
+    currentCodexVersion: string | undefined,
+    currentFeishuSdkVersion: string | undefined,
+    declaredFeishuSdkRange: string | undefined
+  ): Promise<{
+    codex: { packageName: string; current?: string; latest?: string; status: string; detail: string };
+    feishu: {
+      packageName: string;
+      declared?: string;
+      current?: string;
+      latest?: string;
+      status: string;
+      detail: string;
+    };
+  }> {
+    const [latestCodexVersion, latestFeishuSdkVersion] = await Promise.all([
+      this.readLatestNpmPackageVersion("@openai/codex"),
+      this.readLatestNpmPackageVersion("@larksuiteoapi/node-sdk")
+    ]);
+    return {
+      codex: {
+        packageName: "@openai/codex",
+        current: currentCodexVersion,
+        latest: latestCodexVersion,
+        status: this.describeUpdateStatus(currentCodexVersion, latestCodexVersion),
+        detail: "Current version comes from the local Codex runtime metadata used by the bridge."
+      },
+      feishu: {
+        packageName: "@larksuiteoapi/node-sdk",
+        declared: declaredFeishuSdkRange,
+        current: currentFeishuSdkVersion,
+        latest: latestFeishuSdkVersion,
+        status: this.describeUpdateStatus(currentFeishuSdkVersion, latestFeishuSdkVersion),
+        detail: "This is the Node SDK dependency used by the bridge for Feishu websocket and HTTPS APIs."
+      }
+    };
+  }
+
+  private async readInstalledPackageVersion(packageName: string): Promise<string | undefined> {
+    const packagePath = new URL(`../../node_modules/${packageName}/package.json`, import.meta.url);
+    const raw = await fs.readFile(packagePath, "utf8").catch(() => "");
+    if (!raw) return undefined;
+    try {
+      const parsed = JSON.parse(raw) as { version?: string };
+      return typeof parsed.version === "string" ? parsed.version : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async readDeclaredPackageRange(packageName: string): Promise<string | undefined> {
+    const packagePath = new URL("../../package.json", import.meta.url);
+    const raw = await fs.readFile(packagePath, "utf8").catch(() => "");
+    if (!raw) return undefined;
+    try {
+      const parsed = JSON.parse(raw) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+      return parsed.dependencies?.[packageName] || parsed.devDependencies?.[packageName];
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async readLatestNpmPackageVersion(packageName: string): Promise<string | undefined> {
+    try {
+      const { stdout } = await execFileAsync(
+        "npm",
+        ["view", packageName, "version", "--json"],
+        { timeout: 15_000, maxBuffer: 512 * 1024 }
+      );
+      const trimmed = stdout.trim();
+      if (!trimmed) return undefined;
+      const parsed = JSON.parse(trimmed) as string;
+      return typeof parsed === "string" ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private describeUpdateStatus(currentVersion?: string, latestVersion?: string): string {
+    if (!latestVersion) return "latest unavailable";
+    if (!currentVersion) return "current unknown";
+    return this.normalizeVersion(currentVersion) === this.normalizeVersion(latestVersion)
+      ? "up to date"
+      : "update available";
+  }
+
+  private formatUpdateStatusBadge(status: string): string {
+    return status === "up to date" ? `\`${status}\`` : `**${status}**`;
+  }
+
+  private normalizeVersion(value: string): string {
+    return value.trim().replace(/^v/i, "");
   }
 
   private threadHelpText(): string {

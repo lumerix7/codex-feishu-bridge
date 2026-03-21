@@ -38,7 +38,7 @@ Thin Feishu-native relay for Codex native sessions.
 
 ```markdown
 - `/help [-h|--help]` show commands
-- `/status [-h|--help]` show current session and run state
+- `/status [check-update] [-h|--help]` show current session and run state, or a minimal update-only view
 - `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session
 - `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
 - `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help
@@ -73,6 +73,7 @@ Working v1 bridge:
 - `/thread` to show richer app-server thread metadata for the current bound session
 - `/log [-n N] [--since <expr>] [--grep <text>]` to tail recent bridge service logs from systemd journal
 - `/feishu`, `/feishu ws`, `/feishu send`, and `/feishu doctor` to inspect Feishu websocket readiness, outbound retry/failure counters, and a quick transport health verdict
+- `/status check-update` to show a minimal Codex/Feishu update view with current vs latest published npm versions
 - backend modes: `app-server`, `spawn`, and experimental `terminal`
 
 ## Feishu Transport Notes
@@ -201,6 +202,20 @@ but new config should use the structured schema.
 - Outbound replies are streaming-first when the bridge marks them as streaming, and otherwise use normal Feishu interactive cards.
 - The card body keeps the same markdown content string the bridge generates, plus a raw fenced markdown appendix for clients that do not render every markdown feature consistently.
 - Long replies are still split on markdown block boundaries so fenced code blocks stay valid across pages/chunks.
+
+## Status Notes
+
+- `/status` shows the normal three-section view:
+  - `## Codex`
+  - `## Bridge`
+  - `## Feishu`
+- `/status check-update` switches to a minimal two-section view:
+  - `## Codex`
+  - `## Feishu`
+- In the update-only view, non-OK update states are emphasized.
+- Time values shown by the bridge now use local ISO timestamps with timezone offsets, for example:
+  - `2026-03-01T10:35:00.000+08:00`
+- Rate-limit reset times in `/status` now use that same local ISO format.
 
 ## Streaming Replies
 

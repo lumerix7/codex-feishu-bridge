@@ -25,7 +25,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@larksuiteoapi/node-sdk": "^1.59.0",
+    "@larksuiteoapi/node-sdk": "^1.60.0",
     "@xterm/addon-serialize": "^0.14.0",
     "@xterm/headless": "^6.0.0",
     "dotenv": "^16.6.1",
