@@ -42,7 +42,7 @@ GLOBAL_PKG_DIR="${GLOBAL_ROOT}/codex-feishu-bridge"
 GLOBAL_BIN_DIR="${GLOBAL_PREFIX}/bin"
 
 mkdir -p "${GLOBAL_ROOT}" "${GLOBAL_BIN_DIR}"
-mv "${GLOBAL_PKG_DIR}" "${GLOBAL_PKG_DIR}.bak.$(date +%s)" 2>/dev/null || true
+rm -rf "${GLOBAL_PKG_DIR}"
 mkdir -p "${GLOBAL_PKG_DIR}"
 tar -xzf "./${PACK_FILE}" -C "${GLOBAL_PKG_DIR}" --strip-components=1
 cp -a node_modules "${GLOBAL_PKG_DIR}/"
