@@ -67,17 +67,25 @@ export class App {
           let streamed = false;
           let lastUpdateText: string | undefined;
           let accumulatedStreamText = "";
-          let updateChain = Promise.resolve();
+          let statusChain = Promise.resolve();
+          let streamingSendInFlight = false;
+          let queuedStreamingSnapshot: string | undefined;
+          let streamDrain = Promise.resolve();
           const streamKey = `${message.chatId}:${message.threadId || "root"}:${message.messageId}:${command?.name || "codex"}`;
-          const sendUpdateSafely = async (update: string): Promise<void> => {
-            updateChain = updateChain.then(async () => {
+          const sendStatusSafely = async (update: string): Promise<void> => {
+            statusChain = statusChain.then(async () => {
               try {
                 const latestBinding =
                   (await this.store.get(conversationKeyFor(message))) || currentBinding;
                 const formattedUpdate = formatForFeishu(update);
-                const outgoingText = command?.name
-                  ? formattedUpdate
-                  : this.mergeStreamingText(accumulatedStreamText, formattedUpdate);
+                console.log("Bridge app-server status route", {
+                  messageId: message.messageId,
+                  chatId: message.chatId,
+                  threadId: message.threadId,
+                  command: command?.name || "codex",
+                  route: "status-card",
+                  textPreview: this.previewText(formattedUpdate)
+                });
                 await this.feishu?.send({
                   chatId: message.chatId,
                   title: messageTitle,
@@ -85,32 +93,96 @@ export class App {
                   footer: command?.name
                     ? this.footerForMessage(command?.name, latestBinding)
                     : this.footerForCodexReply(latestBinding),
-                  text: outgoingText,
+                  text: formattedUpdate,
                   replyToMessageId: message.messageId,
                   threadId: message.threadId,
-                  streaming: true,
-                  ...(command?.name ? {} : { streamKey })
+                  streaming: false,
+                  includeRawMarkdown: false
                 });
-                streamed = true;
-                lastUpdateText = outgoingText;
-                if (!command?.name) {
-                  accumulatedStreamText = outgoingText;
-                }
               } catch (error) {
                 console.error("failed to send Feishu update", {
                   messageId: message.messageId,
                   chatId: message.chatId,
                   threadId: message.threadId,
-                  textPreview: this.previewText(update),
-                  error
+                textPreview: this.previewText(update),
+                error
                 });
               }
             });
-            await updateChain;
+            await statusChain;
+          };
+          const sendStreamSnapshot = async (snapshot: string): Promise<void> => {
+            try {
+              const latestBinding =
+                (await this.store.get(conversationKeyFor(message))) || currentBinding;
+              console.log("Bridge app-server content route", {
+                messageId: message.messageId,
+                chatId: message.chatId,
+                threadId: message.threadId,
+                streamKey,
+                route: "stream-card",
+                final: false,
+                textPreview: this.previewText(snapshot)
+              });
+              await this.feishu?.send({
+                chatId: message.chatId,
+                title: messageTitle,
+                template: messageTemplate,
+                footer: this.footerForCodexReply(latestBinding),
+                text: snapshot,
+                replyToMessageId: message.messageId,
+                threadId: message.threadId,
+                streaming: true,
+                streamKey
+              });
+              streamed = true;
+              lastUpdateText = snapshot;
+              accumulatedStreamText = snapshot;
+            } catch (error) {
+              console.error("failed to send Feishu streaming update", {
+                messageId: message.messageId,
+                chatId: message.chatId,
+                threadId: message.threadId,
+                textPreview: this.previewText(snapshot),
+                error
+              });
+            }
+          };
+          const sendUpdateSafely = async (update: string): Promise<void> => {
+            if (command?.name) {
+              await sendStatusSafely(update);
+              return;
+            }
+            const formattedUpdate = formatForFeishu(update);
+            const outgoingText = formattedUpdate;
+            queuedStreamingSnapshot = outgoingText;
+            console.log("Bridge app-server content queue", {
+              messageId: message.messageId,
+              chatId: message.chatId,
+              threadId: message.threadId,
+              streamKey,
+              inFlight: streamingSendInFlight,
+              queuedPreview: this.previewText(outgoingText)
+            });
+            if (streamingSendInFlight) {
+              await streamDrain;
+              return;
+            }
+            streamingSendInFlight = true;
+            streamDrain = (async () => {
+              while (queuedStreamingSnapshot !== undefined) {
+                const snapshot = queuedStreamingSnapshot;
+                queuedStreamingSnapshot = undefined;
+                await sendStreamSnapshot(snapshot);
+              }
+              streamingSendInFlight = false;
+            })();
+            await streamDrain;
           };
 
-          const text = await this.handleIncoming(message, sendUpdateSafely);
-          await updateChain;
+          const text = await this.handleIncoming(message, sendUpdateSafely, sendStatusSafely);
+          await statusChain;
+          await streamDrain;
           const formattedText = command?.name
             ? formatForFeishu(text)
             : accumulatedStreamText || formatForFeishu(text);
@@ -121,6 +193,17 @@ export class App {
             const finalFooter = command?.name
               ? this.footerForMessage(command?.name, latestBinding)
               : this.footerForCodexReply(latestBinding);
+            console.log("Bridge final outbound route", {
+              messageId: message.messageId,
+              chatId: message.chatId,
+              threadId: message.threadId,
+              command: command?.name || "codex",
+              streamed,
+              shouldFinalizeLiveStream,
+              route: command?.name ? "status-card" : "stream-card-finalize",
+              streamKey: command?.name ? undefined : streamKey,
+              textPreview: this.previewText(formattedText)
+            });
             await this.feishu?.send({
               chatId: message.chatId,
               title: messageTitle,
@@ -166,7 +249,8 @@ export class App {
 
   async handleIncoming(
     message: IncomingMessage,
-    onUpdate?: (text: string) => Promise<void>
+    onUpdate?: (text: string) => Promise<void>,
+    onStatus?: (text: string) => Promise<void>
   ): Promise<string> {
     if (message.chatType !== "p2p") {
       return "Only direct messages are supported right now.";
@@ -201,9 +285,10 @@ export class App {
     const activeRun = this.activeRuns.get(key);
     let sentEarlyUpdate = false;
     const sendEarlyUpdate = async (text: string): Promise<void> => {
-      if (!onUpdate || sentEarlyUpdate) return;
+      const target = onStatus || onUpdate;
+      if (!target || sentEarlyUpdate) return;
       sentEarlyUpdate = true;
-      await onUpdate(text);
+      await target(text);
     };
 
     if (command?.name === "status") {
@@ -964,7 +1049,7 @@ export class App {
     }
 
     const project = binding?.project || this.config.project.defaultProject;
-    await sendEarlyUpdate(`sending prompt to Codex for project \`${project}\`...`);
+    await sendEarlyUpdate("handing off to Codex...");
     const provisionalRunId = `pending:${randomUUID()}`;
     this.activeRuns.set(key, {
       conversationKey: key,
@@ -981,13 +1066,13 @@ export class App {
         project,
         this.resolveTurnOptions(binding),
         {
-          onStatus: onUpdate,
+          onStatus: onStatus || onUpdate,
           onUpdate,
           onNotification: async (notification) => {
             this.recordCodexNotification(key, notification);
             const maybeUpdate = this.renderCodexNotificationUpdate(notification);
-            if (maybeUpdate && onUpdate) {
-              await onUpdate(maybeUpdate);
+            if (maybeUpdate && (onStatus || onUpdate)) {
+              await (onStatus || onUpdate)?.(maybeUpdate);
             }
           },
           onServerRequest: (request) =>
@@ -996,7 +1081,7 @@ export class App {
               message,
               project,
               request,
-              onUpdate
+              onStatus || onUpdate
             )
         }
       );
@@ -2635,6 +2720,8 @@ export class App {
       `- **retry max delay ms**: \`${this.config.feishu.sendRetryMaxDelayMs}\``,
       `- **outbound retries**: \`${diagnostics.outboundRetryCount}\``,
       `- **outbound failures**: \`${diagnostics.outboundFailureCount}\``,
+      `- **active chat send queues**: \`${diagnostics.activeChatSendQueues}\``,
+      `- **queued chats**: ${diagnostics.queuedChatIds.length > 0 ? diagnostics.queuedChatIds.map((chatId) => `\`${chatId}\``).join(", ") : "(none)"}`,
       `- **active streaming cards**: \`${diagnostics.activeStreamingCards}\``,
       `- **last send error**: ${diagnostics.lastSendError || "(none)"}`
     ].join("\n");

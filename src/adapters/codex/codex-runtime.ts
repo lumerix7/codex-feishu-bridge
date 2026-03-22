@@ -145,10 +145,30 @@ class AppServerCodexBackend implements CodexBackend {
       let settled = false;
       let finalOutput = "";
       const agentTextById = new Map<string, string>();
+      const completedAgentTextById = new Map<string, string>();
+      const completedAgentOrder: string[] = [];
       const streamedOutputs: string[] = [];
       let pendingStreamText = "";
       let lastStreamFlushAt = 0;
       let streamFlushTimer: NodeJS.Timeout | undefined;
+
+      const buildVisibleTurnText = (activeItemId?: string): string => {
+        const parts: string[] = [];
+        for (const itemId of completedAgentOrder) {
+          const text = (completedAgentTextById.get(itemId) || "").trim();
+          if (text) parts.push(text);
+        }
+        if (activeItemId) {
+          const activeText = (agentTextById.get(activeItemId) || "").trim();
+          if (activeText) {
+            const completedText = completedAgentTextById.get(activeItemId);
+            if (!completedText || completedText.trim() !== activeText) {
+              parts.push(activeText);
+            }
+          }
+        }
+        return parts.join("\n\n").trim();
+      };
 
       const flushStreamText = (force = false): void => {
         const text = pendingStreamText.trim();
@@ -202,9 +222,19 @@ class AppServerCodexBackend implements CodexBackend {
           const itemId = String(params.itemId || "").trim();
           if (!itemId) return;
           const prior = agentTextById.get(itemId) || "";
-          const next = `${prior}${String(params.delta || "")}`;
+          const delta = String(params.delta || "");
+          const next = `${prior}${delta}`;
           agentTextById.set(itemId, next);
-          pendingStreamText = next;
+          const visibleText = buildVisibleTurnText(itemId) || next;
+          console.log("Codex app-server agentMessage delta", {
+            sessionId: resolvedSessionId,
+            turnId: active.turnId,
+            itemId,
+            deltaPreview: previewText(delta),
+            snapshotPreview: previewText(next),
+            visiblePreview: previewText(visibleText)
+          });
+          pendingStreamText = visibleText;
           flushStreamText();
           return;
         }
@@ -216,7 +246,13 @@ class AppServerCodexBackend implements CodexBackend {
           const text = String(item.text || agentTextById.get(itemId) || "").trim();
           if (!text) return;
           finalOutput = text;
-          pendingStreamText = text;
+          if (itemId && !completedAgentTextById.has(itemId)) {
+            completedAgentOrder.push(itemId);
+          }
+          if (itemId) {
+            completedAgentTextById.set(itemId, text);
+          }
+          pendingStreamText = buildVisibleTurnText() || text;
           flushStreamText(true);
           if (!streamedOutputs.includes(text)) {
             streamedOutputs.push(text);
@@ -1076,6 +1112,11 @@ function stripScreenPrefix(current: string, baseline: string): string {
     idx += 1;
   }
   return currentLines.slice(idx).join("\n");
+}
+
+function previewText(value: string, maxLength = 120): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 3)}...`;
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

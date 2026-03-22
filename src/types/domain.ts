@@ -41,4 +41,5 @@ export interface OutgoingMessage {
   streaming?: boolean;
   streamKey?: string;
   finalizeStreaming?: boolean;
+  includeRawMarkdown?: boolean;
 }
