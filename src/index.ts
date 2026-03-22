@@ -35,7 +35,7 @@ async function runCli(app: App): Promise<void> {
 
   console.log(`cli mode chatId=${chatId}`);
   console.log(
-    "type /help, /status [check-update], /thread, /new [-C <dir>], /resume <session-id>, /session list [--project <path>], /stop, /project, /project list, /project bind <path> or -n <index> (current first, then name asc), /project unbind <path>, /approvals [...], /feishu [ws|send|doctor], /log [-n N] [--since <expr>] [--grep <text>], or plain prompts"
+    "type /help, /status [check-update], /thread, /compact, /new [-C <dir>], /resume <session-id>, /session list [--project <path>], /stop, /project, /project list, /project bind <path> or -n <index> (current first, then name asc), /project unbind <path>, /approvals [...], /feishu [ws|send|doctor], /log [-n N] [--since <expr>] [--grep <text>], or plain prompts"
   );
   console.log("type /exit to quit");
 

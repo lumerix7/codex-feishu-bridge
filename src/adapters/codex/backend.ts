@@ -49,6 +49,10 @@ export interface CodexBackend {
   ): Promise<CodexRunHandle>;
   stop(runId: string): Promise<boolean>;
   getSession(sessionId: string): Promise<boolean>;
+  compactSession?(
+    sessionId: string,
+    project: string
+  ): Promise<Record<string, unknown> | undefined>;
   readThread?(
     sessionId: string,
     project: string,

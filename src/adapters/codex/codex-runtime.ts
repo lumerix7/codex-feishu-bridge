@@ -425,6 +425,26 @@ class AppServerCodexBackend implements CodexBackend {
     return clientInfo.client.readThread(sessionId, includeTurns);
   }
 
+  async compactSession(
+    sessionId: string,
+    project: string
+  ): Promise<Record<string, unknown> | undefined> {
+    const clientInfo = await this.getOrCreateClient(project, sessionId);
+    if (this.hasActiveRunForClient(clientInfo.client)) {
+      throw new Error(`Codex session ${sessionId} already has an active run.`);
+    }
+    try {
+      const compact = await clientInfo.client.compactSession(sessionId);
+      const summary = await clientInfo.client.getConversationSummary(sessionId).catch(() => undefined);
+      return {
+        ...(compact || {}),
+        ...(summary || {})
+      };
+    } finally {
+      this.scheduleClientShutdown(project, sessionId, clientInfo.client);
+    }
+  }
+
   async readAccountRateLimits(project: string): Promise<Record<string, unknown> | undefined> {
     const client = new AppServerSessionClient(this.config, project);
     try {

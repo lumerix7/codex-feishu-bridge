@@ -86,6 +86,59 @@ export class AppServerSessionClient {
     return isRecord(result) ? result : undefined;
   }
 
+  async compactSession(sessionId: string): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    let cleanup = (): void => undefined;
+    const completion = new Promise<Record<string, unknown>>((resolve, reject) => {
+      cleanup = (): void => {
+        if (timer) clearTimeout(timer);
+        this.unsubscribe(handler);
+      };
+      const handler: NotificationHandler = async (method, params) => {
+        if (this.readString(params.threadId) !== sessionId) return;
+        if (method === "thread/compacted") {
+          cleanup();
+          resolve({
+            threadId: sessionId,
+            turnId: this.readString(params.turnId),
+            status: "completed"
+          });
+          return;
+        }
+        if (method === "thread/status/changed") {
+          const status = asRecord(params.status);
+          if (this.readString(status.type) === "systemError") {
+            cleanup();
+            reject(new Error(`Codex app-server compact failed for session ${sessionId}.`));
+          }
+        }
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Codex app-server compact timed out for session ${sessionId}.`));
+      }, 30_000);
+      timer.unref();
+      this.subscribe(handler);
+    });
+
+    try {
+      await this.request("thread/compact/start", { threadId: sessionId });
+      const result = await completion;
+      return isRecord(result) ? result : undefined;
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
+  }
+
+  async getConversationSummary(sessionId: string): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("getConversationSummary", {
+      conversationId: sessionId
+    });
+    return isRecord(result) ? result : undefined;
+  }
+
   async readAccountRateLimits(): Promise<Record<string, unknown> | undefined> {
     await this.ensureStarted();
     const result = await this.request("account/rateLimits/read", {});
@@ -329,6 +382,11 @@ export class AppServerSessionClient {
 
   private appServerApprovalPolicy(): "on-request" | "never" {
     return this.config.sandboxMode === "danger-full-access" ? "never" : "on-request";
+  }
+
+  private readString(value: unknown): string | undefined {
+    const trimmed = String(value || "").trim();
+    return trimmed || undefined;
   }
 
   private failAll(error: Error): void {

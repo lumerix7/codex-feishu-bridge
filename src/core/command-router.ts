@@ -4,6 +4,7 @@ export type CommandName =
   | "help"
   | "status"
   | "thread"
+  | "compact"
   | "new"
   | "resume"
   | "session"
@@ -37,6 +38,7 @@ export function parseCommand(message: IncomingMessage): ParsedCommand | undefine
       "help",
       "status",
       "thread",
+      "compact",
       "new",
       "resume",
       "session",

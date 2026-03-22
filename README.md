@@ -41,6 +41,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/help [-h|--help]` show commands
 - `/status [check-update] [-h|--help]` show current session and run state
 - `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session
+- `/compact [-h|--help]` compact the current bound Codex session
 - `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
 - `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help
 - `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project
@@ -62,7 +63,7 @@ Working v1 bridge:
 - Feishu long-connection receive/send
 - DM receive plus interactive-card replies
 - conversation to native Codex session binding
-- `/help` `/status` `/thread` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/feishu` `/log`
+- `/help` `/status` `/thread` `/compact` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/feishu` `/log`
 - `/search` `/model` `/profile`
 - `/git` `/pwd` `/ls` `/cat` `/tree` `/find` `/rg`
 - `/new -C <path>` to switch/bind to another project and create a fresh session in one step
@@ -72,6 +73,7 @@ Working v1 bridge:
 - `/approvals` to switch the Codex approval mode used for future runs
 - `/model --list` to query available models from Codex app-server when supported, with a bridge-side fallback list otherwise
 - `/thread` to show richer app-server thread metadata for the current bound session
+- `/compact` to trigger native Codex thread compaction in `app-server` mode for the current bound session
 - `/log [-n N] [--since <expr>] [--grep <text>]` to tail recent bridge service logs from systemd journal
 - `/feishu`, `/feishu ws`, `/feishu send`, and `/feishu doctor` to inspect Feishu websocket readiness, outbound retry/failure counters, and a quick transport health verdict
 - `/status check-update` to show a minimal Codex/Feishu update view with current vs latest published npm versions
@@ -171,6 +173,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - In `app-server`, only `default` and `full-access` are advertised in `/approvals`.
   `auto` is still accepted as a compatibility alias for `default`.
 - In `app-server`, `/model --list` now uses the native `model/list` RPC when available.
+- In `app-server`, `/compact` uses the native `thread/compact/start` RPC and then reads the updated conversation summary.
 - `codex.approvalTimeoutMs` controls how long the bridge waits for a Feishu approval or user-input reply before sending a timeout-safe response back to Codex.
 - `codex.runTimeoutMs` controls the maximum lifetime of one active Codex run
   before the bridge terminates it.

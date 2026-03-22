@@ -264,6 +264,7 @@ export class App {
         "- `/help [-h|--help]` show commands",
         "- `/status [check-update] [-h|--help]` show current session and run state",
         "- `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session",
+        "- `/compact [-h|--help]` compact the current bound Codex session",
         "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
         "- `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help",
         "- `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project",
@@ -469,6 +470,55 @@ export class App {
               ...(turns.length > 10 ? [`- **more turns**: \`${turns.length - 10}\` not shown`] : [])
             ]
           : [`- **turns**: \`${turns.length || 0}\`${turns.length === 0 ? " (use `--turns` to fetch them)" : ""}`])
+      ].join("\n");
+    }
+
+    if (command?.name === "compact") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.compactHelpText();
+      }
+      if (command.args.length > 0) {
+        return "Usage: `/compact [-h|--help]`";
+      }
+      if (activeRun) {
+        return `Cannot compact while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
+      }
+      if (!existing?.codexSessionId) {
+        return "No session is currently bound. Use `/new`, `/resume`, or `/session list` first.";
+      }
+      if (!this.codex.compactSession) {
+        return [
+          "# Compact",
+          "",
+          `- **backend**: \`${this.codex.mode}\``,
+          "- **status**: `unsupported`",
+          "- Native session compaction is currently available only in `app-server` mode."
+        ].join("\n");
+      }
+      const project = existing.project || this.config.project.defaultProject;
+      await sendEarlyUpdate(`compacting Codex session \`${existing.codexSessionId}\`...`);
+      const compactResult = await this.codex.compactSession(existing.codexSessionId, project);
+      const nextBinding = { ...existing, updatedAt: new Date().toISOString() };
+      await this.store.put(nextBinding);
+      const summary = asObjectRecord(compactResult?.summary);
+      return [
+        "# Compact",
+        "",
+        `- **session**: \`${existing.codexSessionId}\``,
+        `- **project**: \`${project}\``,
+        `- **status**: \`${this.readString(compactResult?.status) || "completed"}\``,
+        ...(this.readString(compactResult?.turnId)
+          ? [`- **turn**: \`${this.readString(compactResult?.turnId)}\``]
+          : []),
+        ...(this.readString(summary.preview)
+          ? [`- **summary**: ${this.readString(summary.preview)}`]
+          : []),
+        ...(this.readString(summary.updatedAt)
+          ? [`- **updated**: ${this.formatAnyTimestamp(summary.updatedAt)}`]
+          : []),
+        ...(this.readString(summary.cwd)
+          ? [`- **cwd**: \`${this.readString(summary.cwd)}\``]
+          : [])
       ].join("\n");
     }
 
@@ -1159,6 +1209,8 @@ export class App {
         return "Bridge Status";
       case "thread":
         return "Thread";
+      case "compact":
+        return "Compact";
       case "new":
         return "New Session";
       case "session":
@@ -1208,6 +1260,7 @@ export class App {
       case "help":
       case "status":
       case "thread":
+      case "compact":
       case "session":
       case "project":
       case "approvals":
@@ -2982,6 +3035,26 @@ export class App {
       "",
       "- `--turns` fetches turn details and prints a compact turn summary.",
       "- Requires a currently bound session and `app-server` support."
+    ].join("\n");
+  }
+
+  private compactHelpText(): string {
+    return [
+      "# Compact",
+      "",
+      "Compact the currently bound native Codex session.",
+      "",
+      "## Usage",
+      "",
+      "- `/compact`",
+      "- `/compact -h`",
+      "- `/compact --help`",
+      "",
+      "## Notes",
+      "",
+      "- Requires a currently bound session from `/new` or `/resume`.",
+      "- Uses native Codex thread compaction in `app-server` mode.",
+      "- The bridge updates the bound session timestamp after compaction completes."
     ].join("\n");
   }
 
