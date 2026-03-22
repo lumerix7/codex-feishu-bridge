@@ -139,6 +139,28 @@ export class AppServerSessionClient {
     return isRecord(result) ? result : undefined;
   }
 
+  async listSkills(options?: {
+    forceReload?: boolean;
+  }): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("skills/list", {
+      cwds: [this.project],
+      ...(options?.forceReload !== undefined ? { forceReload: options.forceReload } : {})
+    });
+    return isRecord(result) ? result : undefined;
+  }
+
+  async readConfig(options?: {
+    includeLayers?: boolean;
+  }): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("config/read", {
+      includeLayers: options?.includeLayers ?? false,
+      cwd: this.project
+    });
+    return isRecord(result) ? result : undefined;
+  }
+
   async readAccountRateLimits(): Promise<Record<string, unknown> | undefined> {
     await this.ensureStarted();
     const result = await this.request("account/rateLimits/read", {});

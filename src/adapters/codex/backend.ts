@@ -53,6 +53,10 @@ export interface CodexBackend {
     sessionId: string,
     project: string
   ): Promise<Record<string, unknown> | undefined>;
+  getConversationSummary?(
+    sessionId: string,
+    project: string
+  ): Promise<Record<string, unknown> | undefined>;
   readThread?(
     sessionId: string,
     project: string,
@@ -63,5 +67,13 @@ export interface CodexBackend {
   listModels?(
     project: string,
     options?: { includeHidden?: boolean; limit?: number }
+  ): Promise<Record<string, unknown> | undefined>;
+  listSkills?(
+    project: string,
+    options?: { forceReload?: boolean }
+  ): Promise<Record<string, unknown> | undefined>;
+  readConfig?(
+    project: string,
+    options?: { includeLayers?: boolean }
   ): Promise<Record<string, unknown> | undefined>;
 }

@@ -16,6 +16,7 @@ Already implemented:
 
 ## Near-term ideas
 
+- native `/fork` command backed by Codex app-server `thread/fork`
 - broader docs cleanup so contract notes match the live bridge more closely
 - better large-output UX beyond paged streaming cards
 - more diagnostics around update checks and runtime provenance

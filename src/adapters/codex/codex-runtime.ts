@@ -445,6 +445,18 @@ class AppServerCodexBackend implements CodexBackend {
     }
   }
 
+  async getConversationSummary(
+    sessionId: string,
+    project: string
+  ): Promise<Record<string, unknown> | undefined> {
+    const clientInfo = await this.getOrCreateClient(project, sessionId);
+    try {
+      return await clientInfo.client.getConversationSummary(sessionId);
+    } finally {
+      this.scheduleClientShutdown(project, sessionId, clientInfo.client);
+    }
+  }
+
   async readAccountRateLimits(project: string): Promise<Record<string, unknown> | undefined> {
     const client = new AppServerSessionClient(this.config, project);
     try {
@@ -470,6 +482,30 @@ class AppServerCodexBackend implements CodexBackend {
     const client = new AppServerSessionClient(this.config, project);
     try {
       return await client.listModels(options);
+    } finally {
+      await client.shutdown().catch(() => undefined);
+    }
+  }
+
+  async listSkills(
+    project: string,
+    options?: { forceReload?: boolean }
+  ): Promise<Record<string, unknown> | undefined> {
+    const client = new AppServerSessionClient(this.config, project);
+    try {
+      return await client.listSkills(options);
+    } finally {
+      await client.shutdown().catch(() => undefined);
+    }
+  }
+
+  async readConfig(
+    project: string,
+    options?: { includeLayers?: boolean }
+  ): Promise<Record<string, unknown> | undefined> {
+    const client = new AppServerSessionClient(this.config, project);
+    try {
+      return await client.readConfig(options);
     } finally {
       await client.shutdown().catch(() => undefined);
     }

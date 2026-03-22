@@ -28,6 +28,7 @@ export class App {
   private readonly latestTokenUsage = new Map<string, Record<string, unknown>>();
   private readonly latestPlan = new Map<string, { explanation?: string; plan: Array<Record<string, unknown>> }>();
   private readonly latestModelReroute = new Map<string, { fromModel: string; toModel: string; reason?: string }>();
+  private readonly latestTurnDiff = new Map<string, { turnId: string; diff: string }>();
   private latestAccountUpdate?: Record<string, unknown>;
   private latestRateLimits?: Record<string, unknown>;
 
@@ -265,6 +266,10 @@ export class App {
         "- `/status [check-update] [-h|--help]` show current session and run state",
         "- `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session",
         "- `/compact [-h|--help]` compact the current bound Codex session",
+        "- `/summary [-h|--help]` show the current bound Codex conversation summary",
+        "- `/diff [-h|--help]` show the latest app-server turn diff for the current bound session",
+        "- `/skills [--reload] [-h|--help]` show Codex skills visible for the current project",
+        "- `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project",
         "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
         "- `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help",
         "- `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project",
@@ -520,6 +525,176 @@ export class App {
           ? [`- **cwd**: \`${this.readString(summary.cwd)}\``]
           : [])
       ].join("\n");
+    }
+
+    if (command?.name === "summary") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.summaryHelpText();
+      }
+      if (command.args.length > 0) {
+        return "Usage: `/summary [-h|--help]`";
+      }
+      if (!existing?.codexSessionId) {
+        return "No session is currently bound. Use `/new`, `/resume`, or `/session list` first.";
+      }
+      if (!this.codex.getConversationSummary) {
+        return "# Summary\n\n- **status**: `unsupported`\n- Native conversation summary is currently available only in `app-server` mode.";
+      }
+      const project = existing.project || this.config.project.defaultProject;
+      await sendEarlyUpdate(`reading conversation summary for session \`${existing.codexSessionId}\`...`);
+      const summaryResult = await this.codex.getConversationSummary(existing.codexSessionId, project);
+      const summary = asObjectRecord(summaryResult?.summary);
+      return [
+        "# Summary",
+        "",
+        `- **session**: \`${existing.codexSessionId}\``,
+        `- **project**: \`${project}\``,
+        `- **conversation**: \`${this.readString(summary.conversationId) || existing.codexSessionId}\``,
+        `- **source**: \`${this.formatSessionSource(summary.source)}\``,
+        `- **updated**: ${this.formatAnyTimestamp(summary.updatedAt)}`,
+        `- **cwd**: \`${this.readString(summary.cwd) || project}\``,
+        `- **preview**: ${this.readString(summary.preview) || "(none)"}`,
+        ...(this.readString(summary.path) ? [`- **path**: \`${this.readString(summary.path)}\``] : []),
+        ...(this.readString(summary.cliVersion) ? [`- **cli**: \`${this.readString(summary.cliVersion)}\``] : [])
+      ].join("\n");
+    }
+
+    if (command?.name === "diff") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.diffHelpText();
+      }
+      if (command.args.length > 0) {
+        return "Usage: `/diff [-h|--help]`";
+      }
+      if (!existing?.codexSessionId) {
+        return "No session is currently bound. Use `/new`, `/resume`, or `/session list` first.";
+      }
+      const latestDiff = this.latestTurnDiff.get(existing.codexSessionId);
+      if (!latestDiff?.diff.trim()) {
+        return "# Diff\n\n- **status**: `(no cached turn diff)`";
+      }
+      return [
+        "# Diff",
+        "",
+        `- **session**: \`${existing.codexSessionId}\``,
+        `- **turn**: \`${latestDiff.turnId}\``,
+        "",
+        "```diff",
+        latestDiff.diff.trim(),
+        "```"
+      ].join("\n");
+    }
+
+    if (command?.name === "skills") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.skillsHelpText();
+      }
+      const extraArgs = command.args.filter((arg) => arg !== "--reload");
+      if (extraArgs.length > 0) {
+        return "Usage: `/skills [--reload] [-h|--help]`";
+      }
+      if (!this.codex.listSkills) {
+        return "# Skills\n\n- **status**: `unsupported`\n- Native skills listing is currently available only in `app-server` mode.";
+      }
+      const project = existing?.project || this.config.project.defaultProject;
+      const forceReload = command.args.includes("--reload");
+      await sendEarlyUpdate(`reading Codex skills for project \`${project}\`${forceReload ? " with reload" : ""}...`);
+      const skillResult = await this.codex.listSkills(project, { forceReload });
+      const entries = Array.isArray(skillResult?.data)
+        ? skillResult.data.filter((item): item is Record<string, unknown> => isRecord(item))
+        : [];
+      const skills = entries.flatMap((entry) => {
+        const cwd = this.readString(entry.cwd) || project;
+        const list = Array.isArray(entry.skills)
+          ? entry.skills.filter((item): item is Record<string, unknown> => isRecord(item))
+          : [];
+        return list.map((skill) => ({ cwd, skill }));
+      });
+      if (skills.length === 0) {
+        return "# Skills\n\n- **status**: `(no skills found)`";
+      }
+      const lines = [
+        "# Skills",
+        "",
+        `- **project**: \`${project}\``,
+        `- **count**: \`${skills.length}\``,
+        "",
+        "| # | name | scope | enabled | cwd | path | description |",
+        "| --- | --- | --- | --- | --- | --- | --- |"
+      ];
+      for (const [index, item] of skills.entries()) {
+        lines.push(
+          `| ${index + 1} | ${escapeMarkdownCell(this.readString(item.skill.name) || "(unknown)")} | ${escapeMarkdownCell(this.readString(item.skill.scope) || "-")} | ${escapeMarkdownCell(item.skill.enabled ? "yes" : "no")} | ${escapeMarkdownCell(item.cwd)} | ${escapeMarkdownCell(this.readString(item.skill.path) || "-")} | ${escapeMarkdownCell(this.readString(item.skill.shortDescription) || this.readString(item.skill.description) || "-")} |`
+        );
+      }
+      return lines.join("\n");
+    }
+
+    if (command?.name === "config") {
+      if (command.args[0] === "-h" || command.args[0] === "--help") {
+        return this.configHelpText();
+      }
+      const showCodexToml = command.args[0] === "codex-toml";
+      const extraArgs = command.args.filter((arg, index) => arg !== "--layers" && !(showCodexToml && index === 0));
+      if (extraArgs.length > 0) {
+        return "Usage: `/config [codex-toml] [--layers] [-h|--help]`";
+      }
+      const project = existing?.project || this.config.project.defaultProject;
+      if (showCodexToml) {
+        const configTomlPath = path.join(this.config.codex.home, "config.toml");
+        await sendEarlyUpdate(`reading redacted Codex config from \`${configTomlPath}\`...`);
+        const raw = await fs.readFile(configTomlPath, "utf8").catch(() => "");
+        if (!raw) {
+          return [
+            "# Config",
+            "",
+            `- **path**: \`${configTomlPath}\``,
+            "- **status**: `(not found)`"
+          ].join("\n");
+        }
+        return [
+          "# Config",
+          "",
+          `- **project**: \`${project}\``,
+          `- **path**: \`${configTomlPath}\``,
+          "- **mode**: `redacted raw toml`",
+          "",
+          "```toml",
+          this.redactToml(raw),
+          "```"
+        ].join("\n");
+      }
+      if (!this.codex.readConfig) {
+        return "# Config\n\n- **status**: `unsupported`\n- Native config read is currently available only in `app-server` mode.";
+      }
+      const includeLayers = command.args.includes("--layers");
+      await sendEarlyUpdate(`reading Codex config for project \`${project}\`${includeLayers ? " with layers" : ""}...`);
+      const configResult = await this.codex.readConfig(project, { includeLayers });
+      const codexConfig = asObjectRecord(configResult?.config);
+      const layers = Array.isArray(configResult?.layers)
+        ? configResult.layers.filter((item): item is Record<string, unknown> => isRecord(item))
+        : [];
+      const lines = [
+        "# Config",
+        "",
+        `- **project**: \`${project}\``,
+        `- **model**: \`${this.readString(codexConfig.model) || "(default)"}\``,
+        `- **profile**: \`${this.readString(codexConfig.profile) || "(default)"}\``,
+        `- **model provider**: \`${this.readString(codexConfig.model_provider) || "(unknown)"}\``,
+        `- **sandbox**: \`${this.readString(codexConfig.sandbox_mode) || "(unknown)"}\``,
+        `- **approval policy**: \`${this.readString(codexConfig.approval_policy) || "(unknown)"}\``,
+        `- **web search**: \`${this.readString(codexConfig.web_search) || "(unknown)"}\``,
+        `- **reasoning effort**: \`${this.readString(codexConfig.model_reasoning_effort) || "(default)"}\``,
+        `- **reasoning summary**: \`${this.readString(codexConfig.model_reasoning_summary) || "(default)"}\``,
+        `- **verbosity**: \`${this.readString(codexConfig.model_verbosity) || "(default)"}\``,
+        ...(includeLayers ? [
+          "",
+          "## Layers",
+          "",
+          ...layers.map((layer, index) => `- **layer ${index + 1}**: \`${this.readString(layer.name) || this.readString(layer.path) || "(unknown)"}\``)
+        ] : [])
+      ];
+      return lines.join("\n");
     }
 
     if (command?.name === "feishu") {
@@ -1211,6 +1386,14 @@ export class App {
         return "Thread";
       case "compact":
         return "Compact";
+      case "summary":
+        return "Summary";
+      case "diff":
+        return "Diff";
+      case "skills":
+        return "Skills";
+      case "config":
+        return "Config";
       case "new":
         return "New Session";
       case "session":
@@ -1261,6 +1444,10 @@ export class App {
       case "status":
       case "thread":
       case "compact":
+      case "summary":
+      case "diff":
+      case "skills":
+      case "config":
       case "session":
       case "project":
       case "approvals":
@@ -1633,6 +1820,13 @@ export class App {
       });
       return;
     }
+    if (notification.method === "turn/diff/updated" && threadId) {
+      this.latestTurnDiff.set(threadId, {
+        turnId: this.readString(notification.params.turnId) || "(unknown)",
+        diff: this.readString(notification.params.diff) || ""
+      });
+      return;
+    }
     if (notification.method === "model/rerouted" && threadId) {
       this.latestModelReroute.set(threadId, {
         fromModel: this.readString(notification.params.fromModel) || "(unknown)",
@@ -1651,6 +1845,7 @@ export class App {
     }
     if (notification.method === "thread/closed" && threadId) {
       this.latestPlan.delete(threadId);
+      this.latestTurnDiff.delete(threadId);
     }
     void key;
   }
@@ -3036,6 +3231,109 @@ export class App {
       "- `--turns` fetches turn details and prints a compact turn summary.",
       "- Requires a currently bound session and `app-server` support."
     ].join("\n");
+  }
+
+  private summaryHelpText(): string {
+    return [
+      "# Summary",
+      "",
+      "Show the current bound Codex conversation summary.",
+      "",
+      "## Usage",
+      "",
+      "- `/summary`",
+      "- `/summary -h`",
+      "- `/summary --help`",
+      "",
+      "## Notes",
+      "",
+      "- Requires a currently bound session.",
+      "- Uses native Codex `getConversationSummary` in `app-server` mode."
+    ].join("\n");
+  }
+
+  private diffHelpText(): string {
+    return [
+      "# Diff",
+      "",
+      "Show the latest cached app-server turn diff for the current bound session.",
+      "",
+      "## Usage",
+      "",
+      "- `/diff`",
+      "- `/diff -h`",
+      "- `/diff --help`",
+      "",
+      "## Notes",
+      "",
+      "- Uses the most recent `turn/diff/updated` notification seen by the bridge.",
+      "- If no diff notification has been seen yet, the command returns no cached diff."
+    ].join("\n");
+  }
+
+  private skillsHelpText(): string {
+    return [
+      "# Skills",
+      "",
+      "Show Codex skills visible for the current project.",
+      "",
+      "## Usage",
+      "",
+      "- `/skills`",
+      "- `/skills --reload`",
+      "- `/skills -h`",
+      "- `/skills --help`",
+      "",
+      "## Notes",
+      "",
+      "- Uses native Codex `skills/list` in `app-server` mode.",
+      "- `--reload` bypasses the skills cache and rescans from disk."
+    ].join("\n");
+  }
+
+  private configHelpText(): string {
+    return [
+      "# Config",
+      "",
+      "Show key effective Codex config values for the current project.",
+      "",
+      "## Usage",
+      "",
+      "- `/config`",
+      "- `/config codex-toml`",
+      "- `/config --layers`",
+      "- `/config -h`",
+      "- `/config --help`",
+      "",
+      "## Notes",
+      "",
+      "- Uses native Codex `config/read` in `app-server` mode.",
+      "- `--layers` includes the resolved config layer list.",
+      "- `/config codex-toml` shows a redacted raw view of `~/.codex/config.toml`."
+    ].join("\n");
+  }
+
+  private redactToml(raw: string): string {
+    const sensitiveKey = /(token|secret|password|api[_-]?key|bearer|authorization|cookie|access[_-]?key|client[_-]?secret|shared[_-]?secret|private[_-]?key)/i;
+    const envPattern = /\b[A-Z][A-Z0-9_]{2,}\b/g;
+    return raw
+      .split(/\r?\n/)
+      .map((line) => {
+        const keyValue = line.match(/^(\s*["']?[^"'=\s#]+["']?\s*=\s*)(.*)$/);
+        if (!keyValue) return line;
+        const [, prefix, value] = keyValue;
+        const key = prefix.split("=")[0] || "";
+        if (sensitiveKey.test(key)) {
+          return `${prefix}"<redacted>"`;
+        }
+        const redactedValue = value
+          .replace(/(["'])([^"']*?(token|secret|password|api[_-]?key|bearer|authorization|cookie)[^"']*)\1/gi, `"${
+            "<redacted>"
+          }"`)
+          .replace(envPattern, (match) => (sensitiveKey.test(match) ? "<redacted-env>" : match));
+        return `${prefix}${redactedValue}`;
+      })
+      .join("\n");
   }
 
   private compactHelpText(): string {
