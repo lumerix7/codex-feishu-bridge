@@ -128,9 +128,9 @@ export class FeishuGateway {
   }
 
   async send(message: OutgoingMessage): Promise<void> {
-    const text = message.text || "";
+    const plan = buildRenderPlan(message, FEISHU_POST_SOFT_LIMIT);
     if (message.streaming) {
-      const sent = await this.sendStreamingFirst(message).catch((error) => {
+      const sent = await this.sendStreamingFirst(message, plan).catch((error) => {
         console.warn("Feishu streaming-first send failed; falling back to normal card send", {
           chatId: message.chatId,
           title: message.title,
@@ -141,27 +141,26 @@ export class FeishuGateway {
       });
       if (sent) return;
     }
-    const chunks = splitMessageText(text, FEISHU_POST_SOFT_LIMIT);
-    for (const [index, chunk] of chunks.entries()) {
+    this.logChunkPlan("normal", message, plan);
+    for (const page of plan.pages) {
       await this.sendChunkWithRetry(
         message.chatId,
-        chunk,
+        page.text,
         message.title,
         message.template,
-        formatChunkFooter(message.footer, index, chunks.length)
+        page.footer
       );
     }
   }
 
-  private async sendStreamingFirst(message: OutgoingMessage): Promise<boolean> {
-    const text = message.text || "";
-    const chunks = splitMessageText(text, FEISHU_POST_SOFT_LIMIT);
+  private async sendStreamingFirst(message: OutgoingMessage, plan: RenderPlan): Promise<boolean> {
+    this.logChunkPlan("streaming", message, plan);
     if (message.streamKey) {
-      for (const [index, chunk] of chunks.entries()) {
+      for (const [index, page] of plan.pages.entries()) {
         const pageMessage: OutgoingMessage = {
           ...message,
-          text: chunk,
-          footer: formatChunkFooter(message.footer, index, chunks.length),
+          text: page.text,
+          footer: page.footer,
           streamKey: `${message.streamKey}:page:${index + 1}`,
           finalizeStreaming: message.finalizeStreaming
         };
@@ -173,11 +172,11 @@ export class FeishuGateway {
       return true;
     }
 
-    for (const [index, chunk] of chunks.entries()) {
+    for (const page of plan.pages) {
       const pageMessage: OutgoingMessage = {
         ...message,
-        text: chunk,
-        footer: formatChunkFooter(message.footer, index, chunks.length)
+        text: page.text,
+        footer: page.footer
       };
       const sent = await this.sendStreamingCard(pageMessage);
       if (!sent) {
@@ -185,6 +184,18 @@ export class FeishuGateway {
       }
     }
     return true;
+  }
+
+  private logChunkPlan(mode: "normal" | "streaming", message: OutgoingMessage, plan: RenderPlan): void {
+    if (plan.pages.length <= 1) return;
+    console.log("Feishu outbound chunk plan", {
+      mode,
+      chatId: message.chatId,
+      title: message.title,
+      chunks: plan.pages.length,
+      containsTable: plan.containsTable,
+      previews: plan.pages.slice(0, 3).map((page) => previewText(page.text))
+    });
   }
 
   private async sendOrUpdateStreamingCard(message: OutgoingMessage): Promise<boolean> {
@@ -639,6 +650,16 @@ interface ActiveStreamingCard {
   chatId: string;
 }
 
+interface RenderPlanPage {
+  text: string;
+  footer?: string;
+}
+
+interface RenderPlan {
+  pages: RenderPlanPage[];
+  containsTable: boolean;
+}
+
 function normalizeIncoming(data: any): IncomingMessage | undefined {
   if (!data?.message?.message_id || !data?.message?.chat_id || typeof data?.message?.content !== "string") {
     return undefined;
@@ -736,6 +757,11 @@ function flattenFeishuPostContent(content: unknown[]): string {
 function splitMessageText(text: string, maxChars: number): string[] {
   if (maxChars <= 0 || text.length <= maxChars) return [text];
 
+  const tableChunks = splitMarkdownTableText(text, maxChars);
+  if (tableChunks) {
+    return tableChunks;
+  }
+
   const blocks = splitMarkdownBlocks(text);
   const chunks: string[] = [];
   let current = "";
@@ -766,6 +792,102 @@ function splitMessageText(text: string, maxChars: number): string[] {
 
   pushCurrent();
   return chunks.length > 0 ? chunks : [text];
+}
+
+function buildRenderPlan(message: OutgoingMessage, maxChars: number): RenderPlan {
+  const text = message.text || "";
+  const pages = splitMessageText(text, maxChars);
+  return {
+    containsTable: containsMarkdownTable(text),
+    pages: pages.map((pageText, index) => ({
+      text: pageText,
+      footer: formatChunkFooter(message.footer, index, pages.length)
+    }))
+  };
+}
+
+function containsMarkdownTable(text: string): boolean {
+  const normalized = text.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    if (!lines[index].trim().startsWith("|")) continue;
+    if (/^\|\s*[:\-| ]+\|\s*$/.test(lines[index + 1].trim())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function splitMarkdownTableText(text: string, maxChars: number): string[] | undefined {
+  const normalized = text.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  const tableStart = lines.findIndex((line, index) => {
+    if (!line.trim().startsWith("|")) return false;
+    const next = lines[index + 1] || "";
+    return /^\|\s*[:\-| ]+\|\s*$/.test(next.trim());
+  });
+  if (tableStart < 0) return undefined;
+
+  const tableHeader = lines[tableStart];
+  const tableSeparator = lines[tableStart + 1];
+  const prefix = lines.slice(0, tableStart).join("\n").trim();
+  const rows: string[] = [];
+  let endIndex = tableStart + 2;
+  for (; endIndex < lines.length; endIndex += 1) {
+    const line = lines[endIndex];
+    if (!line.trim()) continue;
+    if (!line.trim().startsWith("|")) break;
+    rows.push(line);
+  }
+  if (rows.length === 0) return undefined;
+  const suffix = lines.slice(endIndex).join("\n").trim();
+
+  const tableOnlyHeader = [tableHeader, tableSeparator].join("\n");
+  const firstPageHeader = prefix
+    ? `${prefix}\n\n${tableHeader}\n${tableSeparator}`
+    : tableOnlyHeader;
+  if (firstPageHeader.length > maxChars || tableOnlyHeader.length > maxChars) {
+    return undefined;
+  }
+
+  const chunks: string[] = [];
+  let current = firstPageHeader;
+  let continuationHeader = tableOnlyHeader;
+  for (const row of rows) {
+    const candidate = `${current}\n${row}`;
+    if (candidate.length <= maxChars) {
+      current = candidate;
+      continue;
+    }
+    if (current === firstPageHeader || current === continuationHeader) {
+      return undefined;
+    }
+    chunks.push(current);
+    current = `${continuationHeader}\n${row}`;
+    if (current.length > maxChars) {
+      return undefined;
+    }
+  }
+
+  if (suffix) {
+    const withSuffix = `${current}\n\n${suffix}`;
+    if (withSuffix.length <= maxChars) {
+      current = withSuffix;
+    } else {
+      chunks.push(current);
+      const suffixChunks = splitMessageText(suffix, maxChars);
+      if (suffixChunks.length === 0) {
+        return undefined;
+      }
+      chunks.push(...suffixChunks.slice(0, -1));
+      current = suffixChunks[suffixChunks.length - 1] || "";
+    }
+  }
+
+  if (current.trim()) {
+    chunks.push(current);
+  }
+  return chunks.length > 1 ? chunks : undefined;
 }
 
 function buildInteractiveCardContent(

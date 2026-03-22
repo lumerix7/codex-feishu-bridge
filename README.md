@@ -38,15 +38,14 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 
 ## Commands
 
-```markdown
 - `/help [-h|--help]` show commands
-- `/status [check-update] [-h|--help]` show current session and run state, or a minimal update-only view
+- `/status [check-update] [-h|--help]` show current session and run state
 - `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session
 - `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
 - `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help
 - `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project
 - `/stop [-h|--help]` stop the current active run
-- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects
+- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects; `bind -n` uses current-first then name-asc list order
 - `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage
 - `/feishu [ws|send|doctor|-h|--help]` show Feishu websocket and outbound send diagnostics
 - `/log [-n N] [--since <expr>] [--grep <text>] [-h|--help]` show recent bridge service logs from systemd journal
@@ -55,7 +54,6 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/search [on|off] [-h|--help]` show or change live web search for this conversation
 - `/model [--list|name|clear] [-h|--help]` show, list, or change the Codex model for this conversation
 - `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation
-```
 
 ## Status
 

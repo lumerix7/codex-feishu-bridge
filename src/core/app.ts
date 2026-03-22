@@ -487,7 +487,8 @@ export class App {
               ? "Resume All Projects"
               : "Resume Current Project",
           sessions,
-          existing?.codexSessionId
+          existing?.codexSessionId,
+          resumeProject
         );
       }
       if ((resumeArgs[0] || "").startsWith("-") && resumeArgs[0] !== "-n") {
@@ -516,11 +517,11 @@ export class App {
         if (!Number.isInteger(index) || index < 1) {
           return "Usage: `/resume -n <index>` where `<index>` is an integer >= 1.";
         }
-        const sessions = await this.listScopedSessions(
+        const sessions = this.sortSessionEntries(await this.listScopedSessions(
           Math.min(index, this.config.codex.sessionAllDefaultCount),
           resumeProject,
           allProjects
-        );
+        ), resumeProject);
         const selected = sessions[index - 1];
         if (!selected) {
           return `session index out of range: ${index}. Use \`/session list${allProjects ? " --all-projects" : ""}${projectExplicitlySelected ? ` --project ${resumeProject}` : ""} --all\` first.`;
@@ -592,7 +593,8 @@ export class App {
               ? "All Project Sessions"
               : "Current Project Sessions",
           sessions,
-          existing?.codexSessionId
+          existing?.codexSessionId,
+          scopedProject
         );
       }
 
@@ -681,9 +683,10 @@ export class App {
       }
 
       if (command.args[0] === "list") {
-        const mode = command.args.includes("--trusted")
+        const listArgs = command.args.slice(1);
+        const mode = listArgs.includes("--trusted")
           ? "trusted"
-          : command.args.includes("--all")
+          : listArgs.includes("--all")
             ? "all"
             : "default";
         const projects = await this.listProjects(mode, currentProject, trustedProjects);
@@ -2309,7 +2312,7 @@ export class App {
       "## Notes",
       "",
       "- `/resume` and `/resume --last` both bind the most recent recorded native Codex session for the current project.",
-      "- `/resume -n <index>` binds the Nth session from the current `/session list` ordering.",
+      "- `/resume -n <index>` binds the Nth session from the current `/session list` ordering: current project first, then project asc, then time desc.",
       "- `/resume <session-id>` binds a specific native session id.",
       "- `-C, --cd <dir>` switches the bound project while resuming the session.",
       "- `--all-projects` expands browsing beyond the current project.",
@@ -2345,6 +2348,7 @@ export class App {
       "- `/session list` shows recent native Codex sessions for the current project.",
       "- `--all-projects` expands the list across `CODEX_SESSIONS_DIR`.",
       "- `--project <path>` filters the list to that specific project path.",
+      "- Session tables are ordered current project first, then project asc, then time desc.",
       `- \`/session list\` defaults to \`${this.config.codex.sessionListDefaultCount}\` sessions for the current project.`,
       `- \`/session list --all\` uses the default count \`${this.config.codex.sessionAllDefaultCount}\` for the current project.`,
       `- \`-n\` accepts values from \`1\` to \`${this.config.codex.sessionAllDefaultCount}\`.`,
@@ -2400,19 +2404,47 @@ export class App {
   private renderSessionList(
     title: string,
     sessions: Awaited<ReturnType<typeof listRecentSessions>>,
-    boundSessionId?: string
+    boundSessionId?: string,
+    currentProject?: string
   ): string {
-    const lines = [`# ${title}`, "", "- sorted by: `time desc`", ""];
-    for (const [index, session] of sessions.entries()) {
-      const flags = [session.sessionId === boundSessionId ? "bound" : ""].filter(Boolean);
+    const sortedSessions = this.sortSessionEntries(sessions, currentProject);
+    const lines = [
+      `# ${title}`,
+      "",
+      "- sorted by: `current project first, then project asc, then time desc`",
+      "",
+      "| # | project | time | session | about | flags |",
+      "| --- | --- | --- | --- | --- | --- |"
+    ];
+    for (const [index, session] of sortedSessions.entries()) {
+      const flags = [
+        currentProject && session.cwd === currentProject ? "current" : "",
+        session.sessionId === boundSessionId ? "bound" : ""
+      ].filter(Boolean);
       lines.push(
-        `${index + 1}. \`${session.sessionId}\`${flags.length ? ` (${flags.join(", ")})` : ""}`
+        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(flags.join(", ") || "-")} |`
       );
-      lines.push(`   - project: \`${escapeMarkdownCell(session.cwd || "(unknown)")}\``);
-      lines.push(`   - time: ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))}`);
-      lines.push(`   - about: ${escapeMarkdownCell(session.preview || "(no preview)")}`);
     }
     return lines.join("\n");
+  }
+
+  private sortSessionEntries(
+    sessions: Awaited<ReturnType<typeof listRecentSessions>>,
+    currentProject?: string
+  ): Awaited<ReturnType<typeof listRecentSessions>> {
+    return [...sessions].sort((a, b) => {
+      const aCurrent = currentProject && a.cwd === currentProject;
+      const bCurrent = currentProject && b.cwd === currentProject;
+      if (aCurrent && !bCurrent) return -1;
+      if (bCurrent && !aCurrent) return 1;
+      const aProject = a.cwd || "";
+      const bProject = b.cwd || "";
+      const byProject = aProject.localeCompare(bProject, undefined, { sensitivity: "base" });
+      if (byProject !== 0) return byProject;
+      const byTime = (b.createdAt || "").localeCompare(a.createdAt || "");
+      if (byTime !== 0) return byTime;
+      return a.sessionId.localeCompare(b.sessionId, undefined, { sensitivity: "base" });
+    });
   }
 
   private renderProjectList(
@@ -2435,7 +2467,7 @@ export class App {
         item.trusted ? "trusted" : ""
       ].filter(Boolean);
       lines.push(
-        `| ${index + 1} | \`${escapeMarkdownCell(item.name)}\` | ${escapeMarkdownCell(flags.join(", ") || "-")} | ${escapeMarkdownCell(item.updatedAt ? this.formatAnyTimestamp(item.updatedAt) : "-")} | \`${escapeMarkdownCell(item.project)}\` |`
+        `| ${index + 1} | ${escapeMarkdownCell(item.name)} | ${escapeMarkdownCell(flags.join(", ") || "-")} | ${escapeMarkdownCell(item.updatedAt ? this.formatAnyTimestamp(item.updatedAt) : "-")} | ${escapeMarkdownCell(item.project)} |`
       );
     }
     return lines.join("\n");
