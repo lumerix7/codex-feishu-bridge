@@ -69,6 +69,7 @@ Working v1 bridge:
 - `/git` `/pwd` `/ls` `/cat` `/tree` `/find` `/rg`
 - `/new -C <path>` to switch/bind to another project and create a fresh session in one step
 - `/project bind <path>` to rebind a conversation to another directory under the allowed project roots
+- `/project bind -n <index>` to bind from `/project list`, which is ordered current project first and then by project name ascending
 - `/project unbind <path>` to remove stored bridge bindings for a specific project path; the current conversation project is rejected
 - `/approvals` to switch the Codex approval mode used for future runs
 - `/model --list` to query available models from Codex app-server when supported, with a bridge-side fallback list otherwise

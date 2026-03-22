@@ -184,7 +184,7 @@ export class App {
         "- `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help",
         "- `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project",
         "- `/stop [-h|--help]` stop the current active run",
-        "- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects",
+        "- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects; `bind -n` uses current-first then name-asc list order",
         "- `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage",
         "- `/feishu [ws|send|doctor|-h|--help]` show Feishu websocket and outbound send diagnostics",
         "- `/log [-n N] [--since <expr>] [--grep <text>] [-h|--help]` show recent bridge service logs from systemd journal",
@@ -2138,6 +2138,7 @@ export class App {
       })
       .map((binding) => ({
         project: binding.project,
+        name: path.basename(binding.project) || binding.project,
         bound: true,
         trusted: trusted.includes(binding.project),
         updatedAt: binding.updatedAt
@@ -2147,12 +2148,14 @@ export class App {
       .filter((project) => !seen.has(project))
       .map((project) => ({
         project,
+        name: path.basename(project) || project,
         bound: false,
         trusted: true
       }));
 
     const currentEntry: ProjectListEntry = {
       project: currentProject,
+      name: path.basename(currentProject) || currentProject,
       bound: Boolean(bindings.find((binding) => binding.project === currentProject)),
       trusted: trusted.includes(currentProject),
       updatedAt: bindings.find((binding) => binding.project === currentProject)?.updatedAt
@@ -2163,7 +2166,7 @@ export class App {
       if (!trustedList.find((item) => item.project === currentProject) && currentEntry.trusted) {
         trustedList.unshift(currentEntry);
       }
-      return trustedList;
+      return this.sortProjectEntries(trustedList, currentProject);
     }
 
     const defaultList = [...boundProjects];
@@ -2171,9 +2174,19 @@ export class App {
       defaultList.unshift(currentEntry);
     }
     if (mode === "default") {
-      return defaultList;
+      return this.sortProjectEntries(defaultList, currentProject);
     }
-    return [...defaultList, ...trustedOnly];
+    return this.sortProjectEntries([...defaultList, ...trustedOnly], currentProject);
+  }
+
+  private sortProjectEntries(projects: ProjectListEntry[], currentProject: string): ProjectListEntry[] {
+    return [...projects].sort((a, b) => {
+      if (a.project === currentProject && b.project !== currentProject) return -1;
+      if (b.project === currentProject && a.project !== currentProject) return 1;
+      const byName = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      if (byName !== 0) return byName;
+      return a.project.localeCompare(b.project, undefined, { sensitivity: "base" });
+    });
   }
 
   private previewText(value: string, maxLength = 120): string {
@@ -2212,7 +2225,7 @@ export class App {
       "- `/project list` shows the normal project list used by `/project bind -n N`.",
       "- `/project list --all` includes trusted Codex projects that are not currently bound in the bridge store.",
       "- `/project list --trusted` shows trusted Codex projects from `config.toml` under the allowed roots.",
-      "- `/project bind -n <index>` uses the current `/project list` ordering.",
+      "- `/project bind -n <index>` uses the current `/project list` ordering: current project first, then project name ascending.",
       "- `/project unbind <path>` removes stored bridge bindings for that project path.",
       "- The bridge rejects unbinding the current conversation project; switch this conversation elsewhere first.",
       `- **allowed roots**: ${this.config.project.allowedRoots.map((root) => `\`${root}\``).join(", ")}`,
@@ -2407,17 +2420,23 @@ export class App {
     projects: ProjectListEntry[],
     currentProject: string
   ): string {
-    const lines = [`# ${title}`, ""];
+    const lines = [
+      `# ${title}`,
+      "",
+      "- sorted by: `current first, then name asc`",
+      "",
+      "| # | name | flags | updated | path |",
+      "| --- | --- | --- | --- | --- |"
+    ];
     for (const [index, item] of projects.entries()) {
       const flags = [
         item.project === currentProject ? "current" : "",
         item.bound ? "bound" : "",
         item.trusted ? "trusted" : ""
       ].filter(Boolean);
-      lines.push(`${index + 1}. \`${item.project}\`${flags.length ? ` (${flags.join(", ")})` : ""}`);
-      if (item.updatedAt) {
-        lines.push(`   - updated: ${item.updatedAt}`);
-      }
+      lines.push(
+        `| ${index + 1} | \`${escapeMarkdownCell(item.name)}\` | ${escapeMarkdownCell(flags.join(", ") || "-")} | ${escapeMarkdownCell(item.updatedAt ? this.formatAnyTimestamp(item.updatedAt) : "-")} | \`${escapeMarkdownCell(item.project)}\` |`
+      );
     }
     return lines.join("\n");
   }
@@ -3113,6 +3132,7 @@ export class App {
 
 interface ProjectListEntry {
   project: string;
+  name: string;
   bound: boolean;
   trusted: boolean;
   updatedAt?: string;
