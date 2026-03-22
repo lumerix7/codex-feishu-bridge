@@ -122,7 +122,6 @@ class AppServerCodexBackend implements CodexBackend {
       sessionId: resolvedSessionId,
       cancelled: false
     };
-    active.client.setServerRequestHandler(async (request) => hooks?.onServerRequest?.(request));
     if (this.config.runTimeoutMs > 0) {
       active.timeout = setTimeout(() => {
         void this.stop(runId);
@@ -147,6 +146,7 @@ class AppServerCodexBackend implements CodexBackend {
       const agentTextById = new Map<string, string>();
       const completedAgentTextById = new Map<string, string>();
       const completedAgentOrder: string[] = [];
+      const completedOperationalBlocks: string[] = [];
       const streamedOutputs: string[] = [];
       let pendingStreamText = "";
       let lastStreamFlushAt = 0;
@@ -154,6 +154,10 @@ class AppServerCodexBackend implements CodexBackend {
 
       const buildVisibleTurnText = (activeItemId?: string): string => {
         const parts: string[] = [];
+        for (const block of completedOperationalBlocks) {
+          const text = block.trim();
+          if (text) parts.push(text);
+        }
         for (const itemId of completedAgentOrder) {
           const text = (completedAgentTextById.get(itemId) || "").trim();
           if (text) parts.push(text);
@@ -168,6 +172,53 @@ class AppServerCodexBackend implements CodexBackend {
           }
         }
         return parts.join("\n\n").trim();
+      };
+
+      const pushOperationalBlock = (block: string): void => {
+        const text = block.trim();
+        if (!text) return;
+        completedOperationalBlocks.push(text);
+        pendingStreamText = buildVisibleTurnText();
+        flushStreamText(true);
+      };
+
+      const renderOperationalBlock = (
+        method: string,
+        params: Record<string, unknown>
+      ): string | undefined => {
+        if (method === "item/tool/call") {
+          const tool = String(params.tool || "").trim() || "(unknown)";
+          const args = params.arguments;
+          return [
+            "```text",
+            "Tool Call",
+            `tool: ${tool}`,
+            "```",
+            ...(args !== undefined
+              ? [
+                  "",
+                  "```json",
+                  safeJsonStringify(args),
+                  "```"
+                ]
+              : [])
+          ].join("\n");
+        }
+        if (method === "item/completed") {
+          const item = isRecord(params.item) ? params.item : {};
+          const type = String(item.type || "").trim();
+          if (!type || type === "agentMessage") return undefined;
+          const lines = ["```text", type === "commandExecution" ? "Command Completed" : "Codex Event", `type: ${type}`];
+          const command = String(item.command || "").trim();
+          const tool = String(item.tool || "").trim();
+          const cwd = String(item.cwd || "").trim();
+          if (command) lines.push(`command: ${command}`);
+          if (tool) lines.push(`tool: ${tool}`);
+          if (cwd) lines.push(`cwd: ${cwd}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
+        return undefined;
       };
 
       const flushStreamText = (force = false): void => {
@@ -201,6 +252,14 @@ class AppServerCodexBackend implements CodexBackend {
         this.scheduleClientShutdown(project, resolvedSessionId, active.client);
         fn();
       };
+
+      active.client.setServerRequestHandler(async (request) => {
+        const block = renderOperationalBlock(request.method, request.params);
+        if (block) {
+          pushOperationalBlock(block);
+        }
+        return hooks?.onServerRequest?.(request);
+      });
 
       const handleNotification = (method: string, params: Record<string, unknown>): void => {
         void hooks?.onNotification?.({ method, params });
@@ -240,6 +299,10 @@ class AppServerCodexBackend implements CodexBackend {
         }
 
         if (method === "item/completed") {
+          const operationalBlock = renderOperationalBlock(method, params);
+          if (operationalBlock) {
+            pushOperationalBlock(operationalBlock);
+          }
           const item = isRecord(params.item) ? params.item : {};
           if (String(item.type || "") !== "agentMessage") return;
           const itemId = String(item.id || "").trim();
@@ -1117,6 +1180,14 @@ function stripScreenPrefix(current: string, baseline: string): string {
 function previewText(value: string, maxLength = 120): string {
   const compact = value.replace(/\s+/g, " ").trim();
   return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 3)}...`;
+}
+
+function safeJsonStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

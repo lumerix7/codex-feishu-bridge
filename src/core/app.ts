@@ -1071,18 +1071,31 @@ export class App {
           onNotification: async (notification) => {
             this.recordCodexNotification(key, notification);
             const maybeUpdate = this.renderCodexNotificationUpdate(notification);
-            if (maybeUpdate && (onStatus || onUpdate)) {
-              await (onStatus || onUpdate)?.(maybeUpdate);
+            if (maybeUpdate) {
+              if (onStatus) {
+                await onStatus(maybeUpdate);
+              } else if (onUpdate) {
+                await onUpdate(maybeUpdate);
+              }
             }
           },
-          onServerRequest: (request) =>
-            this.requestApprovalFromFeishu(
+          onServerRequest: async (request) => {
+            const maybeUpdate = this.renderCodexServerRequestUpdate(request, project);
+            if (maybeUpdate) {
+              if (onStatus) {
+                await onStatus(maybeUpdate);
+              } else if (onUpdate) {
+                await onUpdate(maybeUpdate);
+              }
+            }
+            return this.requestApprovalFromFeishu(
               key,
               message,
               project,
               request,
               onStatus || onUpdate
-            )
+            );
+          }
         }
       );
       this.activeRuns.set(key, {
@@ -1608,6 +1621,54 @@ export class App {
         ...plan.map((step, index) => `${index + 1}. [${this.readString(step.status) || "pending"}] ${this.readString(step.step) || "(step)"}`)
       ].join("\n");
     }
+    if (notification.method === "item/completed") {
+      const item = asObjectRecord(notification.params.item);
+      const type = this.readString(item.type) || "(unknown)";
+      if (type === "agentMessage") {
+        return undefined;
+      }
+      const id = this.readString(item.id);
+      const title = type === "commandExecution" ? "Command Completed" : "Codex Event";
+      const lines = [
+        `# ${title}`,
+        "",
+        `- **type**: \`${type}\``,
+        ...(id ? [`- **id**: \`${id}\``] : [])
+      ];
+      const command = this.readString(item.command);
+      const tool = this.readString(item.tool);
+      const cwd = this.readString(item.cwd);
+      const text = this.readString(item.text);
+      if (command) lines.push(`- **command**: \`${command}\``);
+      if (tool) lines.push(`- **tool**: \`${tool}\``);
+      if (cwd) lines.push(`- **cwd**: \`${cwd}\``);
+      if (text) lines.push(`- **text**: ${text}`);
+      return lines.join("\n");
+    }
+    return undefined;
+  }
+
+  private renderCodexServerRequestUpdate(
+    request: CodexServerRequest,
+    project: string
+  ): string | undefined {
+    if (request.method === "item/tool/call") {
+      const tool = this.readString(request.params.tool) || "(unknown)";
+      const cwd = this.readString(request.params.cwd) || project;
+      const args = request.params.arguments;
+      const lines = [
+        "# Tool Call",
+        "",
+        `- **tool**: \`${tool}\``,
+        `- **cwd**: \`${cwd}\``
+      ];
+      if (args !== undefined) {
+        lines.push("```json");
+        lines.push(this.safeJsonStringify(args));
+        lines.push("```");
+      }
+      return lines.join("\n");
+    }
     return undefined;
   }
 
@@ -2088,6 +2149,14 @@ export class App {
         return `- \`${optionIndex + 1}\` ${label}${description ? `: ${description}` : ""}`;
       })
     ];
+  }
+
+  private safeJsonStringify(value: unknown): string {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
   }
 
   private readString(value: unknown): string | undefined {
