@@ -49,7 +49,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
 - `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork
 - `/session [list [-n N|--all] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]|-h|--help]` show the current bound session, list recent sessions, or show session help
-- `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project
+- `/resume [<session-id>|options] [-h|--help]` bind a session, optionally switching project
 - `/stop [-h|--help]` stop the current active run
 - `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects; `bind -n` uses current-first then name-asc list order
 - `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage

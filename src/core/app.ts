@@ -306,7 +306,7 @@ export class App {
         "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
         "- `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork",
         "- `/session [list [options]|-h|--help]` show the current session or browse recent sessions",
-        "- `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project",
+        "- `/resume [<session-id>|options] [-h|--help]` bind a session, optionally switching project",
         "- `/stop [-h|--help]` stop the current active run",
         "- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects; `bind -n` uses current-first then name-asc list order",
         "- `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage",
@@ -801,6 +801,10 @@ export class App {
       if (projectScopeArg === "") {
         return "Usage: `/resume ... [--project <path>]`";
       }
+      const wantsList = resumeArgs[0] === "--list" || resumeArgs[0] === "--all";
+      if (projectScopeArg && !wantsList) {
+        return "Use `--project <path>` with `/resume --list`, or use `-C|--cd <dir>` to switch project while resuming.";
+      }
       if (projectScopeArg) {
         const scopedProject = await this.resolveProject(projectScopeArg, resumeProject);
         if (projectExplicitlySelected && scopedProject !== resumeProject) {
@@ -815,11 +819,17 @@ export class App {
       if (resumeArgs[0] === "--last") {
         resumeArgs.shift();
       }
-      if (resumeArgs[0] === "--all") {
-        const sessions = await this.listScopedSessions(
+      if (allProjects && resumeArgs[0] !== "--list" && resumeArgs[0] !== "--all") {
+        return "Use `--all-projects` with `/resume --list` to browse across projects, then resume by session id.";
+      }
+      if (resumeArgs[0] === "--list" || resumeArgs[0] === "--all") {
+        const sessions = await this.listSessionsForCommand(
           this.config.codex.sessionAllDefaultCount,
           resumeProject,
-          allProjects
+          {
+            allProjects,
+            allSources: this.codex.mode === "app-server"
+          }
         );
         if (sessions.length === 0) {
           return this.noSessionsText(resumeProject, allProjects, projectExplicitlySelected);
@@ -840,7 +850,7 @@ export class App {
           "# Resume",
           "",
           `- **error**: unsupported bridge option \`${resumeArgs[0]}\``,
-          "- **supported**: `/resume`, `/resume --last`, `/resume -n N`, `/resume <session-id>`, `/resume --all`, `/resume --all-projects`, `/resume --project <path>`, `/resume -h`, `/resume ... -C <dir>`",
+          "- **supported**: `/resume`, `/resume --last`, `/resume -n N`, `/resume <session-id>`, `/resume --list`, `/resume --list --all-projects`, `/resume --list --project <path>`, `/resume -h`, `/resume ... -C <dir>`",
           "- Use a normal follow-up message after `/resume ...` if you want to continue the bound session."
         ].join("\n");
       }
@@ -861,11 +871,17 @@ export class App {
         if (!Number.isInteger(index) || index < 1) {
           return "Usage: `/resume -n <index>` where `<index>` is an integer >= 1.";
         }
-        const sessions = this.sortSessionEntries(await this.listScopedSessions(
-          Math.min(index, this.config.codex.sessionAllDefaultCount),
-          resumeProject,
-          allProjects
-        ), resumeProject);
+        const sessions = this.sortSessionEntries(
+          await this.listSessionsForCommand(
+            Math.min(index, this.config.codex.sessionAllDefaultCount),
+            resumeProject,
+            {
+              allProjects,
+              allSources: this.codex.mode === "app-server"
+            }
+          ),
+          resumeProject
+        );
         const selected = sessions[index - 1];
         if (!selected) {
           return `session index out of range: ${index}. Use \`/session list${allProjects ? " --all-projects" : ""}${projectExplicitlySelected ? ` --project ${resumeProject}` : ""} --all\` first.`;
@@ -2869,8 +2885,11 @@ export class App {
     project: string,
     allProjects = false
   ): Promise<string | undefined> {
-    const sessions = await this.listScopedSessions(1, project, allProjects);
-    return sessions[0]?.sessionId;
+    const sessions = await this.listSessionsForCommand(this.config.codex.sessionAllDefaultCount, project, {
+      allProjects,
+      allSources: this.codex.mode === "app-server"
+    });
+    return this.sortSessionEntries(sessions, project)[0]?.sessionId;
   }
 
   private async listScopedSessions(
@@ -3094,34 +3113,41 @@ export class App {
     return [
       "# Resume",
       "",
-      "Resume a previous session.",
+      "Resume a session.",
       "",
       "## Usage",
+      "",
+      "- `/resume [<session-id>|options]`",
+      "- `/resume -h`",
+      "- `/resume --help`",
+      "",
+      "## Options",
+      "",
+      "- `<session-id>` bind one specific session id",
+      "- `--last` bind the most recent session in the current scope",
+      "- `-n <index>` bind the Nth session from the current `/session list` ordering",
+      "- `--list` show the current resumable session list",
+      "- `--all-projects` expand browsing beyond the current project for `--list`",
+      "- `--project <path>` scope `--list` browsing to one project path",
+      "- `-C, --cd <dir>` switch the bound project while resuming",
+      "",
+      "## Behavior",
+      "",
+      "- `/resume` and `/resume --last` both bind the most recent session in the current scope.",
+      "- `/resume --list` is the listing shortcut before selecting a session to resume.",
+      "- `/resume --list --all-projects` browses across projects.",
+      "- Use `-C, --cd <dir>` to switch project while resuming a session.",
+      "- `/resume -n <index>` is order-dependent and should be treated as a convenience, not a stable identifier.",
+      "- Native Codex flags like `--config`, `--remote`, `--image`, `--model`, `--sandbox`, and prompt arguments are not exposed on this bridge command.",
+      "",
+      "## Examples",
       "",
       "- `/resume`",
       "- `/resume --last`",
       "- `/resume -n 3`",
-      "- `/resume <session-id>`",
-      "- `/resume --all-projects`",
-      "- `/resume --project /path/to/project`",
-      "- `/resume --all --project /path/to/project`",
-      "- `/resume --last -C subdir`",
-      "- `/resume -h`",
-      "- `/resume --help`",
-      "- `/resume --all`",
-      "",
-      "## Notes",
-      "",
-      "- `/resume` and `/resume --last` both bind the most recent recorded native Codex session for the current project.",
-      "- `/resume -n <index>` binds the Nth session from the current `/session list` ordering: current project first, then project asc, then time desc.",
-      "- `/resume <session-id>` binds a specific native session id.",
-      "- `-C, --cd <dir>` switches the bound project while resuming the session.",
-      "- `--all-projects` expands browsing beyond the current project.",
-      "- `--project <path>` scopes browsing and latest-session lookup to that specific project path.",
-      "- `/resume --all` shows the recent sessions list for the current project in Feishu instead of opening an interactive picker.",
-      `- In Feishu, use \`/session list --all\` for the default current-project list of \`${this.config.codex.sessionAllDefaultCount}\` sessions, or \`/session list --all --all-projects\` to browse across projects.`,
-      "- Index-based resume is order-dependent and should be treated as a convenience, not a stable identifier.",
-      "- Native Codex flags like `--config`, `--remote`, `--image`, `--model`, `--sandbox`, and prompt arguments are not exposed on this bridge command."
+      "- `/resume --list --all-projects`",
+      "- `/resume --list --project /path/to/project`",
+      "- `/resume -C /path/to/project`"
     ].join("\n");
   }
 
