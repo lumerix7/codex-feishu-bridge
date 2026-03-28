@@ -1916,10 +1916,12 @@ export class App {
     }
     if (notification.method === "turn/diff/updated") {
       const diff = this.readString(notification.params.diff) || "";
+      const turnId = this.readString(notification.params.turnId);
       const files = this.summarizeDiffFiles(diff);
       return [
         "# Diff Updated",
         "",
+        ...(turnId ? [`- **turn**: \`${turnId}\``] : []),
         ...(files.length > 0 ? [`- **files**: ${files.map((item) => `\`${item}\``).join(", ")}`] : []),
         "```diff",
         diff || "(empty diff)",
@@ -1958,12 +1960,14 @@ export class App {
     project: string
   ): string | undefined {
     if (request.method === "item/tool/call") {
+      const id = this.readString(request.params.callId) || this.readString(request.params.itemId);
       const tool = this.readString(request.params.tool) || "(unknown)";
       const cwd = this.readString(request.params.cwd) || project;
       const args = request.params.arguments;
       const lines = [
         "# Tool Call",
         "",
+        ...(id ? [`- **id**: \`${id}\``] : []),
         `- **tool**: \`${tool}\``,
         `- **cwd**: \`${cwd}\``
       ];
