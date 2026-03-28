@@ -542,10 +542,11 @@ export class FeishuGateway {
     );
   }
 
-  async sendStartupReady(text: string, footer?: string): Promise<void> {
+  async sendStartupReady(text: string, footer?: string, title?: string): Promise<void> {
     if (!this.config.startupNotifyChatId) return;
     await this.send({
       chatId: this.config.startupNotifyChatId,
+      title,
       text,
       footer
     });

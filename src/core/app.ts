@@ -59,7 +59,7 @@ export class App {
       async (message) => {
         const command = parseCommand(message);
         const currentBinding = await this.store.get(conversationKeyFor(message));
-        const messageTitle = this.titleForCommand(command?.name);
+        const messageTitle = this.titleForCommand(command?.name, message.text);
         const messageTemplate = this.templateForCommand(command?.name);
         const messageFooter = this.footerForMessage(command?.name, currentBinding);
         const formatForFeishu = (text: string): string =>
@@ -83,7 +83,7 @@ export class App {
                   ? this.extractLeadingMarkdownHeading(formattedUpdate)
                   : undefined;
                 const statusTitle = codexStatusHeading
-                  ? `Codex | ${codexStatusHeading.heading}`
+                  ? `Codex | 🤖 ${codexStatusHeading.heading}`
                   : messageTitle;
                 const statusText = codexStatusHeading
                   ? codexStatusHeading.body
@@ -1375,7 +1375,8 @@ export class App {
       const binding = await this.store.get(`p2p:${this.config.feishu.startupNotifyChatId}`);
       await this.feishu?.sendStartupReady(
         this.buildStartupReadyMessage(title, binding?.project),
-        this.buildIsoFooter()
+        this.buildIsoFooter(),
+        title
       );
       console.log(logLabel, {
         chatId: this.config.feishu.startupNotifyChatId,
@@ -1389,8 +1390,6 @@ export class App {
   private buildStartupReadyMessage(title = "Bridge Ready", currentProject?: string): string {
     const feishuDiagnostics = this.feishu?.diagnostics();
     return [
-      `# ${title}`,
-      "",
       `- **backend**: \`${this.codex.mode}\``,
       `- **profile**: \`${this.config.codex.profileMode}\``,
       `- **default project**: \`${this.config.project.defaultProject}\``,
@@ -1401,12 +1400,22 @@ export class App {
     ].join("\n");
   }
 
-  private titleForCommand(commandName?: string): string {
+  private titleForCommand(commandName?: string, rawInput?: string): string {
+    if (!commandName) {
+      return `Codex | 🤖 ${this.shortenTitleInput(rawInput || "reply")}`;
+    }
+    const base = this.commandBaseTitle(commandName);
+    const emoji = this.commandTitleEmoji(commandName);
+    const input = this.shortenTitleInput(rawInput || `/${commandName}`);
+    return `${base} | ${emoji ? `${emoji} ` : ""}${input}`;
+  }
+
+  private commandBaseTitle(commandName: string): string {
     switch (commandName) {
       case "help":
-        return "Bridge Help";
+        return "Help";
       case "status":
-        return "Bridge Status";
+        return "Status";
       case "thread":
         return "Thread";
       case "compact":
@@ -1458,6 +1467,69 @@ export class App {
       default:
         return "Codex";
     }
+  }
+
+  private commandTitleEmoji(commandName: string): string | undefined {
+    switch (commandName) {
+      case "help":
+        return "❓";
+      case "status":
+        return "📊";
+      case "thread":
+        return "🧵";
+      case "compact":
+        return "🗜️";
+      case "summary":
+        return "📝";
+      case "diff":
+        return "🧩";
+      case "skills":
+        return "🧠";
+      case "config":
+        return "⚙️";
+      case "new":
+        return "✨";
+      case "session":
+        return "🧭";
+      case "resume":
+        return "↩️";
+      case "stop":
+        return "⏹️";
+      case "project":
+        return "📁";
+      case "log":
+        return "📜";
+      case "git":
+        return "🌿";
+      case "feishu":
+        return "🪶";
+      case "pwd":
+      case "ls":
+      case "cat":
+      case "tree":
+      case "find":
+      case "rg":
+        return "📂";
+      case "approvals":
+        return "🔐";
+      case "search":
+        return "🔎";
+      case "model":
+        return "🤖";
+      case "profile":
+        return "👤";
+      default:
+        return undefined;
+    }
+  }
+
+  private shortenTitleInput(input: string, maxLength = 44): string {
+    const normalized = input.replace(/\s+/g, " ").trim();
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+    const edge = Math.max(8, Math.floor((maxLength - 3) / 2));
+    return `${normalized.slice(0, edge)}...${normalized.slice(-edge)}`;
   }
 
   private templateForCommand(commandName?: string): OutgoingMessage["template"] {
