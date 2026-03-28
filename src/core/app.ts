@@ -79,22 +79,32 @@ export class App {
                 const latestBinding =
                   (await this.store.get(conversationKeyFor(message))) || currentBinding;
                 const formattedUpdate = formatForFeishu(update);
+                const codexStatusHeading = !command?.name
+                  ? this.extractLeadingMarkdownHeading(formattedUpdate)
+                  : undefined;
+                const statusTitle = codexStatusHeading
+                  ? `Codex | ${codexStatusHeading.heading}`
+                  : messageTitle;
+                const statusText = codexStatusHeading
+                  ? codexStatusHeading.body
+                  : formattedUpdate;
                 console.log("Bridge app-server status route", {
                   messageId: message.messageId,
                   chatId: message.chatId,
                   threadId: message.threadId,
                   command: command?.name || "codex",
                   route: "status-card",
-                  textPreview: this.previewText(formattedUpdate)
+                  title: statusTitle,
+                  textPreview: this.previewText(statusText)
                 });
                 await this.feishu?.send({
                   chatId: message.chatId,
-                  title: messageTitle,
+                  title: statusTitle,
                   template: messageTemplate,
                   footer: command?.name
                     ? this.footerForMessage(command?.name, latestBinding)
                     : this.footerForCodexReply(latestBinding),
-                  text: formattedUpdate,
+                  text: statusText,
                   replyToMessageId: message.messageId,
                   threadId: message.threadId,
                   streaming: false,
@@ -1498,6 +1508,20 @@ export class App {
       return "";
     }
     return normalized.slice(firstNewline + 1).replace(/^\n+/, "");
+  }
+
+  private extractLeadingMarkdownHeading(text: string): { heading: string; body: string } | undefined {
+    const normalized = text.replace(/\r\n/g, "\n");
+    if (!normalized.startsWith("# ")) {
+      return undefined;
+    }
+    const firstNewline = normalized.indexOf("\n");
+    const heading = normalized.slice(2, firstNewline < 0 ? undefined : firstNewline).trim();
+    if (!heading) {
+      return undefined;
+    }
+    const body = firstNewline < 0 ? "" : normalized.slice(firstNewline + 1).replace(/^\n+/, "");
+    return { heading, body };
   }
 
   private mergeStreamingText(existing: string, next: string): string {
