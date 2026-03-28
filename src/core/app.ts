@@ -1130,11 +1130,13 @@ export class App {
         existing.model ||
         this.readString(threadInfo?.model) ||
         this.readString(thread?.model);
+      const effectiveSource = this.formatThreadSource(threadInfo?.source ?? thread?.source);
       return [
         "# Current Session",
         "",
         `- **session**: \`${existing.codexSessionId}\``,
         `- **project**: \`${project}\``,
+        ...(effectiveSource ? [`- **source**: \`${effectiveSource}\``] : []),
         ...(effectiveModel ? [`- **model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`] : []),
         `- **time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
         `- **cwd**: \`${session?.cwd || "(unknown)"}\``,
