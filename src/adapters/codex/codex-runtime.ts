@@ -566,6 +566,23 @@ class AppServerCodexBackend implements CodexBackend {
     }
   }
 
+  async listThreads(
+    project: string,
+    options?: {
+      limit?: number;
+      cwd?: string;
+      allSources?: boolean;
+      archived?: boolean;
+    }
+  ): Promise<Record<string, unknown> | undefined> {
+    const client = new AppServerSessionClient(this.config, project);
+    try {
+      return await client.listThreads(options);
+    } finally {
+      await client.shutdown().catch(() => undefined);
+    }
+  }
+
   async readConfig(
     project: string,
     options?: { includeLayers?: boolean }

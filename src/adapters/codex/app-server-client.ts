@@ -15,6 +15,19 @@ interface PendingRequest {
   timeout?: NodeJS.Timeout;
 }
 
+const ALL_THREAD_SOURCE_KINDS = [
+  "cli",
+  "vscode",
+  "exec",
+  "appServer",
+  "subAgent",
+  "subAgentReview",
+  "subAgentCompact",
+  "subAgentThreadSpawn",
+  "subAgentOther",
+  "unknown"
+] as const;
+
 export class AppServerSessionClient {
   private child?: ChildProcessWithoutNullStreams;
   private nextRequestId = 1;
@@ -146,6 +159,22 @@ export class AppServerSessionClient {
     const result = await this.request("skills/list", {
       cwds: [this.project],
       ...(options?.forceReload !== undefined ? { forceReload: options.forceReload } : {})
+    });
+    return isRecord(result) ? result : undefined;
+  }
+
+  async listThreads(options?: {
+    limit?: number;
+    cwd?: string;
+    allSources?: boolean;
+    archived?: boolean;
+  }): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("thread/list", {
+      ...(options?.limit ? { limit: options.limit } : {}),
+      ...(options?.cwd ? { cwd: options.cwd } : {}),
+      ...(options?.archived !== undefined ? { archived: options.archived } : {}),
+      ...(options?.allSources ? { sourceKinds: [...ALL_THREAD_SOURCE_KINDS] } : {})
     });
     return isRecord(result) ? result : undefined;
   }

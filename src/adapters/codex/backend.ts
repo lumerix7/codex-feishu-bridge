@@ -72,6 +72,15 @@ export interface CodexBackend {
     project: string,
     options?: { forceReload?: boolean }
   ): Promise<Record<string, unknown> | undefined>;
+  listThreads?(
+    project: string,
+    options?: {
+      limit?: number;
+      cwd?: string;
+      allSources?: boolean;
+      archived?: boolean;
+    }
+  ): Promise<Record<string, unknown> | undefined>;
   readConfig?(
     project: string,
     options?: { includeLayers?: boolean }

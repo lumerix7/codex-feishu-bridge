@@ -19,6 +19,14 @@ const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 30_000;
 const GIT_OUTPUT_SOFT_LIMIT = 12_000;
 
+type SessionListEntry = {
+  sessionId: string;
+  createdAt?: string;
+  cwd?: string;
+  preview?: string;
+  source?: string;
+};
+
 export class App {
   private readonly store: BindingStore;
   private readonly codex: CodexBackend;
@@ -283,7 +291,7 @@ export class App {
         "- `/skills [--reload] [-h|--help]` show Codex skills visible for the current project",
         "- `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project",
         "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
-        "- `/session [list [-n N|--all] [--all-projects] [--project <path>]|-h|--help]` show the current bound session, list recent sessions, or show session help",
+        "- `/session [list [options]|-h|--help]` show the current bound session, list recent sessions, or show session help",
         "- `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project",
         "- `/stop [-h|--help]` stop the current active run",
         "- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects; `bind -n` uses current-first then name-asc list order",
@@ -900,11 +908,19 @@ export class App {
       const isList = sessionArgs[0] === "list" || isLegacyNumericList;
       if (isList) {
         const listArgs = sessionArgs[0] === "list" ? sessionArgs.slice(1) : sessionArgs;
+        const interactiveOnly = this.consumeFlag(listArgs, "--interactive-only");
+        const allSources = this.consumeFlag(listArgs, "--all-sources");
+        if (interactiveOnly && allSources) {
+          return "Usage: `/session list [--interactive-only|--all-sources] ...`";
+        }
         const limit = this.parseSessionsListLimit(listArgs);
         const scopedProject = projectScopeArg
           ? await this.resolveProject(projectScopeArg, currentProject)
           : currentProject;
-        const sessions = await this.listScopedSessions(limit, scopedProject, allProjects);
+        const sessions = await this.listSessionsForCommand(limit, scopedProject, {
+          allProjects,
+          allSources: this.codex.mode === "app-server" ? !interactiveOnly : true
+        });
         if (sessions.length === 0) {
           return this.noSessionsText(scopedProject, allProjects, Boolean(projectScopeArg));
         }
@@ -2600,6 +2616,14 @@ export class App {
     return typeof value === "string" && value.trim() ? value.trim() : undefined;
   }
 
+  private readNumber(value: unknown): number | undefined {
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  }
+
+  private readArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [];
+  }
+
   private readDecisionChoices(value: unknown): ChoiceReply[] {
     if (!Array.isArray(value)) return [];
     const choices: ChoiceReply[] = [];
@@ -2707,6 +2731,31 @@ export class App {
             includeUnknownCwd: true
           }
     );
+  }
+
+  private async listSessionsForCommand(
+    limit: number,
+    project: string,
+    options?: {
+      allProjects?: boolean;
+      allSources?: boolean;
+    }
+  ): Promise<SessionListEntry[]> {
+    if (this.codex.mode === "app-server" && this.codex.listThreads) {
+      const native = await this.codex.listThreads(project, {
+        limit: Math.max(1, limit),
+        cwd: options?.allProjects ? undefined : project,
+        allSources: options?.allSources ?? true,
+        archived: false
+      }).catch(() => undefined);
+      const data = this.readArray(asObjectRecord(native).data);
+      if (data.length > 0) {
+        return data
+          .map((item) => this.normalizeThreadListEntry(isRecord(item) ? item : undefined))
+          .filter((item): item is SessionListEntry => Boolean(item));
+      }
+    }
+    return this.listScopedSessions(limit, project, options?.allProjects);
   }
 
   private async listTrustedProjects(): Promise<string[]> {
@@ -2923,27 +2972,35 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/session`",
-      "- `/session list`",
-      "- `/session list -n 12`",
-      "- `/session list --all`",
-      "- `/session list --all-projects`",
-      "- `/session list --project /path/to/project`",
-      "- `/session list --all --project /path/to/project`",
+      "- `/session [list [options]]`",
       "- `/session -h`",
       "- `/session --help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `list` browse recent sessions",
+      `- ` + "`-n <count>`" + ` limit the list size; accepts values from ` + "`1`" + ` to ` + `\`${this.config.codex.sessionAllDefaultCount}\``,
+      `- ` + "`--all`" + ` use the larger default count ` + `\`${this.config.codex.sessionAllDefaultCount}\``,
+      "- `--all-projects` include sessions from other projects",
+      "- `--project <path>` filter to one specific project path",
+      "- `--interactive-only` show only native interactive sources in `app-server` mode",
+      "- `--all-sources` include non-interactive sources like app-server and exec sessions in `app-server` mode",
+      "",
+      "## Behavior",
       "",
       "- `/session` shows the current bound session for this conversation.",
-      "- `/session list` shows recent native Codex sessions for the current project.",
-      "- `--all-projects` expands the list across `CODEX_SESSIONS_DIR`.",
-      "- `--project <path>` filters the list to that specific project path.",
-      "- Session tables are ordered current project first, then project asc, then time desc.",
       `- \`/session list\` defaults to \`${this.config.codex.sessionListDefaultCount}\` sessions for the current project.`,
-      `- \`/session list --all\` uses the default count \`${this.config.codex.sessionAllDefaultCount}\` for the current project.`,
-      `- \`-n\` accepts values from \`1\` to \`${this.config.codex.sessionAllDefaultCount}\`.`,
-      "- Use `/resume <session-id>` to bind one of the listed sessions."
+      "- In `app-server` mode, `/session list` uses native `thread/list` and defaults to `--all-sources`.",
+      "- Session tables are ordered current project first, then project asc, then time desc.",
+      "- Use `/resume <session-id>` to bind one of the listed sessions.",
+      "",
+      "## Examples",
+      "",
+      "- `/session`",
+      "- `/session list`",
+      "- `/session list --interactive-only`",
+      "- `/session list --all --all-projects`",
+      "- `/session list --project /path/to/project`"
     ].join("\n");
   }
 
@@ -2994,7 +3051,7 @@ export class App {
 
   private renderSessionList(
     title: string,
-    sessions: Awaited<ReturnType<typeof listRecentSessions>>,
+    sessions: SessionListEntry[],
     boundSessionId?: string,
     currentProject?: string
   ): string {
@@ -3004,8 +3061,8 @@ export class App {
       "",
       "- sorted by: `current project first, then project asc, then time desc`",
       "",
-      "| # | project | time | session | about | flags |",
-      "| --- | --- | --- | --- | --- | --- |"
+      "| # | project | time | session | source | about | flags |",
+      "| --- | --- | --- | --- | --- | --- | --- |"
     ];
     for (const [index, session] of sortedSessions.entries()) {
       const flags = [
@@ -3013,16 +3070,16 @@ export class App {
         session.sessionId === boundSessionId ? "bound" : ""
       ].filter(Boolean);
       lines.push(
-        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(flags.join(", ") || "-")} |`
+        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.source || "-")} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(flags.join(", ") || "-")} |`
       );
     }
     return lines.join("\n");
   }
 
   private sortSessionEntries(
-    sessions: Awaited<ReturnType<typeof listRecentSessions>>,
+    sessions: SessionListEntry[],
     currentProject?: string
-  ): Awaited<ReturnType<typeof listRecentSessions>> {
+  ): SessionListEntry[] {
     return [...sessions].sort((a, b) => {
       const aCurrent = currentProject && a.cwd === currentProject;
       const bCurrent = currentProject && b.cwd === currentProject;
@@ -3036,6 +3093,36 @@ export class App {
       if (byTime !== 0) return byTime;
       return a.sessionId.localeCompare(b.sessionId, undefined, { sensitivity: "base" });
     });
+  }
+
+  private normalizeThreadListEntry(thread: Record<string, unknown> | undefined): SessionListEntry | undefined {
+    if (!thread) return undefined;
+    const sessionId = this.readString(thread.id);
+    if (!sessionId) return undefined;
+    return {
+      sessionId,
+      createdAt: this.formatThreadTimestamp(this.readNumber(thread.createdAt)),
+      cwd: this.readString(thread.cwd),
+      preview: this.readString(thread.preview),
+      source: this.formatThreadSource(thread.source)
+    };
+  }
+
+  private formatThreadTimestamp(value: number | undefined): string | undefined {
+    if (!Number.isFinite(value)) return undefined;
+    return new Date((value as number) * 1000).toISOString();
+  }
+
+  private formatThreadSource(source: unknown): string | undefined {
+    if (typeof source === "string") return source;
+    if (!isRecord(source)) return undefined;
+    const entry = Object.entries(source)[0];
+    if (!entry) return undefined;
+    const [key, value] = entry;
+    if (typeof value === "string" && value) {
+      return `${key}:${value}`;
+    }
+    return key;
   }
 
   private renderProjectList(
