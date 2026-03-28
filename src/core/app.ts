@@ -321,7 +321,7 @@ export class App {
         "",
         "- `/project [list [options]|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings",
         "- `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage",
-        "- `/pwd [-h|--help]`, `/ls [args...]`, `/cat <path...>`, `/tree [args...]`, `/find [args...]`, `/rg [args...]` run local project commands",
+        "- `/cat <path...>`, `/find [args...]`, `/head [args...]`, `/ls [args...]`, `/pwd [-h|--help]`, `/rg [args...]`, `/sha256sum <path...>`, `/tail [args...]`, `/tree [args...]`, `/wc [args...]` run local project commands",
         "",
         "## Diagnostics",
         "",
@@ -1333,12 +1333,16 @@ export class App {
     }
 
     if (
-      command?.name === "pwd" ||
-      command?.name === "ls" ||
       command?.name === "cat" ||
-      command?.name === "tree" ||
       command?.name === "find" ||
-      command?.name === "rg"
+      command?.name === "head" ||
+      command?.name === "ls" ||
+      command?.name === "pwd" ||
+      command?.name === "rg" ||
+      command?.name === "sha256sum" ||
+      command?.name === "tail" ||
+      command?.name === "tree" ||
+      command?.name === "wc"
     ) {
       const localCommandName = command.name;
       const project = binding?.project || this.config.project.defaultProject;
@@ -3132,14 +3136,18 @@ export class App {
     ].join("\n");
   }
 
-  private localCommandHelpText(name: "pwd" | "ls" | "cat" | "tree" | "find" | "rg"): string {
+  private localCommandHelpText(name: "cat" | "find" | "head" | "ls" | "pwd" | "rg" | "sha256sum" | "tail" | "tree" | "wc"): string {
     const examples: Record<typeof name, string[]> = {
-      pwd: ["- `/pwd`", "- `/pwd -h`", "- `/pwd --help`"],
-      ls: ["- `/ls`", "- `/ls -la`", "- `/ls src`"],
       cat: ["- `/cat README.md`", "- `/cat src/core/app.ts`"],
-      tree: ["- `/tree`", "- `/tree -L 2`", "- `/tree src`"],
       find: ["- `/find . -maxdepth 2 -type f`", "- `/find src -name '*.ts'`"],
-      rg: ["- `/rg TODO`", "- `/rg handleIncoming src`", "- `/rg --files src`"]
+      head: ["- `/head README.md`", "- `/head -n 20 src/core/app.ts`"],
+      ls: ["- `/ls`", "- `/ls -la`", "- `/ls src`"],
+      pwd: ["- `/pwd`", "- `/pwd -h`", "- `/pwd --help`"],
+      rg: ["- `/rg TODO`", "- `/rg handleIncoming src`", "- `/rg --files src`"],
+      sha256sum: ["- `/sha256sum README.md`", "- `/sha256sum package.json src/core/app.ts`"],
+      tail: ["- `/tail README.md`", "- `/tail -n 50 var/log/app.log`"],
+      tree: ["- `/tree`", "- `/tree -L 2`", "- `/tree src`"],
+      wc: ["- `/wc README.md`", "- `/wc -l src/core/app.ts`"]
     };
     return [
       `# ${name.toUpperCase()}`,
@@ -4320,7 +4328,7 @@ export class App {
   }
 
   private async runLocalCommand(
-    command: "pwd" | "ls" | "cat" | "tree" | "find" | "rg",
+    command: "cat" | "find" | "head" | "ls" | "pwd" | "rg" | "sha256sum" | "tail" | "tree" | "wc",
     project: string,
     args: string[]
   ): Promise<string> {

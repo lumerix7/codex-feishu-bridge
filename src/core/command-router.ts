@@ -19,6 +19,10 @@ export type CommandName =
   | "pwd"
   | "ls"
   | "cat"
+  | "head"
+  | "tail"
+  | "wc"
+  | "sha256sum"
   | "tree"
   | "find"
   | "rg"
@@ -58,6 +62,10 @@ export function parseCommand(message: IncomingMessage): ParsedCommand | undefine
       "pwd",
       "ls",
       "cat",
+      "head",
+      "tail",
+      "wc",
+      "sha256sum",
       "tree",
       "find",
       "rg",

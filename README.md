@@ -64,7 +64,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 
 - `/project [list [options]|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings
 - `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage
-- `/pwd [-h|--help]`, `/ls [args...]`, `/cat <path...>`, `/tree [args...]`, `/find [args...]`, `/rg [args...]` run local project commands
+- `/cat <path...>`, `/find [args...]`, `/head [args...]`, `/ls [args...]`, `/pwd [-h|--help]`, `/rg [args...]`, `/sha256sum <path...>`, `/tail [args...]`, `/tree [args...]`, `/wc [args...]` run local project commands
 
 ### Diagnostics
 
@@ -81,7 +81,7 @@ Working v1 bridge:
 - conversation to native Codex session binding
 - `/help` `/status` `/thread` `/compact` `/summary` `/diff` `/skills` `/config` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/feishu` `/log`
 - `/search` `/model` `/profile`
-- `/git` `/pwd` `/ls` `/cat` `/tree` `/find` `/rg`
+- `/git` `/cat` `/find` `/head` `/ls` `/pwd` `/rg` `/sha256sum` `/tail` `/tree` `/wc`
 - `/new -C <path>` to switch/bind to another project and create a fresh session in one step
 - `/project bind <path>` to rebind a conversation to another directory under the allowed project roots
 - `/project bind -n <index>` to bind from `/project list`, which is ordered current project first and then by project name ascending
