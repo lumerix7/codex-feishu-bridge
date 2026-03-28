@@ -52,6 +52,7 @@ export interface AppConfig {
     sessionAllDefaultCount: number;
     runTimeoutMs: number;
     approvalTimeoutMs: number;
+    compactTimeoutMs: number;
     spawnStatusIntervalMs: number;
     statusIncludeProject: boolean;
     terminalRenderMode: "markdown" | "plain";
@@ -101,6 +102,7 @@ interface JsonConfigShape {
     sandboxMode?: unknown;
     runTimeoutMs?: unknown;
     approvalTimeoutMs?: unknown;
+    compactTimeoutMs?: unknown;
     spawn?: {
       statusIntervalMs?: unknown;
     };
@@ -313,6 +315,13 @@ export function loadConfig(): AppConfig {
         180000,
         jsonConfig,
         ["codex", "approvalTimeoutMs"],
+        { min: 1000 }
+      ),
+      compactTimeoutMs: readIntegerSetting(
+        "CODEX_COMPACT_TIMEOUT_MS",
+        180000,
+        jsonConfig,
+        ["codex", "compactTimeoutMs"],
         { min: 1000 }
       ),
       spawnStatusIntervalMs: readIntegerSetting(

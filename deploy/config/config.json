@@ -31,6 +31,7 @@
     "sandboxMode": "danger-full-access",
     "runTimeoutMs": 600000,
     "approvalTimeoutMs": 180000,
+    "compactTimeoutMs": 180000,
     "spawn": {
       "statusIntervalMs": 30000
     },

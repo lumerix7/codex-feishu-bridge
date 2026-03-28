@@ -47,8 +47,8 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/skills [--reload] [-h|--help]` show Codex skills visible for the current project
 - `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project
 - `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
-- `/fork [--last|<session-id>|-n N|-h|--list] [--all-projects] [--project <path>]` fork a Codex session and bind the new fork
-- `/session [list [-n N|--all] [--all-projects] [--project <path>] [--interactive-only|--all-sources]|-h|--help]` show the current bound session, list recent sessions, or show session help
+- `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork
+- `/session [list [-n N|--all] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]|-h|--help]` show the current bound session, list recent sessions, or show session help
 - `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project
 - `/stop [-h|--help]` stop the current active run
 - `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects; `bind -n` uses current-first then name-asc list order
@@ -188,6 +188,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - In `app-server`, `/diff` reads the latest cached `turn/diff/updated` notification for the bound session.
 - `codex.approvalTimeoutMs` controls how long the bridge waits for a Feishu approval or user-input reply before sending a timeout-safe response back to Codex.
 - `codex.runTimeoutMs` controls the maximum lifetime of one active Codex run
+- `codex.compactTimeoutMs` controls how long the bridge waits for native `thread/compacted` when `/compact` is used
   before the bridge terminates it.
 - `codex.spawn.statusIntervalMs` controls the heartbeat interval for long-running
   `spawn` turns. Set it to `0` to disable heartbeats.

@@ -28,6 +28,8 @@ const ALL_THREAD_SOURCE_KINDS = [
   "unknown"
 ] as const;
 
+const INTERACTIVE_THREAD_SOURCE_KINDS = ["cli", "vscode"] as const;
+
 export class AppServerSessionClient {
   private child?: ChildProcessWithoutNullStreams;
   private nextRequestId = 1;
@@ -138,7 +140,7 @@ export class AppServerSessionClient {
       const timer = setTimeout(() => {
         cleanup();
         reject(new Error(`Codex app-server compact timed out for session ${sessionId}.`));
-      }, 30_000);
+      }, this.config.compactTimeoutMs);
       timer.unref();
       this.subscribe(handler);
     });
@@ -176,14 +178,24 @@ export class AppServerSessionClient {
     limit?: number;
     cwd?: string;
     allSources?: boolean;
+    nonInteractiveOnly?: boolean;
+    sourceKinds?: string[];
     archived?: boolean;
   }): Promise<Record<string, unknown> | undefined> {
     await this.ensureStarted();
+    const sourceKinds =
+      options?.sourceKinds && options.sourceKinds.length > 0
+        ? options.sourceKinds
+        : options?.allSources
+          ? [...ALL_THREAD_SOURCE_KINDS]
+          : options?.nonInteractiveOnly
+            ? ALL_THREAD_SOURCE_KINDS.filter((kind) => !INTERACTIVE_THREAD_SOURCE_KINDS.includes(kind as typeof INTERACTIVE_THREAD_SOURCE_KINDS[number]))
+            : undefined;
     const result = await this.request("thread/list", {
       ...(options?.limit ? { limit: options.limit } : {}),
       ...(options?.cwd ? { cwd: options.cwd } : {}),
       ...(options?.archived !== undefined ? { archived: options.archived } : {}),
-      ...(options?.allSources ? { sourceKinds: [...ALL_THREAD_SOURCE_KINDS] } : {})
+      ...(sourceKinds ? { sourceKinds } : {})
     });
     return isRecord(result) ? result : undefined;
   }

@@ -585,6 +585,8 @@ class AppServerCodexBackend implements CodexBackend {
       limit?: number;
       cwd?: string;
       allSources?: boolean;
+      nonInteractiveOnly?: boolean;
+      sourceKinds?: string[];
       archived?: boolean;
     }
   ): Promise<Record<string, unknown> | undefined> {

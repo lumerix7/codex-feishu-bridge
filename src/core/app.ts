@@ -27,6 +27,19 @@ type SessionListEntry = {
   source?: string;
 };
 
+const SESSION_SOURCE_KINDS = [
+  "cli",
+  "vscode",
+  "exec",
+  "appServer",
+  "subAgent",
+  "subAgentReview",
+  "subAgentCompact",
+  "subAgentThreadSpawn",
+  "subAgentOther",
+  "unknown"
+] as const;
+
 export class App {
   private readonly store: BindingStore;
   private readonly codex: CodexBackend;
@@ -1036,9 +1049,18 @@ export class App {
       if (isList) {
         const listArgs = sessionArgs[0] === "list" ? sessionArgs.slice(1) : sessionArgs;
         const interactiveOnly = this.consumeFlag(listArgs, "--interactive-only");
+        const nonInteractiveOnly = this.consumeFlag(listArgs, "--non-interactive-only");
         const allSources = this.consumeFlag(listArgs, "--all-sources");
-        if (interactiveOnly && allSources) {
-          return "Usage: `/session list [--interactive-only|--all-sources] ...`";
+        const sourceKind = this.consumeOptionValue(listArgs, "--source");
+        if (sourceKind === "") {
+          return "Usage: `/session list [--source <source>] ...`";
+        }
+        const sourceFilters = [interactiveOnly, nonInteractiveOnly, allSources, Boolean(sourceKind)].filter(Boolean).length;
+        if (sourceFilters > 1) {
+          return "Use only one of: `--interactive-only`, `--non-interactive-only`, `--all-sources`, `--source <source>`.";
+        }
+        if (sourceKind && !SESSION_SOURCE_KINDS.includes(sourceKind as typeof SESSION_SOURCE_KINDS[number])) {
+          return `unknown source: \`${sourceKind}\`. Available: ${SESSION_SOURCE_KINDS.map((item) => `\`${item}\``).join(", ")}`;
         }
         const limit = this.parseSessionsListLimit(listArgs);
         const scopedProject = projectScopeArg
@@ -1046,7 +1068,9 @@ export class App {
           : currentProject;
         const sessions = await this.listSessionsForCommand(limit, scopedProject, {
           allProjects,
-          allSources: this.codex.mode === "app-server" ? !interactiveOnly : true
+          allSources: this.codex.mode === "app-server" ? allSources || (!interactiveOnly && !nonInteractiveOnly && !sourceKind) : true,
+          nonInteractiveOnly,
+          sourceKinds: sourceKind ? [sourceKind] : undefined
         });
         if (sessions.length === 0) {
           return this.noSessionsText(scopedProject, allProjects, Boolean(projectScopeArg));
@@ -2872,6 +2896,8 @@ export class App {
     options?: {
       allProjects?: boolean;
       allSources?: boolean;
+      nonInteractiveOnly?: boolean;
+      sourceKinds?: string[];
     }
   ): Promise<SessionListEntry[]> {
     if (this.codex.mode === "app-server" && this.codex.listThreads) {
@@ -2879,10 +2905,12 @@ export class App {
         limit: Math.max(1, limit),
         cwd: options?.allProjects ? undefined : project,
         allSources: options?.allSources ?? true,
+        nonInteractiveOnly: options?.nonInteractiveOnly,
+        sourceKinds: options?.sourceKinds,
         archived: false
       }).catch(() => undefined);
-      const data = this.readArray(asObjectRecord(native).data);
-      if (data.length > 0) {
+      if (native !== undefined) {
+        const data = this.readArray(asObjectRecord(native).data);
         return data
           .map((item) => this.normalizeThreadListEntry(isRecord(item) ? item : undefined))
           .filter((item): item is SessionListEntry => Boolean(item));
@@ -3154,8 +3182,10 @@ export class App {
       `- ` + "`--all`" + ` use the larger default count ` + `\`${this.config.codex.sessionAllDefaultCount}\``,
       "- `--all-projects` include sessions from other projects",
       "- `--project <path>` filter to one specific project path",
-      "- `--interactive-only` show only native interactive sources in `app-server` mode",
-      "- `--all-sources` include non-interactive sources like app-server and exec sessions in `app-server` mode",
+      "- `--interactive-only` show interactive sources only in `app-server` mode",
+      "- `--non-interactive-only` show non-interactive sources only in `app-server` mode",
+      "- `--all-sources` include all source kinds in `app-server` mode",
+      `- ` + "`--source <source>`" + ` filter by one native source kind: ` + SESSION_SOURCE_KINDS.map((item) => `\`${item}\``).join(", "),
       "",
       "## Behavior",
       "",
@@ -3170,6 +3200,8 @@ export class App {
       "- `/session`",
       "- `/session list`",
       "- `/session list --interactive-only`",
+      "- `/session list --non-interactive-only`",
+      "- `/session list --source exec`",
       "- `/session list --all --all-projects`",
       "- `/session list --project /path/to/project`"
     ].join("\n");
