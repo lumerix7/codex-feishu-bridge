@@ -295,28 +295,39 @@ export class App {
       return [
         "# Bridge Help",
         "",
+        "## Core",
+        "",
         "- `/help [-h|--help]` show commands",
         "- `/status [check-update] [-h|--help]` show current session and run state",
-        "- `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session",
+        "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
+        "- `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork",
+        "- `/session [list [options]] [-h|--help]` show the current session or browse recent sessions",
+        "- `/resume [<session-id>|options] [-h|--help]` bind a session, optionally switching project",
+        "- `/stop [-h|--help]` stop the current active run",
+        "",
+        "## Codex",
+        "",
         "- `/compact [-h|--help]` compact the current bound Codex session",
         "- `/summary [-h|--help]` show the current bound Codex conversation summary",
         "- `/diff [-h|--help]` show the latest app-server turn diff for the current bound session",
         "- `/skills [--reload] [-h|--help]` show Codex skills visible for the current project",
         "- `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project",
-        "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
-        "- `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork",
-        "- `/session [list [options]|-h|--help]` show the current session or browse recent sessions",
-        "- `/resume [<session-id>|options] [-h|--help]` bind a session, optionally switching project",
-        "- `/stop [-h|--help]` stop the current active run",
-        "- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects; `bind -n` uses current-first then name-asc list order",
-        "- `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage",
-        "- `/feishu [ws|send|doctor|-h|--help]` show Feishu websocket and outbound send diagnostics",
-        "- `/log [-n N] [--since <expr>] [--grep <text>] [-h|--help]` show recent bridge service logs from systemd journal",
-        "- `/pwd [-h|--help]`, `/ls [args...]`, `/cat <path...>`, `/tree [args...]`, `/find [args...]`, `/rg [args...]` run local project commands",
-        "- `/approvals [...] [-h|--help]` show or change Codex approvals for the active backend",
+        "- `/approvals [mode] [-h|--help]` show or change Codex approvals for future runs",
         "- `/search [on|off] [-h|--help]` show or change live web search for this conversation",
         "- `/model [--list|name|clear] [-h|--help]` show, list, or change the Codex model for this conversation",
-        "- `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation"
+        "- `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation",
+        "",
+        "## Project",
+        "",
+        "- `/project [list [options]|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings",
+        "- `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage",
+        "- `/pwd [-h|--help]`, `/ls [args...]`, `/cat <path...>`, `/tree [args...]`, `/find [args...]`, `/rg [args...]` run local project commands",
+        "",
+        "## Diagnostics",
+        "",
+        "- `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session",
+        "- `/feishu [ws|send|doctor] [-h|--help]` show Feishu websocket and outbound send diagnostics",
+        "- `/log [-n <count>] [--since <expr>] [--grep <text>] [-h|--help]` show recent bridge service logs from systemd journal"
       ].join("\n");
     }
 
@@ -801,7 +812,7 @@ export class App {
       if (projectScopeArg === "") {
         return "Usage: `/resume ... [--project <path>]`";
       }
-      const wantsList = resumeArgs[0] === "--list" || resumeArgs[0] === "--all";
+      const wantsList = resumeArgs[0] === "--list";
       if (projectScopeArg && !wantsList) {
         return "Use `--project <path>` with `/resume --list`, or use `-C|--cd <dir>` to switch project while resuming.";
       }
@@ -819,10 +830,10 @@ export class App {
       if (resumeArgs[0] === "--last") {
         resumeArgs.shift();
       }
-      if (allProjects && resumeArgs[0] !== "--list" && resumeArgs[0] !== "--all") {
+      if (allProjects && resumeArgs[0] !== "--list") {
         return "Use `--all-projects` with `/resume --list` to browse across projects, then resume by session id.";
       }
-      if (resumeArgs[0] === "--list" || resumeArgs[0] === "--all") {
+      if (resumeArgs[0] === "--list") {
         const sessions = await this.listSessionsForCommand(
           this.config.codex.sessionAllDefaultCount,
           resumeProject,
@@ -1987,25 +1998,43 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/approvals`",
-      ...(this.codex.mode === "app-server"
-        ? ["- `/approvals default`", "- `/approvals full-access`"]
-        : ["- `/approvals auto`", "- `/approvals workspace`", "- `/approvals full-access`"]),
-      "- `/approvals -h`",
+      "- `/approvals [mode]`",
+      "- `/approvals -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `mode` show the current mode when omitted",
+      ...(this.codex.mode === "app-server"
+        ? [
+            "- `default` use `approvalPolicy=on-request` with `sandbox=workspace-write`",
+            "- `auto` compatibility alias for `default`",
+            "- `full-access` use `approvalPolicy=never` with `sandbox=danger-full-access`"
+          ]
+        : [
+            "- `auto` compatibility alias for `workspace`",
+            "- `workspace` use Codex `--full-auto`",
+            "- `full-access` use Codex `--dangerously-bypass-approvals-and-sandbox`"
+          ]),
+      "- `-h, --help` show approvals help",
+      "",
+      "## Behavior",
       "",
       ...(this.codex.mode === "app-server"
         ? [
             "- In `app-server`, `auto` is still accepted as a compatibility alias for `default`, but is not advertised.",
-            "- `default` uses `approvalPolicy=on-request` with `sandbox=workspace-write`.",
-            "- `full-access` uses `approvalPolicy=never` with `sandbox=danger-full-access`."
+            "- Changes apply to future runs for this conversation."
           ]
         : [
             "- In `spawn`, `auto` maps to `workspace`.",
-            "- `workspace` uses Codex `--full-auto`.",
-            "- `full-access` uses Codex `--dangerously-bypass-approvals-and-sandbox`."
-          ])
+            "- Changes apply to future runs for this conversation."
+          ]),
+      "",
+      "## Examples",
+      "",
+      "- `/approvals`",
+      ...(this.codex.mode === "app-server"
+        ? ["- `/approvals default`", "- `/approvals full-access`"]
+        : ["- `/approvals workspace`", "- `/approvals full-access`"])
     ].join("\n");
   }
 
@@ -3032,27 +3061,44 @@ export class App {
       "",
       "## Usage",
       "",
+      "- `/project [list [--all|--trusted]|bind [<path>|-n <index>|-m|--mkdir <path>]|unbind <path>]`",
+      "- `/project -h|--help`",
+      "",
+      "## Options",
+      "",
+      "### List",
+      "",
+      "- `list` browse known projects",
+      "- `--all` include trusted projects that are not currently bound in the bridge store",
+      "- `--trusted` show trusted projects only",
+      "",
+      "### Bind",
+      "",
+      "- `bind <path>` bind a project path to this conversation",
+      "- `bind -n <index>` bind a project from the current `/project list` ordering",
+      "- `bind -m, --mkdir <path>` create the directory before binding",
+      "",
+      "### Unbind",
+      "",
+      "- `unbind <path>` remove stored bridge bindings for one project path",
+      "",
+      "### General",
+      "",
+      "- `-h, --help` show project help",
+      "",
+      "## Behavior",
+      "",
+      "- `/project` shows the current bound project for this conversation.",
+      "- `/project list` is the source list used by `/project bind -n <index>`.",
+      "- `/project list` ordering is current project first, then project name ascending.",
+      "- `/project unbind <path>` rejects the current conversation project; switch elsewhere first.",
+      `- Allowed roots: ${this.config.project.allowedRoots.map((root) => `\`${root}\``).join(", ")}`,
+      "",
+      "## Examples",
+      "",
       "- `/project`",
-      "- `/project list`",
       "- `/project list --all`",
-      "- `/project list --trusted`",
-      "- `/project bind <path>`",
-      "- `/project bind -m <path>`",
-      "- `/project bind -n 3`",
-      "- `/project unbind <path>`",
-      "- `/project -h`",
-      "- `/project --help`",
-      "",
-      "## Notes",
-      "",
-      "- `/project list` shows the normal project list used by `/project bind -n N`.",
-      "- `/project list --all` includes trusted Codex projects that are not currently bound in the bridge store.",
-      "- `/project list --trusted` shows trusted Codex projects from `config.toml` under the allowed roots.",
-      "- `/project bind -n <index>` uses the current `/project list` ordering: current project first, then project name ascending.",
-      "- `/project unbind <path>` removes stored bridge bindings for that project path.",
-      "- The bridge rejects unbinding the current conversation project; switch this conversation elsewhere first.",
-      `- **allowed roots**: ${this.config.project.allowedRoots.map((root) => `\`${root}\``).join(", ")}`,
-      "- Missing projects are rejected unless you use `-m` or `--mkdir`."
+      "- `/project bind /path/to/project`"
     ].join("\n");
   }
 
@@ -3117,19 +3163,30 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/resume [<session-id>|options]`",
-      "- `/resume -h`",
-      "- `/resume --help`",
+      "- `/resume [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>] [-C|--cd <dir>]`",
+      "- `/resume -h|--help`",
       "",
       "## Options",
+      "",
+      "### Select Session",
       "",
       "- `<session-id>` bind one specific session id",
       "- `--last` bind the most recent session in the current scope",
       "- `-n <index>` bind the Nth session from the current `/session list` ordering",
+      "",
+      "### List Scope",
+      "",
       "- `--list` show the current resumable session list",
       "- `--all-projects` expand browsing beyond the current project for `--list`",
       "- `--project <path>` scope `--list` browsing to one project path",
+      "",
+      "### Project",
+      "",
       "- `-C, --cd <dir>` switch the bound project while resuming",
+      "",
+      "### General",
+      "",
+      "- `-h, --help` show resume help",
       "",
       "## Behavior",
       "",
@@ -3143,10 +3200,7 @@ export class App {
       "## Examples",
       "",
       "- `/resume`",
-      "- `/resume --last`",
-      "- `/resume -n 3`",
-      "- `/resume --list --all-projects`",
-      "- `/resume --list --project /path/to/project`",
+      "- `/resume --list`",
       "- `/resume -C /path/to/project`"
     ].join("\n");
   }
@@ -3159,18 +3213,26 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/fork [<session-id>|options]`",
-      "- `/fork -h`",
-      "- `/fork --help`",
+      "- `/fork [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>]`",
+      "- `/fork -h|--help`",
       "",
       "## Options",
       "",
-      "- `<session-id>` fork one specific native session id",
+      "### Select Session",
+      "",
+      "- `<session-id>` fork one specific session id",
       "- `--last` fork the most recent session in the current scope",
       "- `-n <index>` fork the Nth session from the current `/session list` ordering",
+      "",
+      "### List Scope",
+      "",
       "- `--list` show the current forkable session list",
       "- `--all-projects` expand browsing beyond the current project",
       "- `--project <path>` scope browsing and latest-session lookup to one project path",
+      "",
+      "### General",
+      "",
+      "- `-h, --help` show fork help",
       "",
       "## Behavior",
       "",
@@ -3182,10 +3244,8 @@ export class App {
       "## Examples",
       "",
       "- `/fork`",
-      "- `/fork --last`",
-      "- `/fork -n 3`",
-      "- `/fork --list --all-projects`",
-      "- `/fork --project /path/to/project`"
+      "- `/fork --list`",
+      "- `/fork -n 3`"
     ].join("\n");
   }
 
@@ -3197,21 +3257,29 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/session [list [options]]`",
-      "- `/session -h`",
-      "- `/session --help`",
+      "- `/session [list [-n <count>|--all] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]]`",
+      "- `/session -h|--help`",
       "",
       "## Options",
+      "",
+      "### List",
       "",
       "- `list` browse recent sessions",
       `- ` + "`-n <count>`" + ` limit the list size; accepts values from ` + "`1`" + ` to ` + `\`${this.config.codex.sessionAllDefaultCount}\``,
       `- ` + "`--all`" + ` use the larger default count ` + `\`${this.config.codex.sessionAllDefaultCount}\``,
       "- `--all-projects` include sessions from other projects",
       "- `--project <path>` filter to one specific project path",
+      "",
+      "### Source Filters",
+      "",
       "- `--interactive-only` show interactive sources only in `app-server` mode",
       "- `--non-interactive-only` show non-interactive sources only in `app-server` mode",
       "- `--all-sources` include all source kinds in `app-server` mode",
       `- ` + "`--source <source>`" + ` filter by one native source kind: ` + SESSION_SOURCE_KINDS.map((item) => `\`${item}\``).join(", "),
+      "",
+      "### General",
+      "",
+      "- `-h, --help` show session help",
       "",
       "## Behavior",
       "",
@@ -3224,12 +3292,8 @@ export class App {
       "## Examples",
       "",
       "- `/session`",
-      "- `/session list`",
-      "- `/session list --interactive-only`",
-      "- `/session list --non-interactive-only`",
       "- `/session list --source exec`",
-      "- `/session list --all --all-projects`",
-      "- `/session list --project /path/to/project`"
+      "- `/session list --all --all-projects`"
     ].join("\n");
   }
 
@@ -3426,19 +3490,27 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/log`",
-      "- `/log -n 50`",
-      "- `/log --since 30m`",
-      "- `/log --since today --grep reconnect`",
-      "- `/log -h`",
-      "- `/log --help`",
+      "- `/log [-n <count>] [--since <expr>] [--grep <text>]`",
+      "- `/log -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `-n <count>` set the number of lines to read",
+      "- `--since <expr>` set the journal time filter",
+      "- `--grep <text>` filter the fetched journal output case-insensitively",
+      "- `-h, --help` show log help",
+      "",
+      "## Behavior",
       "",
       "- Default tail is `200` lines.",
       "- `-n` accepts values from `1` to `2000`.",
       "- `--since` accepts multi-word values like `30 minutes ago`, plus compact forms like `30m`, `2h`, and `1d`.",
-      "- `--grep` filters the fetched journal output case-insensitively."
+      "",
+      "## Examples",
+      "",
+      "- `/log`",
+      "- `/log -n 50`",
+      "- `/log --since today --grep reconnect`"
     ].join("\n");
   }
 
@@ -3450,19 +3522,25 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/feishu`",
-      "- `/feishu ws`",
-      "- `/feishu send`",
-      "- `/feishu doctor`",
-      "- `/feishu -h`",
-      "- `/feishu --help`",
+      "- `/feishu [ws|send|doctor]`",
+      "- `/feishu -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `ws` show websocket readiness and recent inbound timing",
+      "- `send` show outbound retry, failure, and streaming-card state",
+      "- `doctor` run the quick Feishu health view",
+      "- `-h, --help` show Feishu help",
+      "",
+      "## Behavior",
       "",
       "- `/feishu` shows a compact summary.",
-      "- `/feishu ws` focuses on websocket readiness and recent inbound timing.",
-      "- `/feishu send` focuses on outbound retry/failure and streaming-card state.",
-      "- `/feishu doctor` gives a quick health verdict with simple checks."
+      "",
+      "## Examples",
+      "",
+      "- `/feishu`",
+      "- `/feishu ws`",
+      "- `/feishu doctor`"
     ].join("\n");
   }
 
@@ -3474,18 +3552,25 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/status`",
-      "- `/status check-update`",
-      "- `/status -h`",
-      "- `/status --help`",
+      "- `/status [check-update]`",
+      "- `/status -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `check-update` show the lightweight update-only view for Codex and Feishu package versions",
+      "- `-h, --help` show status help",
+      "",
+      "## Behavior",
       "",
       "- Includes native-style Codex status, bridge state, and a separate Feishu diagnostics section.",
       "- Sends a short progress update first because `/status` may read local metadata and app-server state.",
-      "- In `app-server`, includes thread metadata, token usage, latest reroute, and plan when available."
-      ,
-      "- `/status check-update` is a lightweight update-only view for Codex and Feishu package versions."
+      "- In `app-server`, includes thread metadata, token usage, latest reroute, and plan when available.",
+      "- `check-update` switches to the update-only view instead of the full status report.",
+      "",
+      "## Examples",
+      "",
+      "- `/status`",
+      "- `/status check-update`"
     ].join("\n");
   }
 
@@ -3726,15 +3811,22 @@ export class App {
       "",
       "## Usage",
       "",
+      "- `/thread [--turns]`",
+      "- `/thread -h|--help`",
+      "",
+      "## Options",
+      "",
+      "- `--turns` fetch turn details and print a compact turn summary",
+      "- `-h, --help` show thread help",
+      "",
+      "## Behavior",
+      "",
+      "- Requires a currently bound session and `app-server` support.",
+      "",
+      "## Examples",
+      "",
       "- `/thread`",
-      "- `/thread --turns`",
-      "- `/thread -h`",
-      "- `/thread --help`",
-      "",
-      "## Notes",
-      "",
-      "- `--turns` fetches turn details and prints a compact turn summary.",
-      "- Requires a currently bound session and `app-server` support."
+      "- `/thread --turns`"
     ].join("\n");
   }
 
@@ -3747,13 +3839,20 @@ export class App {
       "## Usage",
       "",
       "- `/summary`",
-      "- `/summary -h`",
-      "- `/summary --help`",
+      "- `/summary -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `-h, --help` show summary help",
+      "",
+      "## Behavior",
       "",
       "- Requires a currently bound session.",
-      "- Uses native Codex `getConversationSummary` in `app-server` mode."
+      "- Uses native Codex `getConversationSummary` in `app-server` mode.",
+      "",
+      "## Examples",
+      "",
+      "- `/summary`"
     ].join("\n");
   }
 
@@ -3766,13 +3865,20 @@ export class App {
       "## Usage",
       "",
       "- `/diff`",
-      "- `/diff -h`",
-      "- `/diff --help`",
+      "- `/diff -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `-h, --help` show diff help",
+      "",
+      "## Behavior",
       "",
       "- Uses the most recent `turn/diff/updated` notification seen by the bridge.",
-      "- If no diff notification has been seen yet, the command returns no cached diff."
+      "- If no diff notification has been seen yet, the command returns no cached diff.",
+      "",
+      "## Examples",
+      "",
+      "- `/diff`"
     ].join("\n");
   }
 
@@ -3784,15 +3890,22 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/skills`",
-      "- `/skills --reload`",
-      "- `/skills -h`",
-      "- `/skills --help`",
+      "- `/skills [--reload]`",
+      "- `/skills -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `--reload` bypass the skills cache and rescan from disk",
+      "- `-h, --help` show skills help",
+      "",
+      "## Behavior",
       "",
       "- Uses native Codex `skills/list` in `app-server` mode.",
-      "- `--reload` bypasses the skills cache and rescans from disk."
+      "",
+      "## Examples",
+      "",
+      "- `/skills`",
+      "- `/skills --reload`"
     ].join("\n");
   }
 
@@ -3804,17 +3917,24 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/config`",
-      "- `/config codex-toml`",
-      "- `/config --layers`",
-      "- `/config -h`",
-      "- `/config --help`",
+      "- `/config [codex-toml] [--layers]`",
+      "- `/config -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `codex-toml` show a redacted raw view of `~/.codex/config.toml`",
+      "- `--layers` include the resolved config layer list",
+      "- `-h, --help` show config help",
+      "",
+      "## Behavior",
       "",
       "- Uses native Codex `config/read` in `app-server` mode.",
-      "- `--layers` includes the resolved config layer list.",
-      "- `/config codex-toml` shows a redacted raw view of `~/.codex/config.toml`."
+      "",
+      "## Examples",
+      "",
+      "- `/config`",
+      "- `/config codex-toml`",
+      "- `/config --layers`"
     ].join("\n");
   }
 
@@ -3850,14 +3970,21 @@ export class App {
       "## Usage",
       "",
       "- `/compact`",
-      "- `/compact -h`",
-      "- `/compact --help`",
+      "- `/compact -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `-h, --help` show compact help",
+      "",
+      "## Behavior",
       "",
       "- Requires a currently bound session from `/new` or `/resume`.",
       "- Uses native Codex thread compaction in `app-server` mode.",
-      "- The bridge updates the bound session timestamp after compaction completes."
+      "- The bridge updates the bound session timestamp after compaction completes.",
+      "",
+      "## Examples",
+      "",
+      "- `/compact`"
     ].join("\n");
   }
 
@@ -3869,16 +3996,23 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/new`",
-      "- `/new -C /path/to/project`",
-      "- `/new -h`",
-      "- `/new --help`",
+      "- `/new [-C|--cd <dir>]`",
+      "- `/new -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `-C, --cd <dir>` switch the conversation project before creating the new session",
+      "- `-h, --help` show new-session help",
+      "",
+      "## Behavior",
       "",
       "- Uses the current bound project from `/project` unless you pass `-C` or `--cd`.",
-      "- `-C, --cd <dir>` switches the conversation project before creating the new session.",
-      "- Carries the current conversation search/model/profile settings into the new session."
+      "- Carries the current conversation search, model, and profile settings into the new session.",
+      "",
+      "## Examples",
+      "",
+      "- `/new`",
+      "- `/new -C /path/to/project`"
     ].join("\n");
   }
 
@@ -3891,13 +4025,20 @@ export class App {
       "## Usage",
       "",
       "- `/stop`",
-      "- `/stop -h`",
-      "- `/stop --help`",
+      "- `/stop -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `-h, --help` show stop help",
+      "",
+      "## Behavior",
       "",
       "- Cancels any pending approval for the active run.",
-      "- Does not unbind the current session."
+      "- Does not unbind the current session.",
+      "",
+      "## Examples",
+      "",
+      "- `/stop`"
     ].join("\n");
   }
 
@@ -3909,16 +4050,25 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/search`",
-      "- `/search on`",
-      "- `/search off`",
-      "- `/search -h`",
-      "- `/search --help`",
+      "- `/search [on|off]`",
+      "- `/search -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `on` enable live web search for future turns",
+      "- `off` disable live web search for future turns",
+      "- `-h, --help` show search help",
+      "",
+      "## Behavior",
       "",
       "- This setting is stored in the bridge binding for the current conversation.",
-      "- New and resumed turns use the latest saved setting."
+      "- New and resumed turns use the latest saved setting.",
+      "",
+      "## Examples",
+      "",
+      "- `/search`",
+      "- `/search on`",
+      "- `/search off`"
     ].join("\n");
   }
 
@@ -3930,18 +4080,29 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/model`",
-      "- `/model --list`",
-      "- `/model gpt-5.4`",
-      "- `/model clear`",
-      "- `/model -h`",
-      "- `/model --help`",
+      "- `/model [--list|name|clear]`",
+      "- `/model -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `--list` show common model IDs you can try",
+      "- `name` set the conversation-level model override",
+      "- `clear` remove the conversation-level model override",
+      "- `default` remove the conversation-level model override",
+      "- `reset` remove the conversation-level model override",
+      "- `-h, --help` show model help",
+      "",
+      "## Behavior",
       "",
       "- `clear`, `default`, and `reset` remove the conversation-level override.",
       "- `/model --list` shows common model IDs you can try; exact availability depends on your Codex account/backend.",
-      "- The configured override is used for future turns."
+      "- The configured override is used for future turns.",
+      "",
+      "## Examples",
+      "",
+      "- `/model`",
+      "- `/model --list`",
+      "- `/model gpt-5.4`"
     ].join("\n");
   }
 
@@ -3998,16 +4159,27 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/profile`",
-      "- `/profile personal`",
-      "- `/profile clear`",
-      "- `/profile -h`",
-      "- `/profile --help`",
+      "- `/profile [name|clear]`",
+      "- `/profile -h|--help`",
       "",
-      "## Notes",
+      "## Options",
+      "",
+      "- `name` set the conversation-level profile override",
+      "- `clear` remove the conversation-level profile override",
+      "- `default` remove the conversation-level profile override",
+      "- `reset` remove the conversation-level profile override",
+      "- `-h, --help` show profile help",
+      "",
+      "## Behavior",
       "",
       "- `clear`, `default`, and `reset` remove the conversation-level override.",
-      "- The configured override is used for future turns."
+      "- The configured override is used for future turns.",
+      "",
+      "## Examples",
+      "",
+      "- `/profile`",
+      "- `/profile personal`",
+      "- `/profile clear`"
     ].join("\n");
   }
 
