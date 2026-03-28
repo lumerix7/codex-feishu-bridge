@@ -42,4 +42,6 @@ export interface OutgoingMessage {
   streamKey?: string;
   finalizeStreaming?: boolean;
   includeRawMarkdown?: boolean;
+  suppressChunkFooter?: boolean;
+  preserveStreamingPages?: boolean;
 }

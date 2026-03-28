@@ -14,6 +14,7 @@ type LarkLogger = {
   trace: (...msg: unknown[]) => void;
 };
 const FEISHU_POST_SOFT_LIMIT = 3500;
+const FEISHU_CODEX_STREAM_PAGE_LIMIT = 3000;
 const STREAMING_MARKDOWN_ELEMENT_ID = "markdown_stream";
 const STREAMING_RAW_MARKDOWN_ELEMENT_ID = "markdown_raw";
 const STREAMING_FOOTER_ELEMENT_ID = "footer_meta";
@@ -29,6 +30,7 @@ export class FeishuGateway {
   private readonly httpsAgent: https.Agent;
   private readonly recentMessages = new Map<string, number>();
   private readonly activeStreamingCards = new Map<string, ActiveStreamingCard>();
+  private readonly activePagedStreams = new Map<string, ActivePagedStreamingState>();
   private readonly chatSendQueues = new Map<string, Promise<void>>();
   private cleanupTimer?: NodeJS.Timeout;
   private reconnecting = false;
@@ -173,6 +175,9 @@ export class FeishuGateway {
 
   private async sendStreamingFirst(message: OutgoingMessage, plan: RenderPlan): Promise<boolean> {
     this.logChunkPlan("streaming", message, plan);
+    if (message.streamKey && message.preserveStreamingPages) {
+      return this.sendPreservedStreamingPages(message);
+    }
     if (message.streamKey) {
       for (const [index, page] of plan.pages.entries()) {
         const pageMessage: OutgoingMessage = {
@@ -200,6 +205,80 @@ export class FeishuGateway {
       if (!sent) {
         return false;
       }
+    }
+    return true;
+  }
+
+  private async sendPreservedStreamingPages(message: OutgoingMessage): Promise<boolean> {
+    const rootStreamKey = message.streamKey;
+    if (!rootStreamKey) return false;
+
+    const rendered = (message.text || "").trim();
+    let state = this.activePagedStreams.get(rootStreamKey);
+    if (!state) {
+      state = { frozenPages: [], pageCount: 0 };
+      this.activePagedStreams.set(rootStreamKey, state);
+    }
+
+    const pages = splitMessageText(rendered, FEISHU_CODEX_STREAM_PAGE_LIMIT);
+    const completedPages = pages.slice(0, -1);
+    const activePage = pages[pages.length - 1] || "";
+
+    let commonPrefixCount = 0;
+    while (
+      commonPrefixCount < state.frozenPages.length &&
+      commonPrefixCount < completedPages.length &&
+      state.frozenPages[commonPrefixCount] === completedPages[commonPrefixCount]
+    ) {
+      commonPrefixCount += 1;
+    }
+
+    for (let index = commonPrefixCount; index < completedPages.length; index += 1) {
+      const pageText = completedPages[index];
+      const pageIndex = index + 1;
+      const pageMessage: OutgoingMessage = {
+        ...message,
+        text: pageText,
+        footer: message.footer,
+        streamKey: `${rootStreamKey}:page:${pageIndex}`,
+        finalizeStreaming: true
+      };
+      const sent = await this.sendOrUpdateStreamingCard(pageMessage);
+      if (!sent) {
+        return false;
+      }
+    }
+    state.frozenPages = completedPages;
+
+    const activePageIndex = completedPages.length + 1;
+    const activeMessage: OutgoingMessage = {
+      ...message,
+      text: activePage,
+      footer: message.footer,
+      streamKey: `${rootStreamKey}:page:${activePageIndex}`,
+      finalizeStreaming: message.finalizeStreaming
+    };
+    const sent = await this.sendOrUpdateStreamingCard(activeMessage);
+    if (!sent) {
+      return false;
+    }
+    state.pageCount = Math.max(state.pageCount, activePageIndex);
+
+    for (let index = pages.length + 1; index <= state.pageCount; index += 1) {
+      const superseded = await this.sendOrUpdateStreamingCard({
+        ...message,
+        text: "```text\nSuperseded by a newer Codex stream snapshot.\n```",
+        footer: message.footer,
+        streamKey: `${rootStreamKey}:page:${index}`,
+        finalizeStreaming: true
+      });
+      if (!superseded) {
+        return false;
+      }
+    }
+    state.pageCount = pages.length;
+    if (message.finalizeStreaming) {
+      this.activePagedStreams.delete(rootStreamKey);
     }
     return true;
   }
@@ -520,6 +599,7 @@ export class FeishuGateway {
 
   private cleanupStreamingCardsForMessage(message: OutgoingMessage): void {
     if (!message.streamKey) return;
+    this.activePagedStreams.delete(message.streamKey);
     const prefix = `${message.streamKey}:page:`;
     for (const key of this.activeStreamingCards.keys()) {
       if (key === message.streamKey || key.startsWith(prefix)) {
@@ -668,6 +748,11 @@ interface ActiveStreamingCard {
   sequence: number;
   lastText: string;
   chatId: string;
+}
+
+interface ActivePagedStreamingState {
+  frozenPages: string[];
+  pageCount: number;
 }
 
 interface RenderPlanPage {
@@ -821,7 +906,7 @@ function buildRenderPlan(message: OutgoingMessage, maxChars: number): RenderPlan
     containsTable: containsMarkdownTable(text),
     pages: pages.map((pageText, index) => ({
       text: pageText,
-      footer: formatChunkFooter(message.footer, index, pages.length)
+      footer: formatChunkFooter(message.footer, index, pages.length, message.suppressChunkFooter)
     }))
   };
 }
@@ -1082,7 +1167,15 @@ function buildCardMetaMarkdown(title: string | undefined): string {
   return `\`${formatIsoTimestamp(new Date())}\``;
 }
 
-function formatChunkFooter(footer: string | undefined, index: number, total: number): string | undefined {
+function formatChunkFooter(
+  footer: string | undefined,
+  index: number,
+  total: number,
+  suppressChunkFooter = false
+): string | undefined {
+  if (suppressChunkFooter) {
+    return footer;
+  }
   const chunk = total > 1 ? `chunk ${index + 1}/${total}` : "";
   if (footer && chunk) return `${footer}  |  ${chunk}`;
   return footer || chunk || undefined;

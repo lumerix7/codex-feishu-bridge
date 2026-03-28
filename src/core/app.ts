@@ -134,7 +134,9 @@ export class App {
                 replyToMessageId: message.messageId,
                 threadId: message.threadId,
                 streaming: true,
-                streamKey
+                streamKey,
+                suppressChunkFooter: true,
+                preserveStreamingPages: true
               });
               streamed = true;
               lastUpdateText = snapshot;
@@ -214,7 +216,7 @@ export class App {
               replyToMessageId: message.messageId,
               threadId: message.threadId,
               streaming: true,
-              ...(command?.name ? {} : { streamKey, finalizeStreaming: true })
+              ...(command?.name ? {} : { streamKey, finalizeStreaming: true, suppressChunkFooter: true, preserveStreamingPages: true })
             });
           }
           console.log("bridge handled message", {
