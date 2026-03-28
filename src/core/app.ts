@@ -83,7 +83,7 @@ export class App {
                   ? this.extractLeadingMarkdownHeading(formattedUpdate)
                   : undefined;
                 const statusTitle = codexStatusHeading
-                  ? `Codex | 🤖 ${codexStatusHeading.heading}`
+                  ? this.composeTitle("Codex", "🤖", codexStatusHeading.heading)
                   : messageTitle;
                 const statusText = codexStatusHeading
                   ? codexStatusHeading.body
@@ -1402,12 +1402,20 @@ export class App {
 
   private titleForCommand(commandName?: string, rawInput?: string): string {
     if (!commandName) {
-      return `Codex | 🤖 ${this.shortenTitleInput(rawInput || "reply")}`;
+      return this.composeTitle("Codex", "🤖", rawInput || "reply");
     }
     const base = this.commandBaseTitle(commandName);
     const emoji = this.commandTitleEmoji(commandName);
-    const input = this.shortenTitleInput(rawInput || `/${commandName}`);
-    return `${base} | ${emoji ? `${emoji} ` : ""}${input}`;
+    return this.composeTitle(base, emoji, rawInput || `/${commandName}`);
+  }
+
+  private composeTitle(base: string, emoji: string | undefined, detail: string): string {
+    const maxLength = this.config.feishu.titleMaxLength;
+    const prefix = `${base} | ${emoji ? `${emoji} ` : ""}`;
+    if (prefix.length >= maxLength) {
+      return this.shortenTitleInput(`${prefix}${detail}`, maxLength);
+    }
+    return `${prefix}${this.shortenTitleInput(detail, maxLength - prefix.length)}`;
   }
 
   private commandBaseTitle(commandName: string): string {
@@ -1523,7 +1531,7 @@ export class App {
     }
   }
 
-  private shortenTitleInput(input: string, maxLength = 44): string {
+  private shortenTitleInput(input: string, maxLength = this.config.feishu.titleMaxLength): string {
     const normalized = input.replace(/\s+/g, " ").trim();
     if (normalized.length <= maxLength) {
       return normalized;

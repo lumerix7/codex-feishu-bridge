@@ -39,6 +39,7 @@ export interface AppConfig {
     sendRetryBaseDelayMs: number;
     sendRetryMultiplier: number;
     sendRetryMaxDelayMs: number;
+    titleMaxLength: number;
   };
   codex: {
     bin: string;
@@ -89,6 +90,7 @@ interface JsonConfigShape {
       multiplier?: unknown;
       maxDelayMs?: unknown;
     };
+    titleMaxLength?: unknown;
   };
   codex?: {
     bin?: unknown;
@@ -257,6 +259,13 @@ export function loadConfig(): AppConfig {
         jsonConfig,
         ["feishu", "sendRetry", "maxDelayMs"],
         { min: 0 }
+      ),
+      titleMaxLength: readIntegerSetting(
+        "FEISHU_TITLE_MAX_LENGTH",
+        80,
+        jsonConfig,
+        ["feishu", "titleMaxLength"],
+        { min: 8 }
       )
     },
     codex: {

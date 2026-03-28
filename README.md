@@ -200,6 +200,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - `feishu.wsConnectWarnAfterMs` is the doctor threshold for “still not ready after startup”.
 - `feishu.wsReconnectWarnThreshold` is the doctor threshold for repeated reconnects after startup.
 - `feishu.reconnectReadyDebounceMs` controls how often the bridge may send a Feishu `Reconnected` ready card after websocket recovery.
+- `feishu.titleMaxLength` controls how long Feishu card titles may grow before the bridge shortens them as `begin...end`. The checked-in default is `80`.
 - `/feishu ws` and `/feishu doctor` include reconnect counters so you can tell the difference between an occasional reconnect and a flapping long-connection session.
 - Outbound Feishu replies currently use interactive cards with a schema `2.0` markdown body, card title, chat-list summary, and per-reply header template color.
 - `codex.terminal.flushIdleMs` controls the quiet window before terminal output
