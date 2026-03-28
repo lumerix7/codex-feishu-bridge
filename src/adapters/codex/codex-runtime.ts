@@ -181,7 +181,7 @@ class AppServerCodexBackend implements CodexBackend {
             "(unknown command)";
           const reason = String(params.reason || "").trim();
           const cwd = String(params.cwd || "").trim();
-          const lines = ["```text", "Approval Required", "kind: command"];
+          const lines = ["```text", "🔐 Approval Required", "kind: command"];
           if (id) lines.push(`id: ${id}`);
           if (reason) lines.push(`reason: ${reason}`);
           if (cwd) lines.push(`cwd: ${cwd}`);
@@ -200,7 +200,7 @@ class AppServerCodexBackend implements CodexBackend {
           const grantRoot = String(params.grantRoot || "").trim();
           const fileChanges = isRecord(params.fileChanges) ? params.fileChanges : {};
           const fileList = Object.keys(fileChanges).slice(0, 8);
-          const lines = ["```text", "Approval Required", "kind: file change"];
+          const lines = ["```text", "🔐 Approval Required", "kind: file change"];
           if (id) lines.push(`id: ${id}`);
           if (reason) lines.push(`reason: ${reason}`);
           if (grantRoot) lines.push(`grant root: ${grantRoot}`);
@@ -219,7 +219,7 @@ class AppServerCodexBackend implements CodexBackend {
             permissions.network ? "network" : undefined,
             permissions.fileSystem ? "fileSystem" : undefined
           ].filter((item): item is string => Boolean(item));
-          const lines = ["```text", "Approval Required", "kind: permissions"];
+          const lines = ["```text", "🔐 Approval Required", "kind: permissions"];
           if (id) lines.push(`id: ${id}`);
           if (reason) lines.push(`reason: ${reason}`);
           if (scopes.length > 0) lines.push(`scopes: ${scopes.join(", ")}`);
@@ -234,7 +234,7 @@ class AppServerCodexBackend implements CodexBackend {
           const args = params.arguments;
           return [
             "```text",
-            "Tool Call",
+            "🛠️ Tool Call",
             ...(id ? [`id: ${id}`] : []),
             `tool: ${tool}`,
             "```",
@@ -255,12 +255,12 @@ class AppServerCodexBackend implements CodexBackend {
           const id = String(item.id || "").trim();
           const title =
             type === "commandExecution"
-              ? "Command Completed"
+              ? "🧾 Command Completed"
               : type === "userMessage"
-                ? "User Message"
+                ? "💬 User Message"
                 : type === "reasoning"
-                  ? "Reasoning"
-                  : "Codex Event";
+                  ? "🧠 Reasoning"
+                  : "📍 Codex Event";
           const lines = ["```text", title];
           if (id) lines.push(`id: ${id}`);
           lines.push(`type: ${type}`);
@@ -277,7 +277,7 @@ class AppServerCodexBackend implements CodexBackend {
           const turnId = String(params.turnId || "").trim();
           const diff = String(params.diff || "");
           const files = summarizeDiffFiles(diff);
-          const lines = ["```text", "Diff Updated"];
+          const lines = ["```text", "🧩 Diff Updated"];
           if (turnId) lines.push(`turn: ${turnId}`);
           if (files.length > 0) {
             lines.push(`files: ${files.join(", ")}`);

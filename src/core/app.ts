@@ -1900,7 +1900,7 @@ export class App {
       const fromModel = this.readString(notification.params.fromModel) || "(unknown)";
       const toModel = this.readString(notification.params.toModel) || "(unknown)";
       const reason = this.readString(notification.params.reason);
-      return `# Model Rerouted\n\n- **from**: \`${fromModel}\`\n- **to**: \`${toModel}\`${reason ? `\n- **reason**: ${reason}` : ""}`;
+      return `# 🔀 Model Rerouted\n\n- **from**: \`${fromModel}\`\n- **to**: \`${toModel}\`${reason ? `\n- **reason**: ${reason}` : ""}`;
     }
     if (notification.method === "turn/plan/updated") {
       const plan = Array.isArray(notification.params.plan)
@@ -1908,7 +1908,7 @@ export class App {
         : [];
       if (plan.length === 0) return undefined;
       return [
-        "# Plan Updated",
+        "# 🗺️ Plan Updated",
         "",
         ...(this.readString(notification.params.explanation) ? [`- **note**: ${this.readString(notification.params.explanation)}`] : []),
         ...plan.map((step, index) => `${index + 1}. [${this.readString(step.status) || "pending"}] ${this.readString(step.step) || "(step)"}`)
@@ -1919,7 +1919,7 @@ export class App {
       const turnId = this.readString(notification.params.turnId);
       const files = this.summarizeDiffFiles(diff);
       return [
-        "# Diff Updated",
+        "# 🧩 Diff Updated",
         "",
         ...(turnId ? [`- **turn**: \`${turnId}\``] : []),
         ...(files.length > 0 ? [`- **files**: ${files.map((item) => `\`${item}\``).join(", ")}`] : []),
@@ -1937,12 +1937,12 @@ export class App {
       const id = this.readString(item.id);
       const title =
         type === "commandExecution"
-          ? "Command Completed"
+          ? "🧾 Command Completed"
           : type === "userMessage"
-            ? "User Message"
+            ? "💬 User Message"
             : type === "reasoning"
-              ? "Reasoning"
-              : "Codex Event";
+              ? "🧠 Reasoning"
+              : "📍 Codex Event";
       const lines = [
         `# ${title}`,
         "",
@@ -1972,7 +1972,7 @@ export class App {
       const cwd = this.readString(request.params.cwd) || project;
       const args = request.params.arguments;
       const lines = [
-        "# Tool Call",
+        "# 🛠️ Tool Call",
         "",
         ...(id ? [`- **id**: \`${id}\``] : []),
         `- **tool**: \`${tool}\``,
