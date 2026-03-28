@@ -483,6 +483,19 @@ class AppServerCodexBackend implements CodexBackend {
     return filePath !== undefined;
   }
 
+  async forkSession(
+    sessionId: string,
+    project: string,
+    options?: CodexTurnOptions
+  ): Promise<Record<string, unknown> | undefined> {
+    const client = new AppServerSessionClient(this.config, project);
+    try {
+      return await client.forkSession(sessionId, options);
+    } finally {
+      await client.shutdown().catch(() => undefined);
+    }
+  }
+
   async readThread(
     sessionId: string,
     project: string,

@@ -63,6 +63,15 @@ export class AppServerSessionClient {
     });
   }
 
+  async forkSession(sessionId: string, options?: CodexTurnOptions): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("thread/fork", {
+      ...this.buildThreadParams(this.project, options),
+      threadId: sessionId
+    });
+    return isRecord(result) ? result : undefined;
+  }
+
   async startTurn(sessionId: string, prompt: string, options?: CodexTurnOptions): Promise<string> {
     await this.ensureStarted();
     const result = await this.request("turn/start", {

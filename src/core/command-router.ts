@@ -10,6 +10,7 @@ export type CommandName =
   | "skills"
   | "config"
   | "new"
+  | "fork"
   | "resume"
   | "session"
   | "stop"
@@ -48,6 +49,7 @@ export function parseCommand(message: IncomingMessage): ParsedCommand | undefine
       "skills",
       "config",
       "new",
+      "fork",
       "resume",
       "session",
       "stop",

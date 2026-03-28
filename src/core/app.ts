@@ -291,7 +291,8 @@ export class App {
         "- `/skills [--reload] [-h|--help]` show Codex skills visible for the current project",
         "- `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project",
         "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
-        "- `/session [list [options]|-h|--help]` show the current bound session, list recent sessions, or show session help",
+        "- `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork",
+        "- `/session [list [options]|-h|--help]` show the current session or browse recent sessions",
         "- `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project",
         "- `/stop [-h|--help]` stop the current active run",
         "- `/project [list [--all|--trusted]|bind [-n N|-m|--mkdir <path>|<path>]|unbind <path>|-h|--help]` show, list, bind, or unbind projects; `bind -n` uses current-first then name-asc list order",
@@ -893,6 +894,132 @@ export class App {
       ].join("\n");
     }
 
+    if (command?.name === "fork") {
+      if (activeRun) {
+        return `Cannot fork while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
+      }
+      if (this.codex.mode !== "app-server" || !this.codex.forkSession) {
+        return [
+          "# Fork",
+          "",
+          "- Native session forking is currently available only in `app-server` mode."
+        ].join("\n");
+      }
+      const forkArgs = [...command.args];
+      const allProjects = this.consumeFlag(forkArgs, "--all-projects");
+      const currentProject = existing?.project || this.config.project.defaultProject;
+      let forkProject = currentProject;
+      let projectExplicitlySelected = false;
+      const projectScopeArg = this.consumeOptionValue(forkArgs, "--project");
+      if (projectScopeArg === "") {
+        return "Usage: `/fork [--project <path>]`";
+      }
+      if (projectScopeArg) {
+        forkProject = await this.resolveProject(projectScopeArg, currentProject);
+        projectExplicitlySelected = true;
+      }
+      if (forkArgs[0] === "-h" || forkArgs[0] === "--help") {
+        return this.forkHelpText();
+      }
+      if (forkArgs[0] === "--last") {
+        forkArgs.shift();
+      }
+      if (forkArgs[0] === "--list") {
+        const sessions = await this.listSessionsForCommand(
+          this.config.codex.sessionAllDefaultCount,
+          forkProject,
+          {
+            allProjects,
+            allSources: this.codex.mode === "app-server"
+          }
+        );
+        if (sessions.length === 0) {
+          return this.noSessionsText(forkProject, allProjects, projectExplicitlySelected);
+        }
+        return this.renderSessionList(
+          projectExplicitlySelected
+            ? "Fork Project Sessions"
+            : allProjects
+              ? "Fork All Projects"
+              : "Fork Current Project",
+          sessions,
+          existing?.codexSessionId,
+          forkProject
+        );
+      }
+      if ((forkArgs[0] || "").startsWith("-") && forkArgs[0] !== "-n") {
+        return [
+          "# Fork",
+          "",
+          `- **error**: unsupported bridge option \`${forkArgs[0]}\``,
+          "- **supported**: `/fork`, `/fork --last`, `/fork -n N`, `/fork <session-id>`, `/fork --list`, `/fork --all-projects`, `/fork --project <path>`, `/fork -h`"
+        ].join("\n");
+      }
+
+      let targetSessionId =
+        forkArgs[0] ||
+        existing?.codexSessionId ||
+        (await this.findMostRecentSessionId(
+          forkProject,
+          projectExplicitlySelected ? false : allProjects
+        ));
+      let forkSource = forkArgs[0] ? "explicit" : existing?.codexSessionId ? "current" : "latest";
+      let forkWarning: string | undefined;
+      let forkIndex: number | undefined;
+
+      if (forkArgs[0] === "-n") {
+        const index = Number(forkArgs[1] || "");
+        if (!Number.isInteger(index) || index < 1) {
+          return "Usage: `/fork -n <index>` where `<index>` is an integer >= 1.";
+        }
+        const sessions = this.sortSessionEntries(
+          await this.listSessionsForCommand(
+            Math.min(index, this.config.codex.sessionAllDefaultCount),
+            forkProject,
+            { allProjects, allSources: this.codex.mode === "app-server" }
+          ),
+          forkProject
+        );
+        const selected = sessions[index - 1];
+        if (!selected) {
+          return `session index out of range: ${index}. Use \`/session list${allProjects ? " --all-projects" : ""}${projectExplicitlySelected ? ` --project ${forkProject}` : ""} --all\` first.`;
+        }
+        targetSessionId = selected.sessionId;
+        forkSource = "indexed";
+        forkIndex = index;
+        forkWarning =
+          "Index-based fork depends on the current recent-session ordering and may change as new sessions are created.";
+      }
+
+      if (!targetSessionId) {
+        return "No session is currently bound. Use `/new`, `/resume`, or `/session list` first.";
+      }
+      await sendEarlyUpdate(`forking session \`${targetSessionId}\` for project \`${forkProject}\`...`);
+      const sessionExists = await this.codex.getSession(targetSessionId);
+      if (!sessionExists) {
+        return `session not found: ${targetSessionId}`;
+      }
+      const forkResult = await this.codex.forkSession(targetSessionId, forkProject, this.resolveTurnOptions(existing));
+      const forkedThread = isRecord(forkResult?.thread) ? forkResult.thread : undefined;
+      const forkedSessionId = this.readString(forkedThread?.id);
+      if (!forkedSessionId) {
+        return "fork failed: Codex returned no forked session id.";
+      }
+      const binding = this.makeBinding(key, forkedSessionId, forkProject, existing);
+      await this.store.put(binding);
+      return [
+        "# Fork Session",
+        "",
+        `- **source**: \`${forkSource}\``,
+        ...(forkIndex ? [`- **index**: \`${forkIndex}\``] : []),
+        `- **from**: \`${targetSessionId}\``,
+        `- **session**: \`${forkedSessionId}\``,
+        `- **project**: \`${binding.project}\``,
+        ...(this.readString(forkedThread?.preview) ? [`- **about**: ${this.readString(forkedThread?.preview)}`] : []),
+        ...(forkWarning ? [`- **warning**: ${forkWarning}`] : [])
+      ].join("\n");
+    }
+
     if (command?.name === "session") {
       const sessionArgs = [...command.args];
       const allProjects = this.consumeFlag(sessionArgs, "--all-projects");
@@ -1454,6 +1581,8 @@ export class App {
         return "Config";
       case "new":
         return "New Session";
+      case "fork":
+        return "Fork";
       case "session":
         return "Session";
       case "resume":
@@ -1513,6 +1642,8 @@ export class App {
         return "⚙️";
       case "new":
         return "✨";
+      case "fork":
+        return "🌱";
       case "session":
         return "🧭";
       case "resume":
@@ -1579,6 +1710,7 @@ export class App {
       case "profile":
         return "indigo";
       case "new":
+      case "fork":
       case "resume":
       case "stop":
       case "git":
@@ -1676,6 +1808,7 @@ export class App {
       "config",
       "session",
       "new",
+      "fork",
       "resume"
     ].includes(commandName);
   }
@@ -2961,6 +3094,44 @@ export class App {
       `- In Feishu, use \`/session list --all\` for the default current-project list of \`${this.config.codex.sessionAllDefaultCount}\` sessions, or \`/session list --all --all-projects\` to browse across projects.`,
       "- Index-based resume is order-dependent and should be treated as a convenience, not a stable identifier.",
       "- Native Codex flags like `--config`, `--remote`, `--image`, `--model`, `--sandbox`, and prompt arguments are not exposed on this bridge command."
+    ].join("\n");
+  }
+
+  private forkHelpText(): string {
+    return [
+      "# Fork",
+      "",
+      "Fork a Codex session into a new session and bind the new fork to this conversation.",
+      "",
+      "## Usage",
+      "",
+      "- `/fork [<session-id>|options]`",
+      "- `/fork -h`",
+      "- `/fork --help`",
+      "",
+      "## Options",
+      "",
+      "- `<session-id>` fork one specific native session id",
+      "- `--last` fork the most recent session in the current scope",
+      "- `-n <index>` fork the Nth session from the current `/session list` ordering",
+      "- `--list` show the current forkable session list",
+      "- `--all-projects` expand browsing beyond the current project",
+      "- `--project <path>` scope browsing and latest-session lookup to one project path",
+      "",
+      "## Behavior",
+      "",
+      "- `/fork` defaults to the current bound session for this conversation.",
+      "- The source session is not modified.",
+      "- The new fork becomes the bound session for this conversation.",
+      "- Requires `app-server` mode.",
+      "",
+      "## Examples",
+      "",
+      "- `/fork`",
+      "- `/fork --last`",
+      "- `/fork -n 3`",
+      "- `/fork --list --all-projects`",
+      "- `/fork --project /path/to/project`"
     ].join("\n");
   }
 

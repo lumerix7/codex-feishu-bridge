@@ -47,6 +47,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/skills [--reload] [-h|--help]` show Codex skills visible for the current project
 - `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project
 - `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
+- `/fork [--last|<session-id>|-n N|-h|--list] [--all-projects] [--project <path>]` fork a Codex session and bind the new fork
 - `/session [list [-n N|--all] [--all-projects] [--project <path>] [--interactive-only|--all-sources]|-h|--help]` show the current bound session, list recent sessions, or show session help
 - `/resume [--last|<session-id>|-n N|-h|--all] [--all-projects] [--project <path>] [-C|--cd <dir>]` bind the latest session by default, optionally switching project
 - `/stop [-h|--help]` stop the current active run
