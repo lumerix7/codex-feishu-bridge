@@ -19,7 +19,8 @@
     "cli": "tsx src/index.ts --cli",
     "start": "node --enable-source-maps dist/index.js",
     "build": "tsc -p tsconfig.json",
-    "check": "tsc --noEmit -p tsconfig.json"
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test test/**/*.test.ts"
   },
   "engines": {
     "node": ">=20"

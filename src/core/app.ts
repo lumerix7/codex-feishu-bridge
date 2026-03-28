@@ -1935,7 +1935,14 @@ export class App {
         return undefined;
       }
       const id = this.readString(item.id);
-      const title = type === "commandExecution" ? "Command Completed" : "Codex Event";
+      const title =
+        type === "commandExecution"
+          ? "Command Completed"
+          : type === "userMessage"
+            ? "User Message"
+            : type === "reasoning"
+              ? "Reasoning"
+              : "Codex Event";
       const lines = [
         `# ${title}`,
         "",

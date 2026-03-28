@@ -23,6 +23,13 @@ import {
   normalizeTerminalDelta,
   renderTerminalForFeishu
 } from "./terminal-normalizer.js";
+import {
+  appendEventBlock,
+  applyAgentDelta,
+  buildVisibleTimelineText,
+  completeAgentText,
+  createAppServerTimelineState
+} from "./app-server-timeline.js";
 
 interface ActiveProcess {
   child: ReturnType<typeof spawn>;
@@ -143,42 +150,17 @@ class AppServerCodexBackend implements CodexBackend {
     const done = new Promise<CodexTurnResult>((resolve, reject) => {
       let settled = false;
       let finalOutput = "";
-      const agentTextById = new Map<string, string>();
-      const completedAgentTextById = new Map<string, string>();
-      const completedAgentOrder: string[] = [];
-      const completedOperationalBlocks: string[] = [];
+      const timeline = createAppServerTimelineState();
       const streamedOutputs: string[] = [];
       let pendingStreamText = "";
       let lastStreamFlushAt = 0;
       let streamFlushTimer: NodeJS.Timeout | undefined;
 
-      const buildVisibleTurnText = (activeItemId?: string): string => {
-        const parts: string[] = [];
-        for (const block of completedOperationalBlocks) {
-          const text = block.trim();
-          if (text) parts.push(text);
-        }
-        for (const itemId of completedAgentOrder) {
-          const text = (completedAgentTextById.get(itemId) || "").trim();
-          if (text) parts.push(text);
-        }
-        if (activeItemId) {
-          const activeText = (agentTextById.get(activeItemId) || "").trim();
-          if (activeText) {
-            const completedText = completedAgentTextById.get(activeItemId);
-            if (!completedText || completedText.trim() !== activeText) {
-              parts.push(activeText);
-            }
-          }
-        }
-        return parts.join("\n\n").trim();
-      };
-
       const pushOperationalBlock = (block: string): void => {
         const text = block.trim();
         if (!text) return;
-        completedOperationalBlocks.push(text);
-        pendingStreamText = buildVisibleTurnText();
+        appendEventBlock(timeline, text);
+        pendingStreamText = buildVisibleTimelineText(timeline);
         flushStreamText(true);
       };
 
@@ -271,7 +253,15 @@ class AppServerCodexBackend implements CodexBackend {
           const type = String(item.type || "").trim();
           if (!type || type === "agentMessage") return undefined;
           const id = String(item.id || "").trim();
-          const lines = ["```text", type === "commandExecution" ? "Command Completed" : "Codex Event"];
+          const title =
+            type === "commandExecution"
+              ? "Command Completed"
+              : type === "userMessage"
+                ? "User Message"
+                : type === "reasoning"
+                  ? "Reasoning"
+                  : "Codex Event";
+          const lines = ["```text", title];
           if (id) lines.push(`id: ${id}`);
           lines.push(`type: ${type}`);
           const command = String(item.command || "").trim();
@@ -359,11 +349,9 @@ class AppServerCodexBackend implements CodexBackend {
         if (method === "item/agentMessage/delta") {
           const itemId = String(params.itemId || "").trim();
           if (!itemId) return;
-          const prior = agentTextById.get(itemId) || "";
           const delta = String(params.delta || "");
-          const next = `${prior}${delta}`;
-          agentTextById.set(itemId, next);
-          const visibleText = buildVisibleTurnText(itemId) || next;
+          const next = applyAgentDelta(timeline, itemId, delta);
+          const visibleText = buildVisibleTimelineText(timeline) || next;
           console.log("Codex app-server agentMessage delta", {
             sessionId: resolvedSessionId,
             turnId: active.turnId,
@@ -385,19 +373,17 @@ class AppServerCodexBackend implements CodexBackend {
           const item = isRecord(params.item) ? params.item : {};
           if (String(item.type || "") !== "agentMessage") return;
           const itemId = String(item.id || "").trim();
-          const text = String(item.text || agentTextById.get(itemId) || "").trim();
-          if (!text) return;
-          finalOutput = text;
-          if (itemId && !completedAgentTextById.has(itemId)) {
-            completedAgentOrder.push(itemId);
-          }
-          if (itemId) {
-            completedAgentTextById.set(itemId, text);
-          }
-          pendingStreamText = buildVisibleTurnText() || text;
+          const text = String(item.text || "").trim();
+          const finalText = itemId
+            ? completeAgentText(timeline, itemId, text || undefined)
+            : text;
+          const resolvedText = finalText.trim();
+          if (!resolvedText) return;
+          finalOutput = resolvedText;
+          pendingStreamText = buildVisibleTimelineText(timeline) || resolvedText;
           flushStreamText(true);
-          if (!streamedOutputs.includes(text)) {
-            streamedOutputs.push(text);
+          if (!streamedOutputs.includes(resolvedText)) {
+            streamedOutputs.push(resolvedText);
             if (streamedOutputs.length > STREAMED_OUTPUT_DEDUPE_WINDOW) {
               streamedOutputs.shift();
             }
@@ -429,7 +415,9 @@ class AppServerCodexBackend implements CodexBackend {
           flushStreamText(true);
           const output =
             finalOutput ||
-            Array.from(agentTextById.values())
+            timeline.timeline
+              .filter((entry): entry is { kind: "agent"; itemId: string; text: string; completed: boolean } => entry.kind === "agent")
+              .map((entry) => entry.text)
               .join("\n")
               .trim() ||
             "Codex completed without a final message.";
