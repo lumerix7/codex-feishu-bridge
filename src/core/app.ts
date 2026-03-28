@@ -912,11 +912,24 @@ export class App {
         return "No session is currently bound. Use `/new`, `/resume`, or `/session list`.";
       }
       const session = await getSessionSummary(this.config.codex.sessionsDir, existing.codexSessionId);
+      const project = existing.project || this.config.project.defaultProject;
+      const threadInfo =
+        this.codex.readThread
+          ? await this.codex.readThread(existing.codexSessionId, project, false).catch(() => undefined)
+          : undefined;
+      const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+      const reroute = this.latestModelReroute.get(existing.codexSessionId);
+      const effectiveModel =
+        reroute?.toModel ||
+        existing.model ||
+        this.readString(threadInfo?.model) ||
+        this.readString(thread?.model);
       return [
         "# Current Session",
         "",
         `- **session**: \`${existing.codexSessionId}\``,
-        `- **project**: \`${existing.project || this.config.project.defaultProject}\``,
+        `- **project**: \`${project}\``,
+        ...(effectiveModel ? [`- **model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`] : []),
         `- **time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
         `- **cwd**: \`${session?.cwd || "(unknown)"}\``,
         `- **about**: ${session?.preview || "(no preview)"}`
@@ -1509,18 +1522,48 @@ export class App {
 
   private footerForMessage(commandName: string | undefined, binding?: SessionBinding): string | undefined {
     if (!commandName) return undefined;
+    if (this.commandUsesCodexFooter(commandName)) {
+      return `${this.buildIsoFooter()}  |  ${this.buildCodexFooterSummary(binding, true)}`;
+    }
     const project = binding?.project || this.config.project.defaultProject;
-    return `${this.buildIsoFooter()}  |  project: \`${path.basename(project) || project}\``;
+    return `${this.buildIsoFooter()}  |  ${project}`;
   }
 
   private footerForCodexReply(binding?: SessionBinding): string {
-    const parts = [this.buildIsoFooter()];
-    if (binding?.codexSessionId) {
-      parts.push(`session: \`${binding.codexSessionId}\``);
-    }
+    return `${this.buildIsoFooter()}  |  ${this.buildCodexFooterSummary(binding, true)}`;
+  }
+
+  private buildCodexFooterSummary(binding?: SessionBinding, includeSession = false): string {
     const project = binding?.project || this.config.project.defaultProject;
-    parts.push(`project: \`${path.basename(project) || project}\``);
-    return parts.join("  |  ");
+    const model =
+      (binding?.codexSessionId ? this.latestModelReroute.get(binding.codexSessionId)?.toModel : undefined) ||
+      binding?.model;
+    const session = includeSession ? binding?.codexSessionId : undefined;
+    const mode = this.codexFooterModeLabel();
+    return [session, model, mode, project].filter((item): item is string => Boolean(item)).join(" · ");
+  }
+
+  private commandUsesCodexFooter(commandName: string): boolean {
+    return [
+      "status",
+      "thread",
+      "compact",
+      "summary",
+      "diff",
+      "skills",
+      "config",
+      "session",
+      "new",
+      "resume"
+    ].includes(commandName);
+  }
+
+  private codexFooterModeLabel(): string | undefined {
+    return this.config.codex.sandboxMode === "danger-full-access"
+      ? "full-access"
+      : this.config.codex.sandboxMode === "default"
+        ? "default"
+        : undefined;
   }
 
   private buildIsoFooter(): string {
@@ -1869,6 +1912,18 @@ export class App {
         ...plan.map((step, index) => `${index + 1}. [${this.readString(step.status) || "pending"}] ${this.readString(step.step) || "(step)"}`)
       ].join("\n");
     }
+    if (notification.method === "turn/diff/updated") {
+      const diff = this.readString(notification.params.diff) || "";
+      const files = this.summarizeDiffFiles(diff);
+      return [
+        "# Diff Updated",
+        "",
+        ...(files.length > 0 ? [`- **files**: ${files.map((item) => `\`${item}\``).join(", ")}`] : []),
+        "```diff",
+        diff || "(empty diff)",
+        "```"
+      ].join("\n");
+    }
     if (notification.method === "item/completed") {
       const item = asObjectRecord(notification.params.item);
       const type = this.readString(item.type) || "(unknown)";
@@ -1920,6 +1975,20 @@ export class App {
     return undefined;
   }
 
+  private summarizeDiffFiles(diff: string): string[] {
+    const files: string[] = [];
+    for (const line of diff.split(/\r?\n/)) {
+      const match = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+      if (!match) continue;
+      const file = match[2] || match[1];
+      if (file && !files.includes(file)) {
+        files.push(file);
+      }
+      if (files.length >= 8) break;
+    }
+    return files;
+  }
+
   private formatTokenUsageSummary(tokenUsage: Record<string, unknown>): string {
     const total = asObjectRecord(tokenUsage.total);
     const last = asObjectRecord(tokenUsage.last);
@@ -1934,7 +2003,10 @@ export class App {
     const total = asObjectRecord(tokenUsage.total);
     const usedTokens = Number(total.totalTokens || 0);
     const contextWindow = Number(tokenUsage.modelContextWindow || 0);
-    if (!Number.isFinite(contextWindow) || contextWindow <= 0) {
+    if (!Number.isFinite(contextWindow) || contextWindow <= 0 || !Number.isFinite(usedTokens) || usedTokens < 0) {
+      return `- **context window**: ${this.formatTokenUsageSummary(tokenUsage)}`;
+    }
+    if (usedTokens > contextWindow) {
       return `- **context window**: ${this.formatTokenUsageSummary(tokenUsage)}`;
     }
     const leftPercent = Math.max(0, ((contextWindow - usedTokens) / contextWindow) * 100);

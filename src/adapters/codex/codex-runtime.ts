@@ -186,6 +186,49 @@ class AppServerCodexBackend implements CodexBackend {
         method: string,
         params: Record<string, unknown>
       ): string | undefined => {
+        if (
+          method === "item/commandExecution/requestApproval" ||
+          method === "execCommandApproval"
+        ) {
+          const command = String(params.command || "").trim() ||
+            (Array.isArray(params.command) ? params.command.map((item) => String(item)).join(" ") : "") ||
+            "(unknown command)";
+          const reason = String(params.reason || "").trim();
+          const cwd = String(params.cwd || "").trim();
+          const lines = ["```text", "Approval Required", "kind: command"];
+          if (reason) lines.push(`reason: ${reason}`);
+          if (cwd) lines.push(`cwd: ${cwd}`);
+          lines.push(`command: ${command}`, "```");
+          return lines.join("\n");
+        }
+        if (
+          method === "item/fileChange/requestApproval" ||
+          method === "applyPatchApproval"
+        ) {
+          const reason = String(params.reason || "").trim();
+          const grantRoot = String(params.grantRoot || "").trim();
+          const fileChanges = isRecord(params.fileChanges) ? params.fileChanges : {};
+          const fileList = Object.keys(fileChanges).slice(0, 8);
+          const lines = ["```text", "Approval Required", "kind: file change"];
+          if (reason) lines.push(`reason: ${reason}`);
+          if (grantRoot) lines.push(`grant root: ${grantRoot}`);
+          if (fileList.length > 0) lines.push(`files: ${fileList.join(", ")}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
+        if (method === "item/permissions/requestApproval") {
+          const reason = String(params.reason || "").trim();
+          const permissions = isRecord(params.permissions) ? params.permissions : {};
+          const scopes = [
+            permissions.network ? "network" : undefined,
+            permissions.fileSystem ? "fileSystem" : undefined
+          ].filter((item): item is string => Boolean(item));
+          const lines = ["```text", "Approval Required", "kind: permissions"];
+          if (reason) lines.push(`reason: ${reason}`);
+          if (scopes.length > 0) lines.push(`scopes: ${scopes.join(", ")}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
         if (method === "item/tool/call") {
           const tool = String(params.tool || "").trim() || "(unknown)";
           const args = params.arguments;
@@ -215,6 +258,18 @@ class AppServerCodexBackend implements CodexBackend {
           if (command) lines.push(`command: ${command}`);
           if (tool) lines.push(`tool: ${tool}`);
           if (cwd) lines.push(`cwd: ${cwd}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
+        if (method === "turn/diff/updated") {
+          const diff = String(params.diff || "");
+          const files = summarizeDiffFiles(diff);
+          const lines = ["```text", "Diff Updated"];
+          if (files.length > 0) {
+            lines.push(`files: ${files.join(", ")}`);
+          } else {
+            lines.push("files: (unknown)");
+          }
           lines.push("```");
           return lines.join("\n");
         }
@@ -1244,6 +1299,20 @@ function safeJsonStringify(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function summarizeDiffFiles(diff: string): string[] {
+  const files: string[] = [];
+  for (const line of diff.split(/\r?\n/)) {
+    const match = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
+    if (!match) continue;
+    const file = match[2] || match[1];
+    if (file && !files.includes(file)) {
+      files.push(file);
+    }
+    if (files.length >= 8) break;
+  }
+  return files;
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
