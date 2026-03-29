@@ -43,6 +43,7 @@ const CREATE_SESSION_PROMPT =
 const STREAMED_OUTPUT_DEDUPE_WINDOW = 4;
 const APP_SERVER_CLIENT_IDLE_SHUTDOWN_MS = 60_000;
 const APP_SERVER_STREAM_UPDATE_INTERVAL_MS = 120;
+const APP_SERVER_INTERRUPT_GRACE_MS = 8_000;
 
 function formatStatusWithProject(
   config: AppConfig["codex"],
@@ -73,6 +74,9 @@ interface ActiveAppServerRun {
   cancelled: boolean;
   timeout?: NodeJS.Timeout;
   heartbeat?: NodeJS.Timeout;
+  interruptTimeout?: NodeJS.Timeout;
+  heartbeatProbeInFlight?: boolean;
+  forceCancel?: () => void;
 }
 
 class AppServerCodexBackend implements CodexBackend {
@@ -137,11 +141,37 @@ class AppServerCodexBackend implements CodexBackend {
     }
     if (this.config.spawnStatusIntervalMs > 0) {
       active.heartbeat = setInterval(() => {
-        if (Date.now() - lastActivityAt >= this.config.spawnStatusIntervalMs) {
-          sendStatus(
-            `${formatStatusWithProject(this.config, project, "Codex is still working...")}\nrun=${runId}`
-          );
-        }
+        if (Date.now() - lastActivityAt < this.config.spawnStatusIntervalMs) return;
+        if (active.heartbeatProbeInFlight) return;
+        active.heartbeatProbeInFlight = true;
+        void active.client
+          .readThread(resolvedSessionId, false)
+          .then(() => {
+            if (active.cancelled) return;
+            if (Date.now() - lastActivityAt < this.config.spawnStatusIntervalMs) return;
+            sendStatus(
+              `${formatStatusWithProject(this.config, project, "Codex is still working...")}\nrun=${runId}`
+            );
+          })
+          .catch((error) => {
+            if (active.cancelled) return;
+            console.warn("Codex app-server heartbeat probe failed", {
+              runId,
+              sessionId: resolvedSessionId,
+              project,
+              error: error instanceof Error ? error.message : String(error)
+            });
+            sendStatus(
+              `${formatStatusWithProject(
+                this.config,
+                project,
+                "Codex app-server is not responding..."
+              )}\nrun=${runId}`
+            );
+          })
+          .finally(() => {
+            active.heartbeatProbeInFlight = false;
+          });
       }, this.config.spawnStatusIntervalMs);
       active.heartbeat.unref();
     }
@@ -339,12 +369,26 @@ class AppServerCodexBackend implements CodexBackend {
         settled = true;
         if (active.timeout) clearTimeout(active.timeout);
         if (active.heartbeat) clearInterval(active.heartbeat);
+        if (active.interruptTimeout) clearTimeout(active.interruptTimeout);
         if (streamFlushTimer) clearTimeout(streamFlushTimer);
         active.client.setServerRequestHandler(undefined);
         this.activeRuns.delete(runId);
         active.client.unsubscribe(handleNotification);
         this.scheduleClientShutdown(project, resolvedSessionId, active.client);
         fn();
+      };
+
+      active.forceCancel = () => {
+        finish(() =>
+          resolve({
+            runId,
+            sessionId: resolvedSessionId,
+            output:
+              finalOutput ||
+              "Run timed out. Interrupt requested, but Codex app-server did not confirm termination.",
+            status: "cancelled"
+          })
+        );
       };
 
       active.client.setServerRequestHandler(async (request) => {
@@ -494,6 +538,17 @@ class AppServerCodexBackend implements CodexBackend {
     if (active.timeout) clearTimeout(active.timeout);
     if (active.heartbeat) clearInterval(active.heartbeat);
     if (active.turnId) {
+      if (!active.interruptTimeout && active.forceCancel) {
+        active.interruptTimeout = setTimeout(() => {
+          console.warn("Codex app-server interrupt grace elapsed; forcing local cancellation", {
+            runId,
+            sessionId: active.sessionId,
+            project: active.client.project
+          });
+          active.forceCancel?.();
+        }, APP_SERVER_INTERRUPT_GRACE_MS);
+        active.interruptTimeout.unref();
+      }
       await active.client.interruptTurn(active.sessionId, active.turnId).catch(() => undefined);
     } else {
       this.clearIdleShutdown(this.clientKey(active.client.project, active.sessionId));
