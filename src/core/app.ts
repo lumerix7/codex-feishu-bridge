@@ -2288,14 +2288,7 @@ export class App {
         `- **type**: \`${type}\``,
         ...(id ? [`- **id**: \`${id}\``] : [])
       ];
-      const command = this.readString(item.command);
-      const tool = this.readString(item.tool);
-      const cwd = this.readString(item.cwd);
-      const text = this.readString(item.text);
-      if (command) lines.push(`- **command**: \`${command}\``);
-      if (tool) lines.push(`- **tool**: \`${tool}\``);
-      if (cwd) lines.push(`- **cwd**: \`${cwd}\``);
-      if (text) lines.push(`- **text**: ${text}`);
+      lines.push(...this.renderCompletedItemDetails(item));
       return lines.join("\n");
     }
     return undefined;
@@ -2339,6 +2332,161 @@ export class App {
       if (files.length >= 8) break;
     }
     return files;
+  }
+
+  private renderCompletedItemDetails(item: Record<string, unknown>): string[] {
+    const lines: string[] = [];
+    const type = this.readString(item.type) || "(unknown)";
+    const command = this.readString(item.command);
+    const tool = this.readString(item.tool);
+    const cwd = this.readString(item.cwd);
+    const text = this.readString(item.text);
+    const status = this.readString(item.status);
+    const source = this.readString(item.source);
+    const processId = this.readString(item.processId);
+    const exitCode = this.readNumber(item.exitCode);
+    const durationMs = this.readNumber(item.durationMs);
+
+    if (command) lines.push(`- **command**: \`${command}\``);
+    if (tool) lines.push(`- **tool**: \`${tool}\``);
+    if (cwd) lines.push(`- **cwd**: \`${cwd}\``);
+    if (status) lines.push(`- **status**: \`${status}\``);
+    if (source) lines.push(`- **source**: \`${source}\``);
+    if (processId) lines.push(`- **process**: \`${processId}\``);
+    if (exitCode !== undefined) lines.push(`- **exit code**: \`${exitCode}\``);
+    if (durationMs !== undefined) lines.push(`- **duration**: \`${durationMs}ms\``);
+
+    if (type === "userMessage") {
+      const content = this.readArray(item.content);
+      const rendered = this.renderUserMessageContent(content);
+      if (rendered.length > 0) lines.push(...rendered);
+      return lines;
+    }
+
+    if (type === "reasoning") {
+      const summary = this.readArray(item.summary)
+        .map((part) => this.readString(part))
+        .filter((part): part is string => Boolean(part));
+      const content = this.readArray(item.content)
+        .map((part) => this.readString(part))
+        .filter((part): part is string => Boolean(part));
+      if (summary.length > 0) {
+        lines.push("- **summary**:");
+        lines.push(...summary.slice(0, 8).map((part) => `  - ${part}`));
+      }
+      if (content.length > 0) {
+        lines.push("```text");
+        lines.push(content.join("\n\n"));
+        lines.push("```");
+      }
+      return lines;
+    }
+
+    if (type === "commandExecution") {
+      const output = this.readString(item.aggregatedOutput);
+      if (output) {
+        lines.push("```text");
+        lines.push(output);
+        lines.push("```");
+      }
+      return lines;
+    }
+
+    if (type === "fileChange") {
+      const changes = this.readArray(item.changes)
+        .map((change) => asObjectRecord(change))
+        .map((change) => this.readString(change.path) || this.readString(change.filePath))
+        .filter((path): path is string => Boolean(path));
+      if (changes.length > 0) {
+        lines.push(`- **files**: ${changes.slice(0, 12).map((path) => `\`${path}\``).join(", ")}`);
+      }
+      return lines;
+    }
+
+    if (type === "mcpToolCall" || type === "dynamicToolCall" || type === "collabAgentToolCall") {
+      const server = this.readString(item.server);
+      const prompt = this.readString(item.prompt);
+      const model = this.readString(item.model);
+      const reasoningEffort = this.readString(item.reasoningEffort);
+      const result = item.result;
+      const error = item.error;
+      if (server) lines.push(`- **server**: \`${server}\``);
+      if (model) lines.push(`- **model**: \`${model}\``);
+      if (reasoningEffort) lines.push(`- **reasoning effort**: \`${reasoningEffort}\``);
+      if (prompt) {
+        lines.push("- **prompt**:");
+        lines.push("```text");
+        lines.push(prompt);
+        lines.push("```");
+      }
+      if (item.arguments !== undefined) {
+        lines.push("```json");
+        lines.push(this.safeJsonStringify(item.arguments));
+        lines.push("```");
+      }
+      if (result !== undefined && result !== null) {
+        lines.push("```json");
+        lines.push(this.safeJsonStringify(result));
+        lines.push("```");
+      }
+      if (error !== undefined && error !== null) {
+        lines.push("```json");
+        lines.push(this.safeJsonStringify(error));
+        lines.push("```");
+      }
+      return lines;
+    }
+
+    if (text) {
+      lines.push("```text");
+      lines.push(text);
+      lines.push("```");
+    }
+    return lines;
+  }
+
+  private renderUserMessageContent(content: unknown[]): string[] {
+    const textParts: string[] = [];
+    const otherParts: string[] = [];
+    for (const entry of content) {
+      const item = asObjectRecord(entry);
+      const type = this.readString(item.type) || "(unknown)";
+      if (type === "text") {
+        const text = this.readString(item.text);
+        if (text) {
+          textParts.push(text);
+        }
+        continue;
+      }
+      if (type === "image") {
+        const url = this.readString(item.url);
+        otherParts.push(`- **image**: ${url || "(unknown)"}`);
+        continue;
+      }
+      if (type === "localImage") {
+        const path = this.readString(item.path);
+        otherParts.push(`- **local image**: \`${path || "(unknown)"}\``);
+        continue;
+      }
+      if (type === "skill" || type === "mention") {
+        const name = this.readString(item.name) || "(unknown)";
+        const path = this.readString(item.path);
+        otherParts.push(`- **${type}**: \`${name}\`${path ? ` (\`${path}\`)` : ""}`);
+        continue;
+      }
+      otherParts.push(`- **${type}**:`);
+      otherParts.push("```json");
+      otherParts.push(this.safeJsonStringify(item));
+      otherParts.push("```");
+    }
+    const lines: string[] = [];
+    if (textParts.length > 0) {
+      lines.push("```text");
+      lines.push(textParts.join("\n\n"));
+      lines.push("```");
+    }
+    lines.push(...otherParts);
+    return lines;
   }
 
   private formatTokenUsageSummary(tokenUsage: Record<string, unknown>): string {
