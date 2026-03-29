@@ -378,8 +378,8 @@ export class App {
         "## Project",
         "",
         "- `/project [list [options]|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings",
-        "- `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage",
-        "- `/cat <path...>`, `/find [args...]`, `/head [args...]`, `/ls [args...]`, `/pwd [-h|--help]`, `/rg [args...]`, `/sha256sum <path...>`, `/tail [args...]`, `/tree [args...]`, `/wc [args...]` run local project commands",
+        "- `/git [args...]` run `git` directly in the current bound project",
+        "- `/cat`, `/find`, `/head`, `/ls`, `/pwd`, `/rg`, `/sha256sum`, `/tail`, `/tree`, `/wc` run local project commands",
         "",
         "## Diagnostics",
         "",
@@ -1586,9 +1586,6 @@ export class App {
 
     if (command?.name === "git") {
       const project = binding?.project || this.config.project.defaultProject;
-      if (command.args.length === 0 || command.args[0] === "-h" || command.args[0] === "--help") {
-        return this.gitHelpText();
-      }
       await sendEarlyUpdate(`running git in project \`${project}\`...`);
       return this.runGitCommand(project, command.args);
     }
@@ -1607,9 +1604,6 @@ export class App {
     ) {
       const localCommandName = command.name;
       const project = binding?.project || this.config.project.defaultProject;
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
-        return this.localCommandHelpText(localCommandName);
-      }
       await sendEarlyUpdate(`running ${localCommandName} in project \`${project}\`...`);
       return this.runLocalCommand(localCommandName, project, command.args);
     }
@@ -3556,63 +3550,6 @@ export class App {
     ].join("\n");
   }
 
-  private gitHelpText(): string {
-    return [
-      "# Git",
-      "",
-      "Run `git` directly in the current bound project.",
-      "",
-      "## Usage",
-      "",
-      "- `/git status`",
-      "- `/git branch --all`",
-      "- `/git log --oneline -n 20`",
-      "- `/git diff`",
-      "- `/git diff --cached`",
-      "- `/git show HEAD~1`",
-      "- `/git add <path>`",
-      "- `/git commit -m message`",
-      "- `/git push`",
-      "- `/git -h`",
-      "- `/git --help`",
-      "",
-      "## Notes",
-      "",
-      "- The command runs in the current bound project from `/project`.",
-      "- Arguments are passed directly to `git` after `/git`.",
-      "- Chat parsing is whitespace-based, so shell quoting is limited."
-    ].join("\n");
-  }
-
-  private localCommandHelpText(name: "cat" | "find" | "head" | "ls" | "pwd" | "rg" | "sha256sum" | "tail" | "tree" | "wc"): string {
-    const examples: Record<typeof name, string[]> = {
-      cat: ["- `/cat README.md`", "- `/cat src/core/app.ts`"],
-      find: ["- `/find . -maxdepth 2 -type f`", "- `/find src -name '*.ts'`"],
-      head: ["- `/head README.md`", "- `/head -n 20 src/core/app.ts`"],
-      ls: ["- `/ls`", "- `/ls -la`", "- `/ls src`"],
-      pwd: ["- `/pwd`", "- `/pwd -h`", "- `/pwd --help`"],
-      rg: ["- `/rg TODO`", "- `/rg handleIncoming src`", "- `/rg --files src`"],
-      sha256sum: ["- `/sha256sum README.md`", "- `/sha256sum package.json src/core/app.ts`"],
-      tail: ["- `/tail README.md`", "- `/tail -n 50 var/log/app.log`"],
-      tree: ["- `/tree`", "- `/tree -L 2`", "- `/tree src`"],
-      wc: ["- `/wc README.md`", "- `/wc -l src/core/app.ts`"]
-    };
-    return [
-      `# ${name.toUpperCase()}`,
-      "",
-      `Run \`${name}\` directly in the current bound project.`,
-      "",
-      "## Usage",
-      "",
-      ...examples[name],
-      "",
-      "## Notes",
-      "",
-      "- Arguments are passed directly without a shell.",
-      "- Redirection and shell operators like `>`, `|`, `&&`, and `;` are not interpreted."
-    ].join("\n");
-  }
-
   private resumeHelpText(): string {
     return [
       "# Resume",
@@ -4729,7 +4666,7 @@ export class App {
     }
   }
 
-  private async runGitCommand(project: string, args: string[]): Promise<string> {
+  private async runGitCommand(project: string, args: string[]): Promise<string | AppResponse> {
     const gitArgs = [...args];
     const commandText = ["git", ...gitArgs].join(" ");
     try {
@@ -4757,19 +4694,22 @@ export class App {
         signal?: NodeJS.Signals;
       };
       const output = [maybe.stdout, maybe.stderr].filter(Boolean).join(maybe.stdout && maybe.stderr ? "\n" : "");
-      return [
-        "# Git",
-        "",
-        `- **project**: \`${project}\``,
-        `- **command**: \`${commandText}\``,
-        `- **status**: \`failed\``,
-        `- **code**: \`${String(maybe.code ?? "(unknown)")}\``,
-        ...(maybe.signal ? [`- **signal**: \`${maybe.signal}\``] : []),
-        "",
-        "```text",
-        truncateOutput(output || maybe.message || "git command failed"),
-        "```"
-      ].join("\n");
+      return {
+        severity: "warning",
+        text: [
+          "# Git",
+          "",
+          `- **project**: \`${project}\``,
+          `- **command**: \`${commandText}\``,
+          `- **status**: ⚠️ \`failed\``,
+          `- **code**: \`${String(maybe.code ?? "(unknown)")}\``,
+          ...(maybe.signal ? [`- **signal**: \`${maybe.signal}\``] : []),
+          "",
+          "```text",
+          truncateOutput(output || maybe.message || "git command failed"),
+          "```"
+        ].join("\n")
+      };
     }
   }
 
@@ -4777,9 +4717,9 @@ export class App {
     command: "cat" | "find" | "head" | "ls" | "pwd" | "rg" | "sha256sum" | "tail" | "tree" | "wc",
     project: string,
     args: string[]
-  ): Promise<string> {
+  ): Promise<string | AppResponse> {
     const commandText = [command, ...args].join(" ");
-    const execArgs = command === "pwd" ? [] : [...args];
+    const execArgs = [...args];
     try {
       const { stdout, stderr } = await execFileAsync(command, execArgs, {
         cwd: project,
@@ -4805,19 +4745,22 @@ export class App {
         signal?: NodeJS.Signals;
       };
       const output = [maybe.stdout, maybe.stderr].filter(Boolean).join(maybe.stdout && maybe.stderr ? "\n" : "");
-      return [
-        `# ${command.toUpperCase()}`,
-        "",
-        `- **project**: \`${project}\``,
-        `- **command**: \`${commandText || command}\``,
-        `- **status**: \`failed\``,
-        `- **code**: \`${String(maybe.code ?? "(unknown)")}\``,
-        ...(maybe.signal ? [`- **signal**: \`${maybe.signal}\``] : []),
-        "",
-        "```text",
-        truncateOutput(output || maybe.message || `${command} command failed`),
-        "```"
-      ].join("\n");
+      return {
+        severity: "warning",
+        text: [
+          `# ${command.toUpperCase()}`,
+          "",
+          `- **project**: \`${project}\``,
+          `- **command**: \`${commandText || command}\``,
+          `- **status**: ⚠️ \`failed\``,
+          `- **code**: \`${String(maybe.code ?? "(unknown)")}\``,
+          ...(maybe.signal ? [`- **signal**: \`${maybe.signal}\``] : []),
+          "",
+          "```text",
+          truncateOutput(output || maybe.message || `${command} command failed`),
+          "```"
+        ].join("\n")
+      };
     }
   }
 }

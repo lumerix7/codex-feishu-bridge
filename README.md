@@ -63,8 +63,8 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 ### Project
 
 - `/project [list [options]|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings
-- `/git [args...]` run `git` in the current bound project; use `/git -h|--help` for bridge usage
-- `/cat <path...>`, `/find [args...]`, `/head [args...]`, `/ls [args...]`, `/pwd [-h|--help]`, `/rg [args...]`, `/sha256sum <path...>`, `/tail [args...]`, `/tree [args...]`, `/wc [args...]` run local project commands
+- `/git [args...]` run `git` directly in the current bound project
+- `/cat`, `/find`, `/head`, `/ls`, `/pwd`, `/rg`, `/sha256sum`, `/tail`, `/tree`, `/wc` run local project commands
 
 ### Diagnostics
 
