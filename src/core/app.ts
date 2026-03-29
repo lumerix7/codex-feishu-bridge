@@ -1783,7 +1783,9 @@ export class App {
           onUpdate,
           onNotification: async (notification) => {
             this.recordCodexNotification(key, notification);
-            const maybeUpdate = this.renderCodexNotificationUpdate(notification);
+            const maybeUpdate = this.config.codex.appServerSidebandCards
+              ? this.renderCodexNotificationUpdate(notification)
+              : undefined;
             if (maybeUpdate) {
               if (onStatus) {
                 await onStatus(maybeUpdate);
@@ -1793,7 +1795,9 @@ export class App {
             }
           },
           onServerRequest: async (request) => {
-            const maybeUpdate = this.renderCodexServerRequestUpdate(request, project);
+            const maybeUpdate = this.config.codex.appServerSidebandCards
+              ? this.renderCodexServerRequestUpdate(request, project)
+              : undefined;
             if (maybeUpdate) {
               if (onStatus) {
                 await onStatus(maybeUpdate);

@@ -252,8 +252,13 @@ but new config should use the structured schema.
 - Bridge command replies such as `/status` use synthetic streaming for one-shot output:
   line-by-line when practical, with long lines split into smaller visible steps.
 - Codex `app-server` replies use real upstream stream updates from Codex. The bridge accumulates text and updates one live Feishu card for the turn instead of sending a new card for each update.
-- On the `app-server` path, bridge/Codex operational events such as approvals, tool calls, and command completions are also surfaced as separate side-band cards.
-- Those same operational events can also be folded into the main live stream as rendered fenced blocks so the streamed reply keeps its execution context instead of looking discontinuous.
+- On the `app-server` path, bridge/Codex operational events such as approvals, tool calls, diffs, and command completions can be surfaced as separate side-band cards with `codex.appServer.sidebandCards`.
+- Those same operational events can also be folded into the main live stream as rendered fenced blocks with `codex.appServer.inlineBlocks = "off" | "compact" | "full"`.
+- `compact` keeps the inline blocks short and summary-oriented.
+- `full` keeps the current full-detail inline rendering, including heavy raw payloads when Codex emits them.
+- The checked-in defaults are:
+  - `codex.appServer.sidebandCards = false`
+  - `codex.appServer.inlineBlocks = "full"`
 - The streamed card keeps the same final content shape as normal cards:
   rendered markdown, a raw fenced markdown appendix, and the footer/meta block.
 - Large replies now use paged streaming cards first instead of dropping straight to normal chunked cards.

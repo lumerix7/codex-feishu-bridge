@@ -47,6 +47,8 @@ export interface AppConfig {
     sessionsDir: string;
     profileMode: "isolated" | "personal";
     backendMode: "spawn" | "terminal" | "app-server";
+    appServerSidebandCards: boolean;
+    appServerInlineBlocks: "off" | "compact" | "full";
     sandboxMode: "default" | "workspace-write" | "danger-full-access";
     sessionListDefaultCount: number;
     sessionAllDefaultCount: number;
@@ -99,6 +101,10 @@ interface JsonConfigShape {
     sessionsDir?: unknown;
     profileMode?: unknown;
     backendMode?: unknown;
+    appServer?: {
+      sidebandCards?: unknown;
+      inlineBlocks?: unknown;
+    };
     sandboxMode?: unknown;
     runTimeoutMs?: unknown;
     approvalTimeoutMs?: unknown;
@@ -286,6 +292,20 @@ export function loadConfig(): AppConfig {
           : codexBackendMode === "app-server"
             ? "app-server"
             : "spawn",
+      appServerSidebandCards: readBooleanSetting(
+        "CODEX_APP_SERVER_SIDEBAND_CARDS",
+        false,
+        jsonConfig,
+        ["codex", "appServer", "sidebandCards"]
+      ),
+      appServerInlineBlocks: normalizeAppServerInlineBlocks(
+        readTextSetting(
+          "CODEX_APP_SERVER_INLINE_BLOCKS",
+          "full",
+          jsonConfig,
+          ["codex", "appServer", "inlineBlocks"]
+        )
+      ),
       sandboxMode: normalizeApprovalMode(
         readTextSetting("CODEX_SANDBOX_MODE", "workspace-write", jsonConfig, ["codex", "sandboxMode"])
       ),
@@ -403,6 +423,19 @@ function normalizeFeishuLoggerLevel(value: string): AppConfig["feishu"]["wsLogge
     default:
       return "info";
   }
+}
+
+function normalizeAppServerInlineBlocks(
+  value: string
+): AppConfig["codex"]["appServerInlineBlocks"] {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "off" || normalized === "none" || normalized === "disabled") {
+    return "off";
+  }
+  if (normalized === "compact") {
+    return "compact";
+  }
+  return "full";
 }
 
 function readIntegerSetting(

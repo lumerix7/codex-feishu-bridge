@@ -147,16 +147,18 @@ class AppServerCodexBackend implements CodexBackend {
     }
     this.activeRuns.set(runId, active);
 
-    const done = new Promise<CodexTurnResult>((resolve, reject) => {
-      let settled = false;
-      let finalOutput = "";
-      const timeline = createAppServerTimelineState();
-      const streamedOutputs: string[] = [];
+      const done = new Promise<CodexTurnResult>((resolve, reject) => {
+        let settled = false;
+        let finalOutput = "";
+        const timeline = createAppServerTimelineState();
+        const inlineBlockMode = this.config.appServerInlineBlocks;
+        const streamedOutputs: string[] = [];
       let pendingStreamText = "";
       let lastStreamFlushAt = 0;
       let streamFlushTimer: NodeJS.Timeout | undefined;
 
       const pushOperationalBlock = (block: string): void => {
+        if (inlineBlockMode === "off") return;
         const text = block.trim();
         if (!text) return;
         appendEventBlock(timeline, text);
@@ -164,14 +166,17 @@ class AppServerCodexBackend implements CodexBackend {
         flushStreamText(true);
       };
 
-      const renderOperationalBlock = (
-        method: string,
-        params: Record<string, unknown>
-      ): string | undefined => {
-        if (
-          method === "item/commandExecution/requestApproval" ||
-          method === "execCommandApproval"
-        ) {
+        const renderOperationalBlock = (
+          method: string,
+          params: Record<string, unknown>
+        ): string | undefined => {
+          if (inlineBlockMode === "off") {
+            return undefined;
+          }
+          if (
+            method === "item/commandExecution/requestApproval" ||
+            method === "execCommandApproval"
+          ) {
           const id =
             String(params.approvalId || "").trim() ||
             String(params.itemId || "").trim() ||
@@ -231,21 +236,25 @@ class AppServerCodexBackend implements CodexBackend {
             String(params.callId || "").trim() ||
             String(params.itemId || "").trim();
           const tool = String(params.tool || "").trim() || "(unknown)";
+          const cwd = String(params.cwd || "").trim();
           const args = params.arguments;
+          if (inlineBlockMode === "full") {
+            const lines = ["```text", "🛠️ Tool Call"];
+            if (id) lines.push(`id: ${id}`);
+            lines.push(`tool: ${tool}`);
+            if (cwd) lines.push(`cwd: ${cwd}`);
+            lines.push("```");
+            if (args !== undefined) {
+              lines.push("", "```json", safeJsonStringify(args), "```");
+            }
+            return lines.join("\n");
+          }
           return [
             "```text",
             "🛠️ Tool Call",
             ...(id ? [`id: ${id}`] : []),
             `tool: ${tool}`,
-            "```",
-            ...(args !== undefined
-              ? [
-                  "",
-                  "```json",
-                  safeJsonStringify(args),
-                  "```"
-                ]
-              : [])
+            "```"
           ].join("\n");
         }
         if (method === "item/completed") {
@@ -253,6 +262,9 @@ class AppServerCodexBackend implements CodexBackend {
           const type = String(item.type || "").trim();
           if (!type || type === "agentMessage") return undefined;
           const id = String(item.id || "").trim();
+          if (inlineBlockMode === "full") {
+            return renderCompletedItemFullBlock(item);
+          }
           const title =
             type === "commandExecution"
               ? "🧾 Command Completed"
@@ -277,6 +289,19 @@ class AppServerCodexBackend implements CodexBackend {
           const turnId = String(params.turnId || "").trim();
           const diff = String(params.diff || "");
           const files = summarizeDiffFiles(diff);
+          if (inlineBlockMode === "full") {
+            return [
+              "```text",
+              "🧩 Diff Updated",
+              ...(turnId ? [`turn: ${turnId}`] : []),
+              ...(files.length > 0 ? [`files: ${files.join(", ")}`] : ["files: (unknown)"]),
+              "```",
+              "",
+              "```diff",
+              diff || "(empty diff)",
+              "```"
+            ].join("\n");
+          }
           const lines = ["```text", "🧩 Diff Updated"];
           if (turnId) lines.push(`turn: ${turnId}`);
           if (files.length > 0) {
@@ -1357,6 +1382,156 @@ function summarizeDiffFiles(diff: string): string[] {
     if (files.length >= 8) break;
   }
   return files;
+}
+
+function renderCompletedItemFullBlock(item: Record<string, unknown>): string | undefined {
+  const type = String(item.type || "").trim();
+  if (!type || type === "agentMessage") return undefined;
+  const id = String(item.id || "").trim();
+  const title =
+    type === "commandExecution"
+      ? "🧾 Command Completed"
+      : type === "userMessage"
+        ? "💬 User Message"
+        : type === "reasoning"
+          ? "🧠 Reasoning"
+          : "📍 Codex Event";
+  const lines = ["```text", title, `type: ${type}`];
+  if (id) lines.push(`id: ${id}`);
+  const command = String(item.command || "").trim();
+  const tool = String(item.tool || "").trim();
+  const cwd = String(item.cwd || "").trim();
+  const status = String(item.status || "").trim();
+  const source = String(item.source || "").trim();
+  const processId = String(item.processId || "").trim();
+  const exitCode = typeof item.exitCode === "number" ? item.exitCode : undefined;
+  const durationMs = typeof item.durationMs === "number" ? item.durationMs : undefined;
+  if (command) lines.push(`command: ${command}`);
+  if (tool) lines.push(`tool: ${tool}`);
+  if (cwd) lines.push(`cwd: ${cwd}`);
+  if (status) lines.push(`status: ${status}`);
+  if (source) lines.push(`source: ${source}`);
+  if (processId) lines.push(`process: ${processId}`);
+  if (exitCode !== undefined) lines.push(`exit code: ${exitCode}`);
+  if (durationMs !== undefined) lines.push(`duration: ${durationMs}ms`);
+  lines.push("```");
+
+  if (type === "commandExecution") {
+    const output = String(item.aggregatedOutput || "");
+    if (output) {
+      lines.push("", "```text", output, "```");
+    }
+    return lines.join("\n");
+  }
+
+  if (type === "reasoning") {
+    const summary = Array.isArray(item.summary)
+      ? item.summary.map((part) => String(part || "").trim()).filter(Boolean)
+      : [];
+    const content = Array.isArray(item.content)
+      ? item.content.map((part) => String(part || "").trim()).filter(Boolean)
+      : [];
+    if (summary.length > 0) {
+      lines.push("", "```text", ...summary, "```");
+    }
+    if (content.length > 0) {
+      lines.push("", "```text", content.join("\n\n"), "```");
+    }
+    return lines.join("\n");
+  }
+
+  if (type === "userMessage") {
+    const rendered = renderUserMessageContentFull(Array.isArray(item.content) ? item.content : []);
+    if (rendered.length > 0) {
+      lines.push("", ...rendered);
+    }
+    return lines.join("\n");
+  }
+
+  if (type === "fileChange") {
+    const changes = Array.isArray(item.changes) ? item.changes : [];
+    const paths = changes
+      .filter(isRecord)
+      .map((change) => String(change.path || change.filePath || "").trim())
+      .filter(Boolean);
+    if (paths.length > 0) {
+      lines.push("", "```text", paths.join("\n"), "```");
+    }
+    return lines.join("\n");
+  }
+
+  if (type === "mcpToolCall" || type === "dynamicToolCall" || type === "collabAgentToolCall") {
+    const server = String(item.server || "").trim();
+    const prompt = String(item.prompt || "").trim();
+    const model = String(item.model || "").trim();
+    const reasoningEffort = String(item.reasoningEffort || "").trim();
+    if (server || model || reasoningEffort) {
+      const detailLines = ["```text"];
+      if (server) detailLines.push(`server: ${server}`);
+      if (model) detailLines.push(`model: ${model}`);
+      if (reasoningEffort) detailLines.push(`reasoning effort: ${reasoningEffort}`);
+      detailLines.push("```");
+      lines.push("", ...detailLines);
+    }
+    if (prompt) {
+      lines.push("", "```text", prompt, "```");
+    }
+    if ("arguments" in item && item.arguments !== undefined) {
+      lines.push("", "```json", safeJsonStringify(item.arguments), "```");
+    }
+    if ("result" in item && item.result !== undefined && item.result !== null) {
+      lines.push("", "```json", safeJsonStringify(item.result), "```");
+    }
+    if ("error" in item && item.error !== undefined && item.error !== null) {
+      lines.push("", "```json", safeJsonStringify(item.error), "```");
+    }
+    return lines.join("\n");
+  }
+
+  const text = String(item.text || "");
+  if (text) {
+    lines.push("", "```text", text, "```");
+  }
+  return lines.join("\n");
+}
+
+function renderUserMessageContentFull(content: unknown[]): string[] {
+  const textParts: string[] = [];
+  const otherParts: string[] = [];
+  for (const entry of content) {
+    const item = isRecord(entry) ? entry : {};
+    const type = String(item.type || "").trim() || "(unknown)";
+    if (type === "text") {
+      const text = String(item.text || "");
+      if (text) textParts.push(text);
+      continue;
+    }
+    if (type === "image") {
+      otherParts.push("```text", `image: ${String(item.url || "(unknown)")}`, "```");
+      continue;
+    }
+    if (type === "localImage") {
+      otherParts.push("```text", `local image: ${String(item.path || "(unknown)")}`, "```");
+      continue;
+    }
+    if (type === "skill" || type === "mention") {
+      const name = String(item.name || "(unknown)");
+      const path = String(item.path || "").trim();
+      otherParts.push(
+        "```text",
+        `${type}: ${name}${path ? ` (${path})` : ""}`,
+        "```"
+      );
+      continue;
+    }
+    otherParts.push("```json", safeJsonStringify(item), "```");
+  }
+  const lines: string[] = [];
+  if (textParts.length > 0) {
+    lines.push("```text", textParts.join("\n\n"), "```");
+  }
+  lines.push(...otherParts);
+  return lines;
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
