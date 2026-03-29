@@ -27,6 +27,57 @@ type SessionListEntry = {
   source?: string;
 };
 
+type AppResponse = {
+  text: string;
+  severity?: "warning" | "error";
+};
+
+class ArgCursor {
+  private readonly args: string[];
+
+  constructor(args: string[]) {
+    this.args = [...args];
+  }
+
+  peek(): string | undefined {
+    return this.args[0];
+  }
+
+  shift(): string | undefined {
+    return this.args.shift();
+  }
+
+  isEmpty(): boolean {
+    return this.args.length === 0;
+  }
+
+  remaining(): string[] {
+    return [...this.args];
+  }
+
+  remainingText(): string {
+    return this.args.join(" ").trim();
+  }
+
+  takeFlag(...names: string[]): boolean {
+    const index = this.args.findIndex((arg) => names.includes(arg));
+    if (index < 0) return false;
+    this.args.splice(index, 1);
+    return true;
+  }
+
+  takeOption(...names: string[]): string | undefined {
+    const index = this.args.findIndex((arg) => names.includes(arg));
+    if (index < 0) return undefined;
+    const value = this.args[index + 1];
+    this.args.splice(index, value ? 2 : 1);
+    if (!value || value.startsWith("-")) {
+      return "";
+    }
+    return value;
+  }
+}
+
 const SESSION_SOURCE_KINDS = [
   "cli",
   "vscode",
@@ -214,7 +265,9 @@ export class App {
             await streamDrain;
           };
 
-          const text = await this.handleIncoming(message, sendUpdateSafely, sendStatusSafely);
+          const result = await this.handleIncoming(message, sendUpdateSafely, sendStatusSafely);
+          const text = typeof result === "string" ? result : result.text;
+          const responseSeverity = typeof result === "string" ? undefined : result.severity;
           await statusChain;
           await streamDrain;
           const formattedText = command?.name
@@ -227,6 +280,10 @@ export class App {
             const finalFooter = command?.name
               ? this.footerForMessage(command?.name, latestBinding)
               : this.footerForCodexReply(latestBinding);
+            const finalTemplate =
+              command?.name
+                ? this.templateForSeverity(messageTemplate, responseSeverity)
+                : messageTemplate;
             console.log("Bridge final outbound route", {
               messageId: message.messageId,
               chatId: message.chatId,
@@ -241,12 +298,13 @@ export class App {
             await this.feishu?.send({
               chatId: message.chatId,
               title: messageTitle,
-              template: messageTemplate,
+              template: finalTemplate,
               footer: finalFooter,
               text: formattedText,
               replyToMessageId: message.messageId,
               threadId: message.threadId,
               streaming: true,
+              includeRawMarkdown: false,
               ...(command?.name ? {} : { streamKey, finalizeStreaming: true, suppressChunkFooter: true, preserveStreamingPages: true })
             });
           }
@@ -285,7 +343,7 @@ export class App {
     message: IncomingMessage,
     onUpdate?: (text: string) => Promise<void>,
     onStatus?: (text: string) => Promise<void>
-  ): Promise<string> {
+  ): Promise<string | AppResponse> {
     if (message.chatType !== "p2p") {
       return "Only direct messages are supported right now.";
     }
@@ -343,10 +401,18 @@ export class App {
     };
 
     if (command?.name === "status") {
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
+      const statusArgs = new ArgCursor(command.args);
+      if (statusArgs.peek() === "-h" || statusArgs.peek() === "--help") {
         return this.statusHelpText();
       }
-      const checkUpdates = this.statusRequestsUpdateCheck(command.args);
+      const checkUpdates = this.statusRequestsUpdateCheck(statusArgs);
+      if (!statusArgs.isEmpty()) {
+        return this.renderCommandError(
+          "Status",
+          `unsupported status argument \`${statusArgs.peek()}\``,
+          "`/status [check-update] [-h|--help]`"
+        );
+      }
       await sendEarlyUpdate(
         checkUpdates
           ? "collecting status and checking npm registry for Codex and Feishu SDK updates..."
@@ -631,18 +697,18 @@ export class App {
     }
 
     if (command?.name === "skills") {
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
+      const skillArgs = new ArgCursor(command.args);
+      if (skillArgs.peek() === "-h" || skillArgs.peek() === "--help") {
         return this.skillsHelpText();
       }
-      const extraArgs = command.args.filter((arg) => arg !== "--reload");
-      if (extraArgs.length > 0) {
+      const forceReload = skillArgs.takeFlag("--reload");
+      if (!skillArgs.isEmpty()) {
         return "Usage: `/skills [--reload] [-h|--help]`";
       }
       if (!this.codex.listSkills) {
         return "# Skills\n\n- **status**: `unsupported`\n- Native skills listing is currently available only in `app-server` mode.";
       }
       const project = existing?.project || this.config.project.defaultProject;
-      const forceReload = command.args.includes("--reload");
       await sendEarlyUpdate(`reading Codex skills for project \`${project}\`${forceReload ? " with reload" : ""}...`);
       const skillResult = await this.codex.listSkills(project, { forceReload });
       const entries = Array.isArray(skillResult?.data)
@@ -676,12 +742,16 @@ export class App {
     }
 
     if (command?.name === "config") {
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
+      const configArgs = new ArgCursor(command.args);
+      if (configArgs.peek() === "-h" || configArgs.peek() === "--help") {
         return this.configHelpText();
       }
-      const showCodexToml = command.args[0] === "codex-toml";
-      const extraArgs = command.args.filter((arg, index) => arg !== "--layers" && !(showCodexToml && index === 0));
-      if (extraArgs.length > 0) {
+      const showCodexToml = configArgs.peek() === "codex-toml";
+      if (showCodexToml) {
+        configArgs.shift();
+      }
+      const includeLayers = configArgs.takeFlag("--layers");
+      if (!configArgs.isEmpty()) {
         return "Usage: `/config [codex-toml] [--layers] [-h|--help]`";
       }
       const project = existing?.project || this.config.project.defaultProject;
@@ -712,7 +782,6 @@ export class App {
       if (!this.codex.readConfig) {
         return "# Config\n\n- **status**: `unsupported`\n- Native config read is currently available only in `app-server` mode.";
       }
-      const includeLayers = command.args.includes("--layers");
       await sendEarlyUpdate(`reading Codex config for project \`${project}\`${includeLayers ? " with layers" : ""}...`);
       const configResult = await this.codex.readConfig(project, { includeLayers });
       const codexConfig = asObjectRecord(configResult?.config);
@@ -743,7 +812,8 @@ export class App {
     }
 
     if (command?.name === "feishu") {
-      const feishuMode = command.args[0];
+      const feishuArgs = new ArgCursor(command.args);
+      const feishuMode = feishuArgs.shift();
       if (feishuMode === "-h" || feishuMode === "--help") {
         return this.feishuHelpText();
       }
@@ -755,20 +825,41 @@ export class App {
         return this.renderFeishuSummary(diagnostics);
       }
       if (feishuMode === "ws") {
+        if (!feishuArgs.isEmpty()) {
+          return this.renderCommandError(
+            "Feishu",
+            `unsupported feishu ws argument \`${feishuArgs.peek()}\``,
+            "`/feishu ws [-h|--help]`"
+          );
+        }
         return this.renderFeishuWs(diagnostics);
       }
       if (feishuMode === "send") {
+        if (!feishuArgs.isEmpty()) {
+          return this.renderCommandError(
+            "Feishu",
+            `unsupported feishu send argument \`${feishuArgs.peek()}\``,
+            "`/feishu send [-h|--help]`"
+          );
+        }
         return this.renderFeishuSend(diagnostics);
       }
       if (feishuMode === "doctor") {
+        if (!feishuArgs.isEmpty()) {
+          return this.renderCommandError(
+            "Feishu",
+            `unsupported feishu doctor argument \`${feishuArgs.peek()}\``,
+            "`/feishu doctor [-h|--help]`"
+          );
+        }
         return this.renderFeishuDoctor(diagnostics);
       }
-      return [
-        "# Feishu",
-        "",
-        `- **error**: unknown subcommand \`${feishuMode}\``,
-        "- **choices**: `ws`, `send`, `doctor`"
-      ].join("\n");
+      return this.renderCommandError(
+        "Feishu",
+        `unknown subcommand \`${feishuMode}\``,
+        "`/feishu [ws|send|doctor] [-h|--help]`",
+        ["- **choices**: `ws`, `send`, `doctor`"]
+      );
     }
 
     const pendingApproval = this.pendingApprovals.get(key);
@@ -790,50 +881,76 @@ export class App {
       if (activeRun) {
         return `Cannot resume while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
       }
-      const resumeArgs = [...command.args];
-      const cdIndex = resumeArgs.findIndex((arg) => arg === "-C" || arg === "--cd");
+      const resumeArgs = new ArgCursor(command.args);
       let resumeProject = existing?.project || this.config.project.defaultProject;
       let projectExplicitlySelected = false;
-      if (cdIndex >= 0) {
-        const requestedProject = resumeArgs[cdIndex + 1];
-        if (!requestedProject) {
-          return "Usage: `/resume ... [-C|--cd <dir>]`";
-        }
+      const cdProjectArg = resumeArgs.takeOption("-C", "--cd");
+      if (cdProjectArg === "") {
+        return this.renderCommandError(
+          "Resume",
+          "missing value for `-C|--cd <dir>`",
+          "`/resume [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>] [-C|--cd <dir>]`"
+        );
+      }
+      if (cdProjectArg) {
         resumeProject = await this.resolveProject(
-          requestedProject,
+          cdProjectArg,
           existing?.project || this.config.project.defaultProject
         );
         projectExplicitlySelected = true;
-        resumeArgs.splice(cdIndex, 2);
       }
 
-      const allProjects = this.consumeFlag(resumeArgs, "--all-projects");
-      const projectScopeArg = this.consumeOptionValue(resumeArgs, "--project");
+      const allProjects = resumeArgs.takeFlag("--all-projects");
+      const projectScopeArg = resumeArgs.takeOption("--project");
       if (projectScopeArg === "") {
-        return "Usage: `/resume ... [--project <path>]`";
+        return this.renderCommandError(
+          "Resume",
+          "missing value for `--project <path>`",
+          "`/resume --list [--all-projects] [--project <path>]`"
+        );
       }
-      const wantsList = resumeArgs[0] === "--list";
+      const wantsList = resumeArgs.peek() === "--list";
       if (projectScopeArg && !wantsList) {
-        return "Use `--project <path>` with `/resume --list`, or use `-C|--cd <dir>` to switch project while resuming.";
+        return this.renderCommandError(
+          "Resume",
+          "use `--project <path>` with `/resume --list`, or use `-C|--cd <dir>` to switch project while resuming",
+          "`/resume --list [--project <path>]`"
+        );
       }
       if (projectScopeArg) {
         const scopedProject = await this.resolveProject(projectScopeArg, resumeProject);
         if (projectExplicitlySelected && scopedProject !== resumeProject) {
-          return "Cannot use different project paths for `--project <path>` and `-C|--cd <dir>`.";
+          return this.renderCommandError(
+            "Resume",
+            "cannot use different project paths for `--project <path>` and `-C|--cd <dir>`",
+            "`/resume --list [--project <path>]` or `/resume -C <dir>`"
+          );
         }
         resumeProject = scopedProject;
         projectExplicitlySelected = true;
       }
-      if (resumeArgs[0] === "-h" || resumeArgs[0] === "--help") {
+      if (resumeArgs.peek() === "-h" || resumeArgs.peek() === "--help") {
         return this.resumeHelpText();
       }
-      if (resumeArgs[0] === "--last") {
+      if (resumeArgs.peek() === "--last") {
         resumeArgs.shift();
       }
-      if (allProjects && resumeArgs[0] !== "--list") {
-        return "Use `--all-projects` with `/resume --list` to browse across projects, then resume by session id.";
+      if (allProjects && resumeArgs.peek() !== "--list") {
+        return this.renderCommandError(
+          "Resume",
+          "use `--all-projects` with `/resume --list` to browse across projects, then resume by session id",
+          "`/resume --list --all-projects`"
+        );
       }
-      if (resumeArgs[0] === "--list") {
+      if (resumeArgs.peek() === "--list") {
+        resumeArgs.shift();
+        if (!resumeArgs.isEmpty()) {
+          return this.renderCommandError(
+            "Resume",
+            `unsupported resume list argument \`${resumeArgs.peek()}\``,
+            "`/resume --list [--all-projects] [--project <path>]`"
+          );
+        }
         const sessions = await this.listSessionsForCommand(
           this.config.codex.sessionAllDefaultCount,
           resumeProject,
@@ -856,31 +973,43 @@ export class App {
           resumeProject
         );
       }
-      if ((resumeArgs[0] || "").startsWith("-") && resumeArgs[0] !== "-n") {
-        return [
-          "# Resume",
-          "",
-          `- **error**: unsupported bridge option \`${resumeArgs[0]}\``,
-          "- **supported**: `/resume`, `/resume --last`, `/resume -n N`, `/resume <session-id>`, `/resume --list`, `/resume --list --all-projects`, `/resume --list --project <path>`, `/resume -h`, `/resume ... -C <dir>`",
-          "- Use a normal follow-up message after `/resume ...` if you want to continue the bound session."
-        ].join("\n");
+      if ((resumeArgs.peek() || "").startsWith("-") && resumeArgs.peek() !== "-n") {
+        return this.renderCommandError(
+          "Resume",
+          `unsupported bridge option \`${resumeArgs.peek()}\``,
+          "`/resume [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>] [-C|--cd <dir>]`",
+          ["- **note**: Use a normal follow-up message after `/resume ...` if you want to continue the bound session."]
+        );
       }
 
       let targetSessionId =
-        resumeArgs[0] ||
+        resumeArgs.peek() ||
         (await this.findMostRecentSessionId(
           resumeProject,
           projectExplicitlySelected ? false : allProjects
         )) ||
         existing?.codexSessionId;
-      let resumeSource = resumeArgs[0] ? "explicit" : "latest";
+      let resumeSource = resumeArgs.peek() ? "explicit" : "latest";
       let resumeWarning: string | undefined;
       let resumeIndex: number | undefined;
 
-      if (resumeArgs[0] === "-n") {
-        const index = Number(resumeArgs[1] || "");
+      if (resumeArgs.peek() === "-n") {
+        resumeArgs.shift();
+        const rawIndex = resumeArgs.shift();
+        if (!resumeArgs.isEmpty()) {
+          return this.renderCommandError(
+            "Resume",
+            `unsupported resume argument \`${resumeArgs.peek()}\``,
+            "`/resume -n <index>`"
+          );
+        }
+        const index = Number(rawIndex || "");
         if (!Number.isInteger(index) || index < 1) {
-          return "Usage: `/resume -n <index>` where `<index>` is an integer >= 1.";
+          return this.renderCommandError(
+            "Resume",
+            "invalid resume index",
+            "`/resume -n <index>`"
+          );
         }
         const sessions = this.sortSessionEntries(
           await this.listSessionsForCommand(
@@ -895,7 +1024,11 @@ export class App {
         );
         const selected = sessions[index - 1];
         if (!selected) {
-          return `session index out of range: ${index}. Use \`/session list${allProjects ? " --all-projects" : ""}${projectExplicitlySelected ? ` --project ${resumeProject}` : ""} --all\` first.`;
+          return this.renderCommandError(
+            "Resume",
+            `session index out of range: ${index}`,
+            `\`/session list${allProjects ? " --all-projects" : ""}${projectExplicitlySelected ? ` --project ${resumeProject}` : ""} --all\``
+          );
         }
         targetSessionId = selected.sessionId;
         resumeSource = "indexed";
@@ -922,7 +1055,10 @@ export class App {
       await sendEarlyUpdate(`resolving session ${targetSessionId} for project \`${resolvedProject}\`...`);
       const sessionExists = await this.codex.getSession(targetSessionId);
       if (!sessionExists) {
-        return `session not found: ${targetSessionId}`;
+        return this.renderCommandError(
+          "Resume",
+          `session not found: ${targetSessionId}`
+        );
       }
       const binding = this.makeBinding(
         key,
@@ -956,26 +1092,38 @@ export class App {
           "- Native session forking is currently available only in `app-server` mode."
         ].join("\n");
       }
-      const forkArgs = [...command.args];
-      const allProjects = this.consumeFlag(forkArgs, "--all-projects");
+      const forkArgs = new ArgCursor(command.args);
+      const allProjects = forkArgs.takeFlag("--all-projects");
       const currentProject = existing?.project || this.config.project.defaultProject;
       let forkProject = currentProject;
       let projectExplicitlySelected = false;
-      const projectScopeArg = this.consumeOptionValue(forkArgs, "--project");
+      const projectScopeArg = forkArgs.takeOption("--project");
       if (projectScopeArg === "") {
-        return "Usage: `/fork [--project <path>]`";
+        return this.renderCommandError(
+          "Fork",
+          "missing value for `--project <path>`",
+          "`/fork [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>]`"
+        );
       }
       if (projectScopeArg) {
         forkProject = await this.resolveProject(projectScopeArg, currentProject);
         projectExplicitlySelected = true;
       }
-      if (forkArgs[0] === "-h" || forkArgs[0] === "--help") {
+      if (forkArgs.peek() === "-h" || forkArgs.peek() === "--help") {
         return this.forkHelpText();
       }
-      if (forkArgs[0] === "--last") {
+      if (forkArgs.peek() === "--last") {
         forkArgs.shift();
       }
-      if (forkArgs[0] === "--list") {
+      if (forkArgs.peek() === "--list") {
+        forkArgs.shift();
+        if (!forkArgs.isEmpty()) {
+          return this.renderCommandError(
+            "Fork",
+            `unsupported fork list argument \`${forkArgs.peek()}\``,
+            "`/fork --list [--all-projects] [--project <path>]`"
+          );
+        }
         const sessions = await this.listSessionsForCommand(
           this.config.codex.sessionAllDefaultCount,
           forkProject,
@@ -998,30 +1146,42 @@ export class App {
           forkProject
         );
       }
-      if ((forkArgs[0] || "").startsWith("-") && forkArgs[0] !== "-n") {
-        return [
-          "# Fork",
-          "",
-          `- **error**: unsupported bridge option \`${forkArgs[0]}\``,
-          "- **supported**: `/fork`, `/fork --last`, `/fork -n N`, `/fork <session-id>`, `/fork --list`, `/fork --all-projects`, `/fork --project <path>`, `/fork -h`"
-        ].join("\n");
+      if ((forkArgs.peek() || "").startsWith("-") && forkArgs.peek() !== "-n") {
+        return this.renderCommandError(
+          "Fork",
+          `unsupported bridge option \`${forkArgs.peek()}\``,
+          "`/fork [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>]`"
+        );
       }
 
       let targetSessionId =
-        forkArgs[0] ||
+        forkArgs.peek() ||
         existing?.codexSessionId ||
         (await this.findMostRecentSessionId(
           forkProject,
           projectExplicitlySelected ? false : allProjects
         ));
-      let forkSource = forkArgs[0] ? "explicit" : existing?.codexSessionId ? "current" : "latest";
+      let forkSource = forkArgs.peek() ? "explicit" : existing?.codexSessionId ? "current" : "latest";
       let forkWarning: string | undefined;
       let forkIndex: number | undefined;
 
-      if (forkArgs[0] === "-n") {
-        const index = Number(forkArgs[1] || "");
+      if (forkArgs.peek() === "-n") {
+        forkArgs.shift();
+        const rawIndex = forkArgs.shift();
+        if (!forkArgs.isEmpty()) {
+          return this.renderCommandError(
+            "Fork",
+            `unsupported fork argument \`${forkArgs.peek()}\``,
+            "`/fork -n <index>`"
+          );
+        }
+        const index = Number(rawIndex || "");
         if (!Number.isInteger(index) || index < 1) {
-          return "Usage: `/fork -n <index>` where `<index>` is an integer >= 1.";
+          return this.renderCommandError(
+            "Fork",
+            "invalid fork index",
+            "`/fork -n <index>`"
+          );
         }
         const sessions = this.sortSessionEntries(
           await this.listSessionsForCommand(
@@ -1033,7 +1193,11 @@ export class App {
         );
         const selected = sessions[index - 1];
         if (!selected) {
-          return `session index out of range: ${index}. Use \`/session list${allProjects ? " --all-projects" : ""}${projectExplicitlySelected ? ` --project ${forkProject}` : ""} --all\` first.`;
+          return this.renderCommandError(
+            "Fork",
+            `session index out of range: ${index}`,
+            `\`/session list${allProjects ? " --all-projects" : ""}${projectExplicitlySelected ? ` --project ${forkProject}` : ""} --all\``
+          );
         }
         targetSessionId = selected.sessionId;
         forkSource = "indexed";
@@ -1043,18 +1207,28 @@ export class App {
       }
 
       if (!targetSessionId) {
-        return "No session is currently bound. Use `/new`, `/resume`, or `/session list` first.";
+        return this.renderCommandError(
+          "Fork",
+          "no session is currently bound",
+          "`/new`, `/resume`, or `/session list`"
+        );
       }
       await sendEarlyUpdate(`forking session \`${targetSessionId}\` for project \`${forkProject}\`...`);
       const sessionExists = await this.codex.getSession(targetSessionId);
       if (!sessionExists) {
-        return `session not found: ${targetSessionId}`;
+        return this.renderCommandError(
+          "Fork",
+          `session not found: ${targetSessionId}`
+        );
       }
       const forkResult = await this.codex.forkSession(targetSessionId, forkProject, this.resolveTurnOptions(existing));
       const forkedThread = isRecord(forkResult?.thread) ? forkResult.thread : undefined;
       const forkedSessionId = this.readString(forkedThread?.id);
       if (!forkedSessionId) {
-        return "fork failed: Codex returned no forked session id.";
+        return this.renderCommandError(
+          "Fork",
+          "fork failed: Codex returned no forked session id"
+        );
       }
       const binding = this.makeBinding(key, forkedSessionId, forkProject, existing);
       await this.store.put(binding);
@@ -1072,35 +1246,74 @@ export class App {
     }
 
     if (command?.name === "session") {
-      const sessionArgs = [...command.args];
-      const allProjects = this.consumeFlag(sessionArgs, "--all-projects");
+      const sessionArgs = new ArgCursor(command.args);
+      const allProjects = sessionArgs.takeFlag("--all-projects");
       const currentProject = existing?.project || this.config.project.defaultProject;
-      const projectScopeArg = this.consumeOptionValue(sessionArgs, "--project");
+      const projectScopeArg = sessionArgs.takeOption("--project");
       if (projectScopeArg === "") {
-        return "Usage: `/session [list ...] [--project <path>]`";
+        return this.renderCommandError(
+          "Session",
+          "missing value for `--project <path>`",
+          "`/session [list [options]] [-h|--help]`"
+        );
       }
-      if (sessionArgs[0] === "-h" || sessionArgs[0] === "--help") {
+      if (sessionArgs.peek() === "-h" || sessionArgs.peek() === "--help") {
         return this.sessionsHelpText();
       }
-      const isLegacyNumericList = sessionArgs.length === 1 && /^\d+$/.test(sessionArgs[0] || "");
-      const isList = sessionArgs[0] === "list" || isLegacyNumericList;
+      const remainingSessionArgs = sessionArgs.remaining();
+      const isLegacyNumericList = remainingSessionArgs.length === 1 && /^\d+$/.test(remainingSessionArgs[0] || "");
+      const isList = sessionArgs.peek() === "list" || isLegacyNumericList;
       if (isList) {
-        const listArgs = sessionArgs[0] === "list" ? sessionArgs.slice(1) : sessionArgs;
-        const interactiveOnly = this.consumeFlag(listArgs, "--interactive-only");
-        const nonInteractiveOnly = this.consumeFlag(listArgs, "--non-interactive-only");
-        const allSources = this.consumeFlag(listArgs, "--all-sources");
-        const sourceKind = this.consumeOptionValue(listArgs, "--source");
+        const listArgs = new ArgCursor(isLegacyNumericList ? remainingSessionArgs : remainingSessionArgs.slice(1));
+        const interactiveOnly = listArgs.takeFlag("--interactive-only");
+        const nonInteractiveOnly = listArgs.takeFlag("--non-interactive-only");
+        const allSources = listArgs.takeFlag("--all-sources");
+        const sourceKind = listArgs.takeOption("--source");
         if (sourceKind === "") {
-          return "Usage: `/session list [--source <source>] ...`";
+          return this.renderCommandError(
+            "Session",
+            "missing value for `--source <source>`",
+            "`/session list [--all|-n <count>] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
+          );
         }
         const sourceFilters = [interactiveOnly, nonInteractiveOnly, allSources, Boolean(sourceKind)].filter(Boolean).length;
         if (sourceFilters > 1) {
-          return "Use only one of: `--interactive-only`, `--non-interactive-only`, `--all-sources`, `--source <source>`.";
+          return this.renderCommandError(
+            "Session",
+            "use only one of `--interactive-only`, `--non-interactive-only`, `--all-sources`, or `--source <source>`",
+            "`/session list [--all|-n <count>] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
+          );
         }
         if (sourceKind && !SESSION_SOURCE_KINDS.includes(sourceKind as typeof SESSION_SOURCE_KINDS[number])) {
-          return `unknown source: \`${sourceKind}\`. Available: ${SESSION_SOURCE_KINDS.map((item) => `\`${item}\``).join(", ")}`;
+          return this.renderCommandError(
+            "Session",
+            `unknown source \`${sourceKind}\``,
+            "`/session list [--source <source>]`",
+            [`- **available**: ${SESSION_SOURCE_KINDS.map((item) => `\`${item}\``).join(", ")}`]
+          );
         }
         const limit = this.parseSessionsListLimit(listArgs);
+        if (limit === undefined) {
+          return this.renderCommandError(
+            "Session",
+            "invalid session list count",
+            "`/session list [--all|-n <count>] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
+          );
+        }
+        const leftoverListArgs = listArgs.remaining();
+        if (leftoverListArgs.length > 0) {
+          return leftoverListArgs[0].startsWith("/")
+            ? this.renderCommandError(
+                "Session",
+                "use `--project <path>` to filter sessions by project path",
+                "`/session list --project <path> [--all|-n <count>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
+              )
+            : this.renderCommandError(
+                "Session",
+                `unsupported session list argument \`${leftoverListArgs[0]}\``,
+                "`/session list [--all|-n <count>] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
+              );
+        }
         const scopedProject = projectScopeArg
           ? await this.resolveProject(projectScopeArg, currentProject)
           : currentProject;
@@ -1122,6 +1335,14 @@ export class App {
           sessions,
           existing?.codexSessionId,
           scopedProject
+        );
+      }
+
+      if (!sessionArgs.isEmpty()) {
+        return this.renderCommandError(
+          "Session",
+          `unsupported session subcommand \`${sessionArgs.peek()}\``,
+          "`/session [list [options]] [-h|--help]`"
         );
       }
 
@@ -1157,24 +1378,22 @@ export class App {
 
     const binding = existing;
     if (command?.name === "new") {
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
+      const newArgs = new ArgCursor(command.args);
+      if (newArgs.peek() === "-h" || newArgs.peek() === "--help") {
         return this.newHelpText();
       }
       if (activeRun) {
         return `Cannot create a new session while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
       }
-      const newArgs = [...command.args];
-      const cdIndex = newArgs.findIndex((arg) => arg === "-C" || arg === "--cd");
       let project = binding?.project || this.config.project.defaultProject;
-      if (cdIndex >= 0) {
-        const requestedProject = newArgs[cdIndex + 1];
-        if (!requestedProject) {
+      const newProjectArg = newArgs.takeOption("-C", "--cd");
+      if (newProjectArg === "") {
           return "Usage: `/new [-C|--cd <dir>]`";
-        }
-        project = await this.resolveProject(requestedProject, project);
-        newArgs.splice(cdIndex, 2);
       }
-      if (newArgs.length > 0) {
+      if (newProjectArg) {
+        project = await this.resolveProject(newProjectArg, project);
+      }
+      if (!newArgs.isEmpty()) {
         return "Usage: `/new [-C|--cd <dir>]`";
       }
       await sendEarlyUpdate(`creating a new Codex session for project \`${project}\`...`);
@@ -1209,12 +1428,13 @@ export class App {
     }
 
     if (command?.name === "project") {
+      const projectArgs = new ArgCursor(command.args);
       const currentProject = binding?.project || this.config.project.defaultProject;
       const trustedProjects = await this.listTrustedProjects();
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
+      if (projectArgs.peek() === "-h" || projectArgs.peek() === "--help") {
         return this.projectHelpText();
       }
-      if (command.args.length === 0) {
+      if (projectArgs.isEmpty()) {
         return [
           "# Project",
           "",
@@ -1224,13 +1444,22 @@ export class App {
         ].join("\n");
       }
 
-      if (command.args[0] === "list") {
-        const listArgs = command.args.slice(1);
-        const mode = listArgs.includes("--trusted")
+      const projectSubcommand = projectArgs.shift();
+
+      if (projectSubcommand === "list") {
+        const listArgs = new ArgCursor(projectArgs.remaining());
+        const mode = listArgs.takeFlag("--trusted")
           ? "trusted"
-          : listArgs.includes("--all")
+          : listArgs.takeFlag("--all")
             ? "all"
             : "default";
+        if (!listArgs.isEmpty()) {
+          return this.renderCommandError(
+            "Project",
+            `unsupported project list argument \`${listArgs.peek()}\``,
+            "`/project list [--all|--trusted]`"
+          );
+        }
         const projects = await this.listProjects(mode, currentProject, trustedProjects);
         if (projects.length === 0) {
           return "# Projects\n\n- No projects found.";
@@ -1238,13 +1467,17 @@ export class App {
         return this.renderProjectList("Projects", projects, currentProject);
       }
 
-      if (command.args[0] === "unbind") {
+      if (projectSubcommand === "unbind") {
         if (activeRun) {
           return `Cannot change project while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
         }
-        const requested = command.args.slice(1).join(" ").trim();
+        const requested = projectArgs.remainingText();
         if (!requested) {
-          return "Usage: `/project unbind <path>`";
+          return this.renderCommandError(
+            "Project",
+            "missing project path for `unbind`",
+            "`/project unbind <path>`"
+          );
         }
         const project = await this.resolveProject(requested, currentProject, false, false);
         if (project === currentProject) {
@@ -1265,25 +1498,33 @@ export class App {
         ].join("\n");
       }
 
-      if (command.args[0] !== "bind") {
-        return this.projectHelpText();
+      if (projectSubcommand !== "bind") {
+        return this.renderCommandError(
+          "Project",
+          `unsupported project subcommand \`${projectSubcommand}\``,
+          "`/project [list [options]|bind [options]|unbind <path>] [-h|--help]`"
+        );
       }
       if (activeRun) {
         return `Cannot change project while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
       }
 
-      const bindArgs = command.args.slice(1);
-      const mkdirIndex = bindArgs.findIndex((arg) => arg === "-m" || arg === "--mkdir");
-      const createMissing = mkdirIndex >= 0;
-      const projectArgs = [...bindArgs];
-      if (mkdirIndex >= 0) {
-        projectArgs.splice(mkdirIndex, 1);
-      }
+      const bindArgs = new ArgCursor(projectArgs.remaining());
+      const createMissing = bindArgs.takeFlag("-m", "--mkdir");
 
       let project: string | undefined;
       let bindWarning: string | undefined;
-      if (projectArgs[0] === "-n") {
-        const index = Number(projectArgs[1] || "");
+      if (bindArgs.peek() === "-n") {
+        bindArgs.shift();
+        const rawIndex = bindArgs.shift();
+        if (!bindArgs.isEmpty()) {
+          return this.renderCommandError(
+            "Project",
+            `unsupported project bind argument \`${bindArgs.peek()}\``,
+            "`/project bind -n <index>`"
+          );
+        }
+        const index = Number(rawIndex || "");
         if (!Number.isInteger(index) || index < 1) {
           return "Usage: `/project bind -n <index>` where `<index>` is an integer >= 1.";
         }
@@ -1296,9 +1537,13 @@ export class App {
         bindWarning =
           "Index-based bind uses the current `/project list` ordering and may change as projects are added or updated.";
       } else {
-        const requested = projectArgs.join(" ").trim();
+        const requested = bindArgs.remainingText();
         if (!requested) {
-          return this.projectHelpText();
+          return this.renderCommandError(
+            "Project",
+            "missing project path for `bind`",
+            "`/project bind <path>`"
+          );
         }
         project = await this.resolveProject(requested, currentProject, createMissing);
       }
@@ -1318,12 +1563,17 @@ export class App {
     }
 
     if (command?.name === "log") {
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
+      const logArgs = new ArgCursor(command.args);
+      if (logArgs.peek() === "-h" || logArgs.peek() === "--help") {
         return this.logHelpText();
       }
-      const query = this.parseLogQuery(command.args);
+      const query = this.parseLogQuery(logArgs.remaining());
       if (query instanceof Error) {
-        return `# Log\n\n- **error**: ${query.message}\n- **usage**: \`/log [-n N] [--since <expr>] [--grep <text>]\``;
+        return this.renderCommandError(
+          "Log",
+          query.message,
+          "`/log [-n <count>] [--since <expr>] [--grep <text>] [-h|--help]`"
+        );
       }
       const filters = [
         `last ${query.limit} lines`,
@@ -1365,10 +1615,11 @@ export class App {
     }
 
     if (command?.name === "approvals") {
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
+      const approvalArgs = new ArgCursor(command.args);
+      if (approvalArgs.peek() === "-h" || approvalArgs.peek() === "--help") {
         return this.approvalsHelpText();
       }
-      if (command.args.length === 0) {
+      if (approvalArgs.isEmpty()) {
         return [
           "# Approvals",
           "",
@@ -1379,14 +1630,14 @@ export class App {
       if (activeRun) {
         return `Cannot change approvals while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
       }
-      const nextMode = this.parseApprovalMode(command.args.join(" "));
+      const nextMode = this.parseApprovalMode(approvalArgs.remainingText());
       if (!nextMode) {
-        return [
-          "# Approvals",
-          "",
-          `- **error**: unknown mode \`${command.args.join(" ")}\``,
-          `- **choices**: ${this.approvalChoicesText()}`
-        ].join("\n");
+        return this.renderCommandError(
+          "Approvals",
+          `unknown mode \`${approvalArgs.remainingText()}\``,
+          "`/approvals [mode] [-h|--help]`",
+          [`- **choices**: ${this.approvalChoicesText()}`]
+        );
       }
       await sendEarlyUpdate(`switching approvals to \`${nextMode}\`...`);
       this.config.codex.sandboxMode = nextMode;
@@ -1400,19 +1651,24 @@ export class App {
     }
 
     if (command?.name === "search") {
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
+      const searchArgs = new ArgCursor(command.args);
+      if (searchArgs.peek() === "-h" || searchArgs.peek() === "--help") {
         return this.searchHelpText();
       }
       const enabled = binding?.searchEnabled ?? this.config.project.defaultSearchEnabled;
-      if (command.args.length === 0) {
+      if (searchArgs.isEmpty()) {
         return `# Search\n\n- **mode**: \`${enabled ? "on" : "off"}\``;
       }
       if (activeRun) {
         return `Cannot change search while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
       }
-      const normalized = command.args[0]?.toLowerCase();
-      if (!["on", "off"].includes(normalized || "")) {
-        return "# Search\n\n- **usage**: `/search [on|off]`";
+      const normalized = searchArgs.shift()?.toLowerCase();
+      if (!["on", "off"].includes(normalized || "") || !searchArgs.isEmpty()) {
+        return this.renderCommandError(
+          "Search",
+          "invalid search mode",
+          "`/search [on|off]`"
+        );
       }
       const nextBinding = binding
         ? { ...binding, searchEnabled: normalized === "on", updatedAt: new Date().toISOString() }
@@ -1428,10 +1684,11 @@ export class App {
     }
 
     if (command?.name === "model") {
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
+      const modelArgs = new ArgCursor(command.args);
+      if (modelArgs.peek() === "-h" || modelArgs.peek() === "--help") {
         return this.modelHelpText();
       }
-      if (command.args[0] === "--list" || command.args[0] === "list") {
+      if (modelArgs.peek() === "--list" || modelArgs.peek() === "list") {
         const project = binding?.project || this.config.project.defaultProject;
         const liveModels = this.codex.listModels
           ? await this.codex.listModels(project, { includeHidden: false, limit: 100 }).catch(() => undefined)
@@ -1439,13 +1696,13 @@ export class App {
         return this.modelListText(liveModels);
       }
       const current = binding?.model || "(default)";
-      if (command.args.length === 0) {
+      if (modelArgs.isEmpty()) {
         return `# Model\n\n- **model**: \`${current}\``;
       }
       if (activeRun) {
         return `Cannot change model while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
       }
-      const nextValue = command.args.join(" ").trim();
+      const nextValue = modelArgs.remainingText();
       const nextBinding = binding
         ? {
             ...binding,
@@ -1468,17 +1725,18 @@ export class App {
     }
 
     if (command?.name === "profile") {
-      if (command.args[0] === "-h" || command.args[0] === "--help") {
+      const profileArgs = new ArgCursor(command.args);
+      if (profileArgs.peek() === "-h" || profileArgs.peek() === "--help") {
         return this.profileHelpText();
       }
       const current = binding?.profile || "(default)";
-      if (command.args.length === 0) {
+      if (profileArgs.isEmpty()) {
         return `# Profile\n\n- **profile**: \`${current}\``;
       }
       if (activeRun) {
         return `Cannot change profile while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
       }
-      const nextValue = command.args.join(" ").trim();
+      const nextValue = profileArgs.remainingText();
       const nextBinding = binding
         ? {
             ...binding,
@@ -1792,6 +2050,37 @@ export class App {
       default:
         return "blue";
     }
+  }
+
+  private templateForSeverity(
+    baseTemplate: OutgoingMessage["template"],
+    severity?: AppResponse["severity"]
+  ): OutgoingMessage["template"] {
+    if (severity === "warning") {
+      return "orange";
+    }
+    if (severity === "error") {
+      return "red";
+    }
+    return baseTemplate;
+  }
+
+  private renderCommandError(
+    title: string,
+    error: string,
+    usage?: string,
+    extraLines: string[] = []
+  ): AppResponse {
+    return {
+      severity: "warning",
+      text: [
+      `# ${title}`,
+      "",
+      `- **error**: ${error}`,
+      ...(usage ? [`- **usage**: ${usage}`] : []),
+      ...extraLines
+      ].join("\n")
+    };
   }
 
   private stripLeadingMarkdownHeading(text: string): string {
@@ -3467,40 +3756,33 @@ export class App {
     ].join("\n");
   }
 
-  private parseSessionsListLimit(args: string[]): number {
-    if (args[0] === "--all") {
+  private parseSessionsListLimit(args: ArgCursor): number | undefined {
+    if (args.peek() === "--all") {
+      args.shift();
       return this.config.codex.sessionAllDefaultCount;
     }
-    if (args.length === 1 && /^\d+$/.test(args[0] || "")) {
+    const remaining = args.remaining();
+    if (remaining.length === 1 && /^\d+$/.test(remaining[0] || "")) {
+      const raw = args.shift();
       return Math.min(
         this.config.codex.sessionListDefaultCount,
-        Math.max(1, Number(args[0]) || this.config.codex.sessionListDefaultCount)
+        Math.max(1, Number(raw) || this.config.codex.sessionListDefaultCount)
       );
     }
-    const flagIndex = args.findIndex((arg) => arg === "-n" || arg === "--count");
-    const raw = flagIndex >= 0 ? args[flagIndex + 1] : undefined;
+    const raw = args.takeOption("-n", "--count");
+    if (raw !== undefined) {
+      if (!raw || !/^\d+$/.test(raw)) {
+        return undefined;
+      }
+      return Math.min(
+        this.config.codex.sessionListDefaultCount,
+        Math.max(1, Number(raw) || this.config.codex.sessionListDefaultCount)
+      );
+    }
     return Math.min(
       this.config.codex.sessionListDefaultCount,
-      Math.max(1, Number(raw || String(this.config.codex.sessionListDefaultCount)) || this.config.codex.sessionListDefaultCount)
+      Math.max(1, this.config.codex.sessionListDefaultCount)
     );
-  }
-
-  private consumeFlag(args: string[], flag: string): boolean {
-    const index = args.indexOf(flag);
-    if (index < 0) return false;
-    args.splice(index, 1);
-    return true;
-  }
-
-  private consumeOptionValue(args: string[], flag: string): string | undefined {
-    const index = args.indexOf(flag);
-    if (index < 0) return undefined;
-    const value = args[index + 1];
-    args.splice(index, value ? 2 : 1);
-    if (!value || value.startsWith("-")) {
-      return "";
-    }
-    return value;
   }
 
   private noSessionsText(project: string, allProjects: boolean, explicitProject = false): string {
@@ -3744,8 +4026,12 @@ export class App {
     ].join("\n");
   }
 
-  private statusRequestsUpdateCheck(args: string[]): boolean {
-    return args.includes("check-update") || args.includes("--check-update") || args.includes("update");
+  private statusRequestsUpdateCheck(args: ArgCursor): boolean {
+    if (args.peek() === "check-update" || args.peek() === "--check-update") {
+      args.shift();
+      return true;
+    }
+    return false;
   }
 
   private renderFeishuSummary(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
