@@ -285,3 +285,5 @@ but new config should use the structured schema.
 - `p2p` chats bind on `p2p:<chat_id>`.
 - If a conversation already has a bound session, the bridge reuses it.
 - If a run is already active for that conversation, the bridge rejects a second concurrent turn instead of guessing which live run to reuse.
+- `/resume` can append recent thread history after a real session change with `--messages <count>`.
+- The checked-in default is `session.resumeReplayCount = 5`.

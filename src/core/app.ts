@@ -11,7 +11,7 @@ import { conversationKeyFor } from "./conversation-key.js";
 import { parseCommand } from "./command-router.js";
 import { BindingStore } from "../store/binding-store.js";
 import { ActiveRun, IncomingMessage, OutgoingMessage, SessionBinding } from "../types/domain.js";
-import { getSessionSummary, listRecentSessions } from "../adapters/codex/session-files.js";
+import { getRecentSessionMessages, getSessionSummary, listRecentSessions } from "../adapters/codex/session-files.js";
 import { listTrustedProjects } from "../adapters/codex/project-files.js";
 import { getCodexRuntimeMeta } from "../adapters/codex/runtime-meta.js";
 
@@ -901,6 +901,26 @@ export class App {
       }
 
       const allProjects = resumeArgs.takeFlag("--all-projects");
+      const replayMessagesArg = resumeArgs.takeOption("--messages");
+      if (replayMessagesArg === "") {
+        return this.renderCommandError(
+          "Resume",
+          "missing value for `--messages <count>`",
+          "`/resume [<session-id>|--last|-n <index>|--list] [--messages <count>] [--all-projects] [--project <path>] [-C|--cd <dir>]`"
+        );
+      }
+      let replayMessages = this.config.codex.resumeReplayCount;
+      if (replayMessagesArg !== undefined) {
+        const parsed = Number(replayMessagesArg);
+        if (!Number.isInteger(parsed) || parsed < 0) {
+          return this.renderCommandError(
+            "Resume",
+            "invalid message replay count",
+            "`/resume [<session-id>|--last|-n <index>] [--messages <count>]`"
+          );
+        }
+        replayMessages = parsed;
+      }
       const projectScopeArg = resumeArgs.takeOption("--project");
       if (projectScopeArg === "") {
         return this.renderCommandError(
@@ -944,6 +964,13 @@ export class App {
       }
       if (resumeArgs.peek() === "--list") {
         resumeArgs.shift();
+        if (replayMessagesArg !== undefined) {
+          return this.renderCommandError(
+            "Resume",
+            "use `--messages <count>` only when actually resuming a session, not with `--list`",
+            "`/resume [<session-id>|--last|-n <index>] [--messages <count>]`"
+          );
+        }
         if (!resumeArgs.isEmpty()) {
           return this.renderCommandError(
             "Resume",
@@ -1067,7 +1094,7 @@ export class App {
         existing
       );
       await this.store.put(binding);
-      return [
+      const sections = [
         "# Resume Session",
         "",
         `- **source**: \`${resumeSource}\``,
@@ -1078,7 +1105,17 @@ export class App {
         `- **cwd**: \`${session?.cwd || "(unknown)"}\``,
         `- **about**: ${session?.preview || "(no preview)"}`,
         ...(resumeWarning ? [`- **warning**: ${resumeWarning}`] : [])
-      ].join("\n");
+      ];
+      const sessionChanged = existing?.codexSessionId !== binding.codexSessionId;
+      const resumedSessionId = binding.codexSessionId || targetSessionId;
+      const replaySink = onStatus || onUpdate;
+      if (sessionChanged && replayMessages > 0 && replaySink) {
+        const recentMessages = await this.renderRecentSessionReplayMessages(resumedSessionId, replayMessages);
+        for (const recentMessage of recentMessages) {
+          await replaySink(recentMessage);
+        }
+      }
+      return sections.join("\n");
     }
 
     if (command?.name === "fork") {
@@ -3562,7 +3599,7 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/resume [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>] [-C|--cd <dir>]`",
+      "- `/resume [<session-id>|--last|-n <index>|--list] [--messages <count>] [--all-projects] [--project <path>] [-C|--cd <dir>]`",
       "- `/resume -h|--help`",
       "",
       "## Options",
@@ -3582,6 +3619,7 @@ export class App {
       "### Project",
       "",
       "- `-C, --cd <dir>` switch the bound project while resuming",
+      "- `--messages <count>` append the last N thread messages after a successful session change",
       "",
       "### General",
       "",
@@ -3594,6 +3632,7 @@ export class App {
       "- `/resume --list --all-projects` browses across projects.",
       "- `/resume <session-id>` adopts that session's own project by default; use `-C, --cd <dir>` to override it.",
       "- Use `-C, --cd <dir>` to switch project while resuming a session.",
+      `- When the resumed session changes, the bridge appends the last \`${this.config.codex.resumeReplayCount}\` thread messages by default when app-server thread history is available.`,
       "- `/resume -n <index>` is order-dependent and should be treated as a convenience, not a stable identifier.",
       "- Native Codex flags like `--config`, `--remote`, `--image`, `--model`, `--sandbox`, and prompt arguments are not exposed on this bridge command.",
       "",
@@ -3601,7 +3640,9 @@ export class App {
       "",
       "- `/resume`",
       "- `/resume --list`",
-      "- `/resume -C /path/to/project`"
+      "- `/resume <session-id>`",
+      "- `/resume -C /path/to/project`",
+      "- `/resume <session-id> --messages 8`"
     ].join("\n");
   }
 
@@ -3792,6 +3833,25 @@ export class App {
       preview: this.readString(thread.preview),
       source: this.formatThreadSource(thread.source)
     };
+  }
+
+  private async renderRecentSessionReplayMessages(
+    sessionId: string,
+    limit: number
+  ): Promise<string[]> {
+    const messages = await getRecentSessionMessages(this.config.codex.sessionsDir, sessionId, limit);
+    if (messages.length === 0) return [];
+    return messages.map((message, index) =>
+      [
+        `# Recent Message ${index + 1}`,
+        "",
+        `- **role**: \`${message.role === "assistant" ? "codex" : message.role}\``,
+        "",
+        "```text",
+        message.text,
+        "```"
+      ].join("\n")
+    );
   }
 
   private formatThreadTimestamp(value: number | undefined): string | undefined {

@@ -36,6 +36,11 @@ export interface SessionSummary {
   preview?: string;
 }
 
+export interface SessionMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
 export interface SessionListOptions {
   cwd?: string;
   includeUnknownCwd?: boolean;
@@ -72,6 +77,30 @@ export async function getSessionSummary(
   const filePath = await findSessionFile(sessionsDir, sessionId);
   if (!filePath) return undefined;
   return readSessionSummary(filePath);
+}
+
+export async function getRecentSessionMessages(
+  sessionsDir: string,
+  sessionId: string,
+  limit: number
+): Promise<SessionMessage[]> {
+  if (limit <= 0) return [];
+  const filePath = await findSessionFile(sessionsDir, sessionId);
+  if (!filePath) return [];
+  const raw = await fs.readFile(filePath, "utf8").catch(() => undefined);
+  if (!raw) return [];
+  const lines = raw.split(/\r?\n/).filter(Boolean);
+  const messages: SessionMessage[] = [];
+  for (const line of lines) {
+    const message = parseSessionMessage(line);
+    if (!message) continue;
+    const previous = messages[messages.length - 1];
+    if (previous && previous.role === message.role && previous.text === message.text) {
+      continue;
+    }
+    messages.push(message);
+  }
+  return messages.slice(-limit);
 }
 
 async function collectSessionFiles(root: string): Promise<string[]> {
@@ -151,10 +180,54 @@ function extractSessionPreview(lines: string[]): string | undefined {
   return undefined;
 }
 
+function parseSessionMessage(line: string): SessionMessage | undefined {
+  try {
+    const parsed = JSON.parse(line) as {
+      type?: string;
+      payload?: {
+        type?: string;
+        message?: string;
+        role?: string;
+        content?: Array<{ type?: string; text?: string }>;
+      };
+    };
+    if (parsed.type === "event_msg" && parsed.payload?.type === "user_message") {
+      const text = normalizeMessageText(parsed.payload.message);
+      return text ? { role: "user", text } : undefined;
+    }
+    if (parsed.type === "event_msg" && parsed.payload?.type === "agent_message") {
+      const text = normalizeMessageText(parsed.payload.message);
+      return text ? { role: "assistant", text } : undefined;
+    }
+    if (parsed.type === "response_item" && parsed.payload?.type === "message") {
+      const role =
+        parsed.payload.role === "user"
+          ? "user"
+          : parsed.payload.role === "assistant"
+            ? "assistant"
+            : undefined;
+      if (!role) return undefined;
+      const text = normalizeMessageText(
+        parsed.payload.content?.find((item) => item.type === "input_text" || item.type === "output_text")?.text
+      );
+      return text ? { role, text } : undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 function compactPreview(text: string | undefined): string | undefined {
   if (!text) return undefined;
   const compact = text.replace(/\s+/g, " ").trim();
   if (!compact) return undefined;
   if (compact.length <= 72) return compact;
   return `${compact.slice(0, 69).trimEnd()}...`;
+}
+
+function normalizeMessageText(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  return normalized || undefined;
 }

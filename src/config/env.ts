@@ -52,6 +52,7 @@ export interface AppConfig {
     sandboxMode: "default" | "workspace-write" | "danger-full-access";
     sessionListDefaultCount: number;
     sessionAllDefaultCount: number;
+    resumeReplayCount: number;
     runTimeoutMs: number;
     approvalTimeoutMs: number;
     compactTimeoutMs: number;
@@ -122,6 +123,7 @@ interface JsonConfigShape {
   session?: {
     listDefaultCount?: unknown;
     allDefaultCount?: unknown;
+    resumeReplayCount?: unknown;
   };
   project?: {
     allowedRoots?: unknown;
@@ -200,7 +202,7 @@ export function loadConfig(): AppConfig {
       ),
       wsAgentKeepAliveMsecs: readIntegerSetting(
         "FEISHU_WS_AGENT_KEEP_ALIVE_MSECS",
-        30000,
+        60000,
         jsonConfig,
         ["feishu", "wsAgent", "keepAliveMsecs"],
         { min: 1 }
@@ -221,7 +223,7 @@ export function loadConfig(): AppConfig {
       ),
       wsConnectWarnAfterMs: readIntegerSetting(
         "FEISHU_WS_CONNECT_WARN_AFTER_MS",
-        30000,
+        60000,
         jsonConfig,
         ["feishu", "wsConnectWarnAfterMs"],
         { min: 0 }
@@ -323,6 +325,13 @@ export function loadConfig(): AppConfig {
         ["session", "allDefaultCount"],
         { min: 1 }
       ),
+      resumeReplayCount: readIntegerSetting(
+        "CODEX_SESSION_RESUME_REPLAY_COUNT",
+        5,
+        jsonConfig,
+        ["session", "resumeReplayCount"],
+        { min: 0 }
+      ),
       runTimeoutMs: readIntegerSetting(
         "CODEX_RUN_TIMEOUT_MS",
         600000,
@@ -346,7 +355,7 @@ export function loadConfig(): AppConfig {
       ),
       spawnStatusIntervalMs: readIntegerSetting(
         "SPAWN_STATUS_INTERVAL_MS",
-        30000,
+        60000,
         jsonConfig,
         ["codex", "spawn", "statusIntervalMs"],
         { min: 0 }
