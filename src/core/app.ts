@@ -360,7 +360,7 @@ export class App {
         "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
         "- `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork",
         "- `/session [list [options]] [-h|--help]` show the current session or browse recent sessions",
-        "- `/resume [<session-id>|options] [-h|--help]` bind a session, optionally switching project",
+        "- `/resume [<session-id>|options] [-h|--help]` bind a session, or start fresh with `/new -C <dir>` for a different project",
         "- `/stop [-h|--help]` stop the current active run",
         "",
         "## Codex",
@@ -1015,7 +1015,7 @@ export class App {
           resumeProject,
           projectExplicitlySelected ? false : allProjects
         )) ||
-        existing?.codexSessionId;
+        (projectExplicitlySelected ? undefined : existing?.codexSessionId);
       let resumeSource = resumeArgs.peek() ? "explicit" : "latest";
       let resumeWarning: string | undefined;
       let resumeIndex: number | undefined;
@@ -1065,18 +1065,49 @@ export class App {
       }
 
       if (!targetSessionId) {
+        if (projectExplicitlySelected) {
+          return this.renderCommandError(
+            "Resume",
+            `no native Codex sessions found for project \`${resumeProject}\``,
+            `\`/new -C ${resumeProject}\``,
+            [
+              `- **sessions dir**: \`${this.config.codex.sessionsDir}\``,
+              "- **note**: Use `/new -C <dir>` to start a fresh session there."
+            ]
+          );
+        }
         return this.noSessionsText(resumeProject, allProjects, projectExplicitlySelected);
       }
       let resolvedProject = resumeProject;
       const session = await getSessionSummary(this.config.codex.sessionsDir, targetSessionId);
+      let sessionProject: string | undefined;
+      if (session?.cwd) {
+        sessionProject = await this.resolveProject(
+          session.cwd,
+          existing?.project || this.config.project.defaultProject
+        );
+      }
       if (
         !projectExplicitlySelected &&
         resumeSource === "explicit" &&
-        session?.cwd
+        sessionProject
       ) {
-        resolvedProject = await this.resolveProject(
-          session.cwd,
-          existing?.project || this.config.project.defaultProject
+        resolvedProject = sessionProject;
+      }
+      if (
+        projectExplicitlySelected &&
+        sessionProject &&
+        sessionProject !== resolvedProject
+      ) {
+        return this.renderCommandError(
+          "Resume",
+          `session \`${targetSessionId}\` is bound to a different project`,
+          `\`/new -C ${resolvedProject}\``,
+          [
+            `- **session project**: \`${sessionProject}\``,
+            `- **requested project**: \`${resolvedProject}\``,
+            "- **note**: Use `/new -C <dir>` to start a fresh session in a different project."
+          ]
         );
       }
       await sendEarlyUpdate(`resolving session ${targetSessionId} for project \`${resolvedProject}\`...`);
@@ -3663,7 +3694,7 @@ export class App {
       "",
       "### Project",
       "",
-      "- `-C, --cd <dir>` switch the bound project while resuming",
+      "- `-C, --cd <dir>` keep the resumed session in that project only when it matches the session project",
       "- `--messages <count>` append the last N thread messages after a successful session change",
       "",
       "### General",
@@ -3675,8 +3706,8 @@ export class App {
       "- `/resume` and `/resume --last` both bind the most recent session in the current scope.",
       "- `/resume --list` is the listing shortcut before selecting a session to resume.",
       "- `/resume --list --all-projects` browses across projects.",
-      "- `/resume <session-id>` adopts that session's own project by default; use `-C, --cd <dir>` to override it.",
-      "- Use `-C, --cd <dir>` to switch project while resuming a session.",
+      "- `/resume <session-id>` adopts that session's own project by default.",
+      "- If `-C, --cd <dir>` points to a different project than the target session, `/resume` rejects it and suggests `/new -C <dir>` instead.",
       `- When the resumed session changes, the bridge appends the last \`${this.config.codex.resumeReplayCount}\` thread messages by default when app-server thread history is available.`,
       "- `/resume -n <index>` is order-dependent and should be treated as a convenience, not a stable identifier.",
       "- Native Codex flags like `--config`, `--remote`, `--image`, `--model`, `--sandbox`, and prompt arguments are not exposed on this bridge command.",
@@ -3814,7 +3845,11 @@ export class App {
 
   private noSessionsText(project: string, allProjects: boolean, explicitProject = false): string {
     if (explicitProject) {
-      return `No native Codex sessions found for project \`${project}\` under ${this.config.codex.sessionsDir}`;
+      return [
+        `No native Codex sessions found for project \`${project}\` under ${this.config.codex.sessionsDir}`,
+        "",
+        `Use \`/new -C ${project}\` to start a fresh session there.`
+      ].join("\n");
     }
     return allProjects
       ? `No native Codex sessions found under ${this.config.codex.sessionsDir}`

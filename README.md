@@ -45,7 +45,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
 - `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork
 - `/session [list [options]] [-h|--help]` show the current session or browse recent sessions
-- `/resume [<session-id>|options] [-h|--help]` bind a session, optionally switching project
+- `/resume [<session-id>|options] [-h|--help]` bind a session, or start fresh with `/new -C <dir>` for a different project
 - `/stop [-h|--help]` stop the current active run
 
 ### Codex
