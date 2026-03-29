@@ -129,13 +129,15 @@ export class App {
     this.feishu = new FeishuGateway(this.config.feishu);
     await this.feishu.start(
       async (message) => {
-        const command = parseCommand(message);
+        const parsedCommand = parseCommand(message);
+        const command = parsedCommand && "args" in parsedCommand ? parsedCommand : undefined;
         const currentBinding = await this.store.get(conversationKeyFor(message));
-        const messageTitle = this.titleForCommand(command?.name, message.text);
-        const messageTemplate = this.templateForCommand(command?.name);
-        const messageFooter = this.footerForMessage(command?.name, currentBinding);
+        const commandName = command?.name || ("name" in (parsedCommand || {}) ? parsedCommand?.name : undefined);
+        const messageTitle = this.titleForCommand(commandName, message.text);
+        const messageTemplate = this.templateForCommand(commandName);
+        const messageFooter = this.footerForMessage(commandName, currentBinding);
         const formatForFeishu = (text: string): string =>
-          command?.name ? this.stripLeadingMarkdownHeading(text) : text;
+          commandName ? this.stripLeadingMarkdownHeading(text) : text;
         try {
           let streamed = false;
           let lastUpdateText: string | undefined;
@@ -144,14 +146,14 @@ export class App {
           let streamingSendInFlight = false;
           let queuedStreamingSnapshot: string | undefined;
           let streamDrain = Promise.resolve();
-          const streamKey = `${message.chatId}:${message.threadId || "root"}:${message.messageId}:${command?.name || "codex"}`;
+          const streamKey = `${message.chatId}:${message.threadId || "root"}:${message.messageId}:${commandName || "codex"}`;
           const sendStatusSafely = async (update: string): Promise<void> => {
             statusChain = statusChain.then(async () => {
               try {
                 const latestBinding =
                   (await this.store.get(conversationKeyFor(message))) || currentBinding;
                 const formattedUpdate = formatForFeishu(update);
-                const codexStatusHeading = !command?.name
+                const codexStatusHeading = !commandName
                   ? this.extractLeadingMarkdownHeading(formattedUpdate)
                   : undefined;
                 const statusTitle = codexStatusHeading
@@ -164,7 +166,7 @@ export class App {
                   messageId: message.messageId,
                   chatId: message.chatId,
                   threadId: message.threadId,
-                  command: command?.name || "codex",
+                  command: commandName || "codex",
                   route: "status-card",
                   title: statusTitle,
                   textPreview: this.previewText(statusText)
@@ -173,8 +175,8 @@ export class App {
                   chatId: message.chatId,
                   title: statusTitle,
                   template: messageTemplate,
-                  footer: command?.name
-                    ? this.footerForMessage(command?.name, latestBinding)
+                  footer: commandName
+                    ? this.footerForMessage(commandName, latestBinding)
                     : this.footerForCodexReply(latestBinding),
                   text: statusText,
                   replyToMessageId: message.messageId,
@@ -234,7 +236,7 @@ export class App {
             }
           };
           const sendUpdateSafely = async (update: string): Promise<void> => {
-            if (command?.name) {
+            if (commandName) {
               await sendStatusSafely(update);
               return;
             }
@@ -270,29 +272,29 @@ export class App {
           const responseSeverity = typeof result === "string" ? undefined : result.severity;
           await statusChain;
           await streamDrain;
-          const formattedText = command?.name
+          const formattedText = commandName
             ? formatForFeishu(text)
             : accumulatedStreamText || formatForFeishu(text);
-          const shouldFinalizeLiveStream = !command?.name && streamed;
+          const shouldFinalizeLiveStream = !commandName && streamed;
           if ((formattedText && formattedText !== lastUpdateText) || !streamed || shouldFinalizeLiveStream) {
             const latestBinding =
               (await this.store.get(conversationKeyFor(message))) || currentBinding;
-            const finalFooter = command?.name
-              ? this.footerForMessage(command?.name, latestBinding)
+            const finalFooter = commandName
+              ? this.footerForMessage(commandName, latestBinding)
               : this.footerForCodexReply(latestBinding);
             const finalTemplate =
-              command?.name
+              commandName
                 ? this.templateForSeverity(messageTemplate, responseSeverity)
                 : messageTemplate;
             console.log("Bridge final outbound route", {
               messageId: message.messageId,
               chatId: message.chatId,
               threadId: message.threadId,
-              command: command?.name || "codex",
+              command: commandName || "codex",
               streamed,
               shouldFinalizeLiveStream,
-              route: command?.name ? "status-card" : "stream-card-finalize",
-              streamKey: command?.name ? undefined : streamKey,
+              route: commandName ? "status-card" : "stream-card-finalize",
+              streamKey: commandName ? undefined : streamKey,
               textPreview: this.previewText(formattedText)
             });
             await this.feishu?.send({
@@ -305,7 +307,7 @@ export class App {
               threadId: message.threadId,
               streaming: true,
               includeRawMarkdown: false,
-              ...(command?.name ? {} : { streamKey, finalizeStreaming: true, suppressChunkFooter: true, preserveStreamingPages: true })
+              ...(commandName ? {} : { streamKey, finalizeStreaming: true, suppressChunkFooter: true, preserveStreamingPages: true })
             });
           }
           console.log("bridge handled message", {
@@ -348,7 +350,16 @@ export class App {
       return "Only direct messages are supported right now.";
     }
 
-    const command = parseCommand(message);
+    const parsedCommand = parseCommand(message);
+    if (parsedCommand && "parseError" in parsedCommand) {
+      const title = parsedCommand.name ? this.commandBaseTitle(parsedCommand.name) : "Command";
+      return this.renderCommandError(
+        title,
+        parsedCommand.parseError,
+        "close the quoted argument and try again"
+      );
+    }
+    const command = parsedCommand;
     if (command?.name === "help") {
       return [
         "# Bridge Help",
