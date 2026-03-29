@@ -2717,12 +2717,57 @@ export class App {
     }
 
     if (type === "fileChange") {
-      const changes = this.readArray(item.changes)
+      const rawChanges = this.readArray(item.changes);
+      const changes = rawChanges
         .map((change) => asObjectRecord(change))
         .map((change) => this.readString(change.path) || this.readString(change.filePath))
         .filter((path): path is string => Boolean(path));
       if (changes.length > 0) {
+        lines.push(`- **files changed**: \`${changes.length}\``);
         lines.push(`- **files**: ${changes.slice(0, 12).map((path) => `\`${path}\``).join(", ")}`);
+      } else if (rawChanges.length > 0) {
+        lines.push(`- **files changed**: \`${rawChanges.length}\``);
+        lines.push("- **files**: details unavailable");
+      } else {
+        lines.push("- **files changed**: `yes`");
+        lines.push("- **files**: details unavailable");
+      }
+      return lines;
+    }
+
+    if (type === "webSearch") {
+      const query =
+        this.readString(item.query) ||
+        this.readString(item.searchQuery) ||
+        this.readString(item.prompt);
+      const provider = this.readString(item.provider) || this.readString(item.engine);
+      const results = this.readArray(item.results).map((entry) => asObjectRecord(entry));
+      const resultCount =
+        this.readNumber(item.resultCount) ??
+        this.readNumber(item.count) ??
+        (results.length > 0 ? results.length : undefined);
+      const titles = results
+        .map((entry) => this.readString(entry.title) || this.readString(entry.name))
+        .filter((value): value is string => Boolean(value));
+      const urls = results
+        .map((entry) => this.readString(entry.url) || this.readString(entry.link))
+        .filter((value): value is string => Boolean(value));
+      if (query) lines.push(`- **query**: ${query}`);
+      if (provider) lines.push(`- **provider**: \`${provider}\``);
+      if (resultCount !== undefined) lines.push(`- **results**: \`${resultCount}\``);
+      if (titles.length > 0) {
+        lines.push("- **titles**:");
+        lines.push(...titles.slice(0, 8).map((value) => `  - ${value}`));
+      }
+      if (urls.length > 0) {
+        lines.push("- **urls**:");
+        lines.push(...urls.slice(0, 8).map((value) => `  - ${value}`));
+      }
+      const renderedText = this.readString(item.text);
+      if (renderedText) {
+        lines.push("```text");
+        lines.push(renderedText);
+        lines.push("```");
       }
       return lines;
     }

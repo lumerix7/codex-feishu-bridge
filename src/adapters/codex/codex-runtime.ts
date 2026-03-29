@@ -1510,7 +1510,53 @@ function renderCompletedItemFullBlock(item: Record<string, unknown>): string | u
       .map((change) => String(change.path || change.filePath || "").trim())
       .filter(Boolean);
     if (paths.length > 0) {
-      lines.push("", "```text", paths.join("\n"), "```");
+      lines.push("", "```text", `files changed: ${paths.length}`, paths.join("\n"), "```");
+    } else if (changes.length > 0) {
+      lines.push("", "```text", `files changed: ${changes.length}`, "details unavailable", "```");
+    } else {
+      lines.push("", "```text", "files changed: yes", "details unavailable", "```");
+    }
+    return lines.join("\n");
+  }
+
+  if (type === "webSearch") {
+    const query =
+      String(item.query || "").trim() ||
+      String(item.searchQuery || "").trim() ||
+      String(item.prompt || "").trim();
+    const provider = String(item.provider || "").trim() || String(item.engine || "").trim();
+    const results = Array.isArray(item.results) ? item.results.filter(isRecord) : [];
+    const resultCount =
+      typeof item.resultCount === "number"
+        ? item.resultCount
+        : typeof item.count === "number"
+          ? item.count
+          : results.length > 0
+            ? results.length
+            : undefined;
+    const urls = results
+      .map((result) => String(result.url || result.link || "").trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    const titles = results
+      .map((result) => String(result.title || result.name || "").trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    const detailLines = ["```text"];
+    if (query) detailLines.push(`query: ${query}`);
+    if (provider) detailLines.push(`provider: ${provider}`);
+    if (resultCount !== undefined) detailLines.push(`results: ${resultCount}`);
+    detailLines.push("```");
+    lines.push("", ...detailLines);
+    if (titles.length > 0) {
+      lines.push("", "```text", titles.join("\n"), "```");
+    }
+    if (urls.length > 0) {
+      lines.push("", "```text", urls.join("\n"), "```");
+    }
+    const text = String(item.text || "");
+    if (text) {
+      lines.push("", "```text", text, "```");
     }
     return lines.join("\n");
   }
