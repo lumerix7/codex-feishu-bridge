@@ -907,16 +907,27 @@ export class App {
       if (!targetSessionId) {
         return this.noSessionsText(resumeProject, allProjects, projectExplicitlySelected);
       }
-      await sendEarlyUpdate(`resolving session ${targetSessionId} for project \`${resumeProject}\`...`);
+      let resolvedProject = resumeProject;
+      const session = await getSessionSummary(this.config.codex.sessionsDir, targetSessionId);
+      if (
+        !projectExplicitlySelected &&
+        resumeSource === "explicit" &&
+        session?.cwd
+      ) {
+        resolvedProject = await this.resolveProject(
+          session.cwd,
+          existing?.project || this.config.project.defaultProject
+        );
+      }
+      await sendEarlyUpdate(`resolving session ${targetSessionId} for project \`${resolvedProject}\`...`);
       const sessionExists = await this.codex.getSession(targetSessionId);
       if (!sessionExists) {
         return `session not found: ${targetSessionId}`;
       }
-      const session = await getSessionSummary(this.config.codex.sessionsDir, targetSessionId);
       const binding = this.makeBinding(
         key,
         targetSessionId,
-        resumeProject,
+        resolvedProject,
         existing
       );
       await this.store.put(binding);
@@ -3203,6 +3214,7 @@ export class App {
       "- `/resume` and `/resume --last` both bind the most recent session in the current scope.",
       "- `/resume --list` is the listing shortcut before selecting a session to resume.",
       "- `/resume --list --all-projects` browses across projects.",
+      "- `/resume <session-id>` adopts that session's own project by default; use `-C, --cd <dir>` to override it.",
       "- Use `-C, --cd <dir>` to switch project while resuming a session.",
       "- `/resume -n <index>` is order-dependent and should be treated as a convenience, not a stable identifier.",
       "- Native Codex flags like `--config`, `--remote`, `--image`, `--model`, `--sandbox`, and prompt arguments are not exposed on this bridge command.",
