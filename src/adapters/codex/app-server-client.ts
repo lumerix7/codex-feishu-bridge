@@ -90,11 +90,13 @@ export class AppServerSessionClient {
 
   async startTurn(sessionId: string, prompt: string, options?: CodexTurnOptions): Promise<string> {
     await this.ensureStarted();
+    const collaborationMode = await this.buildCollaborationMode(options);
     const result = await this.request("turn/start", {
       threadId: sessionId,
       cwd: this.project,
       approvalPolicy: this.appServerApprovalPolicy(),
       ...(options?.model ? { model: options.model } : {}),
+      ...(collaborationMode ? { collaborationMode } : {}),
       input: [
         {
           type: "text",
@@ -285,6 +287,12 @@ export class AppServerSessionClient {
     return isRecord(result) ? result : undefined;
   }
 
+  async listCollaborationModes(): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("collaborationMode/list", {});
+    return isRecord(result) ? result : undefined;
+  }
+
   subscribe(handler: NotificationHandler): void {
     this.notificationHandlers.add(handler);
   }
@@ -373,9 +381,42 @@ export class AppServerSessionClient {
 
     await this.request("initialize", {
       clientInfo: { name: "codex-feishu-bridge", version: "0.1.0" },
-      capabilities: { experimentalApi: false }
+      capabilities: { experimentalApi: true }
     });
     this.notify("initialized", {});
+  }
+
+  private async buildCollaborationMode(
+    options?: CodexTurnOptions
+  ): Promise<Record<string, unknown> | undefined> {
+    const mode = options?.planMode;
+    if (!mode || mode === "default") return undefined;
+    const preset = await this.getCollaborationModePreset(mode);
+    if (!preset) {
+      throw new Error(`Codex app-server collaboration mode preset \`${mode}\` is unavailable.`);
+    }
+    const model = readStringValue(preset.model) || options?.model;
+    if (!model) {
+      throw new Error(`Codex app-server collaboration mode \`${mode}\` returned no model.`);
+    }
+    return {
+      mode,
+      settings: {
+        model,
+        reasoning_effort: readStringValue(preset.reasoning_effort) || null,
+        developer_instructions: null
+      }
+    };
+  }
+
+  private async getCollaborationModePreset(
+    mode: "default" | "plan"
+  ): Promise<Record<string, unknown> | undefined> {
+    const result = await this.listCollaborationModes();
+    const collaborationModeMasks = Array.isArray(result?.data)
+      ? result.data.filter((item): item is Record<string, unknown> => isRecord(item))
+      : [];
+    return collaborationModeMasks.find((item) => readStringValue(item.mode) === mode);
   }
 
   private async request(method: string, params: Record<string, unknown>): Promise<any> {

@@ -746,6 +746,15 @@ class AppServerCodexBackend implements CodexBackend {
     }
   }
 
+  async listCollaborationModes(project: string): Promise<Record<string, unknown> | undefined> {
+    const client = new AppServerSessionClient(this.config, project);
+    try {
+      return await client.listCollaborationModes();
+    } finally {
+      await client.shutdown().catch(() => undefined);
+    }
+  }
+
   async listModels(
     project: string,
     options?: { includeHidden?: boolean; limit?: number; cursor?: string }

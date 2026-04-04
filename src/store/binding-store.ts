@@ -14,6 +14,7 @@ interface LegacySessionBinding {
   searchEnabled?: boolean;
   model?: string;
   profile?: string;
+  planMode?: "default" | "plan";
   createdAt?: string;
   updatedAt?: string;
 }
@@ -64,6 +65,7 @@ export class BindingStore {
             searchEnabled: item.searchEnabled,
             model: item.model,
             profile: item.profile,
+            planMode: item.planMode,
             createdAt: item.createdAt || new Date(0).toISOString(),
             updatedAt: item.updatedAt || item.createdAt || new Date(0).toISOString()
           }))

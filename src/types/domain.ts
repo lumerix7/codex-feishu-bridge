@@ -8,6 +8,7 @@ export interface SessionBinding {
   searchEnabled?: boolean;
   model?: string;
   profile?: string;
+  planMode?: "default" | "plan";
   createdAt: string;
   updatedAt: string;
 }

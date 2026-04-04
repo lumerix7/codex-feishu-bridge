@@ -59,15 +59,14 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/search [on|off] [-h|--help]` show or change live web search for this conversation
 - `/model [--list|name|clear] [-h|--help]` show, list, or change the Codex model for this conversation
 - `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation
+- `/plan [mode] [-h|--help]` show or change the Codex collaboration mode for this conversation
 
 ### Project
-
 - `/project [list [options]|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings
 - `/git [args...]` run `git` directly in the current bound project
 - `/cat`, `/find`, `/head`, `/ls`, `/pwd`, `/rg`, `/sha256sum`, `/tail`, `/tree`, `/wc` run local project commands
 
 ### Diagnostics
-
 - `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session
 - `/feishu [ws|send|doctor] [-h|--help]` show Feishu websocket and outbound send diagnostics
 - `/log [-n <count>] [--since <expr>] [--grep <text>] [-h|--help]` show recent bridge service logs from systemd journal

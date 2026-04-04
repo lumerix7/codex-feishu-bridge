@@ -31,7 +31,8 @@ export type CommandName =
   | "log"
   | "search"
   | "model"
-  | "profile";
+  | "profile"
+  | "plan";
 
 export interface ParsedCommand {
   name: CommandName;
@@ -141,7 +142,8 @@ export function parseCommand(message: IncomingMessage): ParsedCommand | ParsedCo
       "log",
       "search",
       "model",
-      "profile"
+      "profile",
+      "plan"
     ].includes(head)
   ) {
     if (parseError) {

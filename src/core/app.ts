@@ -387,6 +387,7 @@ export class App {
         "- `/search [on|off] [-h|--help]` show or change live web search for this conversation",
         "- `/model [--list|name|clear] [-h|--help]` show, list, or change the Codex model for this conversation",
         "- `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation",
+        "- `/plan [mode] [-h|--help]` show or change the Codex collaboration mode for this conversation",
         "",
         "## Project",
         "",
@@ -520,6 +521,7 @@ export class App {
         `- **Auth**: \`${runtimeMeta.authMode || "(unknown)"}\``,
         `- **Search**: \`${existing?.searchEnabled ? "on" : "off"}\``,
         `- **Profile**: \`${existing?.profile || "(default)"}\``,
+        `- **Plan**: \`${existing?.planMode || "default"}\``,
         `- **Run**: \`${activeRun ? `${activeRun.status}:${activeRun.runId}` : "idle"}\``,
         `- **Session Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
         `- **Session Cwd**: \`${session?.cwd || "(unknown)"}\``,
@@ -1501,7 +1503,8 @@ export class App {
         `- **Project**: \`${nextBinding.project}\``,
         `- **Search**: \`${nextBinding.searchEnabled ? "on" : "off"}\``,
         `- **Model**: \`${nextBinding.model || "(default)"}\``,
-        `- **Profile**: \`${nextBinding.profile || "(default)"}\``
+        `- **Profile**: \`${nextBinding.profile || "(default)"}\``,
+        `- **Plan**: \`${nextBinding.planMode || "default"}\``
       ].join("\n");
     }
 
@@ -1855,6 +1858,52 @@ export class App {
       return `# Profile\n\n- **Profile**: \`${nextBinding.profile || "(default)"}\``;
     }
 
+    if (command?.name === "plan") {
+      const planArgs = new ArgCursor(command.args);
+      if (planArgs.peek() === "-h" || planArgs.peek() === "--help") {
+        return this.planHelpText();
+      }
+      if (this.codex.mode !== "app-server") {
+        return this.renderCommandError(
+          "Plan",
+          "plan mode override requires the app-server backend",
+          "`/plan [default|plan]`"
+        );
+      }
+      const current = binding?.planMode || "default";
+      if (planArgs.isEmpty()) {
+        return `# Plan\n\n- **Mode**: \`${current}\``;
+      }
+      if (activeRun) {
+        return `Cannot change plan while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
+      }
+      const nextValue = planArgs.remainingText().toLowerCase();
+      if (!["default", "plan"].includes(nextValue)) {
+        return this.renderCommandError(
+          "Plan",
+          `unknown mode \`${planArgs.remainingText()}\``,
+          "`/plan [default|plan]`",
+          ["- **Choices**: `default`, `plan`"]
+        );
+      }
+      const nextPlanMode = nextValue as "default" | "plan";
+      const nextBinding = binding
+        ? {
+            ...binding,
+            planMode: nextPlanMode,
+            updatedAt: new Date().toISOString()
+          }
+        : this.makeBinding(
+            key,
+            undefined,
+            this.config.project.defaultProject,
+            { planMode: nextPlanMode }
+          );
+      await sendEarlyUpdate(`Switching plan mode to \`${nextBinding.planMode || "default"}\`...`);
+      await this.store.put(nextBinding);
+      return `# Plan\n\n- **Mode**: \`${nextBinding.planMode || "default"}\``;
+    }
+
     if (activeRun) {
       return [
         "# Active Run",
@@ -2045,6 +2094,8 @@ export class App {
         return "Model";
       case "profile":
         return "Profile";
+      case "plan":
+        return "Plan";
       default:
         return "Codex";
     }
@@ -2101,6 +2152,8 @@ export class App {
         return "🤖";
       case "profile":
         return "👤";
+      case "plan":
+        return "🗺️";
       default:
         return undefined;
     }
@@ -2136,6 +2189,7 @@ export class App {
       case "search":
       case "model":
       case "profile":
+      case "plan":
         return "indigo";
       case "new":
       case "fork":
@@ -2291,7 +2345,8 @@ export class App {
       "session",
       "new",
       "fork",
-      "resume"
+      "resume",
+      "plan"
     ].includes(commandName);
   }
 
@@ -2341,6 +2396,7 @@ export class App {
       searchEnabled: defaults?.searchEnabled ?? this.config.project.defaultSearchEnabled,
       model: defaults?.model,
       profile: defaults?.profile,
+      planMode: defaults?.planMode,
       createdAt: defaults?.createdAt || now,
       updatedAt: now
     };
@@ -2350,7 +2406,8 @@ export class App {
     return {
       searchEnabled: binding?.searchEnabled ?? this.config.project.defaultSearchEnabled,
       model: binding?.model,
-      profile: binding?.profile
+      profile: binding?.profile,
+      planMode: binding?.planMode
     };
   }
 
@@ -4766,7 +4823,7 @@ export class App {
       "## Behavior",
       "",
       "- Uses the current bound project from `/project` unless you pass `-C` or `--cd`.",
-      "- Carries the current conversation search, model, and profile settings into the new session.",
+      "- Carries the current conversation search, model, profile, and plan settings into the new session.",
       "",
       "## Examples",
       "",
@@ -5015,6 +5072,36 @@ export class App {
       "- `/profile`",
       "- `/profile personal`",
       "- `/profile clear`"
+    ].join("\n");
+  }
+
+  private planHelpText(): string {
+    return [
+      "# Plan",
+      "",
+      "Show or change the Codex collaboration mode override for this conversation.",
+      "",
+      "## Usage",
+      "",
+      "- `/plan [default|plan]`",
+      "- `/plan -h|--help`",
+      "",
+      "## Options",
+      "",
+      "- `default` use the default collaboration mode for future turns",
+      "- `plan` use the plan collaboration mode for future turns",
+      "- `-h, --help` show plan help",
+      "",
+      "## Behavior",
+      "",
+      "- This setting is stored in the bridge binding for the current conversation.",
+      "- New and resumed app-server turns use the latest saved setting.",
+      "",
+      "## Examples",
+      "",
+      "- `/plan`",
+      "- `/plan default`",
+      "- `/plan plan`"
     ].join("\n");
   }
 

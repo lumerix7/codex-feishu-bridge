@@ -25,6 +25,7 @@ export interface CodexTurnOptions {
   searchEnabled?: boolean;
   model?: string;
   profile?: string;
+  planMode?: "default" | "plan";
 }
 
 export interface CodexServerRequest {
@@ -74,6 +75,7 @@ export interface CodexBackend {
     project: string,
     options?: { includeHidden?: boolean; limit?: number; cursor?: string }
   ): Promise<Record<string, unknown> | undefined>;
+  listCollaborationModes?(project: string): Promise<Record<string, unknown> | undefined>;
   listSkills?(
     project: string,
     options?: { forceReload?: boolean }
