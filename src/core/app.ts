@@ -2006,6 +2006,15 @@ export class App {
               }
             }
           },
+          onBridgeProbe: async (notification) => {
+            if (!this.config.codex.appServerSidebandCards) {
+              return;
+            }
+            const rendered = this.renderCodexNotificationUpdate(notification);
+            if (rendered) {
+              await this.sendCodexNotificationCard(message, binding, rendered);
+            }
+          },
           onServerRequest: async (request) => {
             const maybeUpdate = this.config.codex.appServerSidebandCards
               ? this.renderCodexServerRequestUpdate(request, project)
@@ -2815,6 +2824,20 @@ export class App {
   }
 
   private renderCodexNotificationUpdate(notification: { method: string; params: Record<string, unknown> }): string | undefined {
+    if (notification.method === "bridge/probe") {
+      const status = this.readString(notification.params.status) || "(unknown)";
+      const message = this.readString(notification.params.message);
+      const runId = this.readString(notification.params.runId);
+      const sessionId = this.readString(notification.params.sessionId);
+      return [
+        "# 🩺 Bridge Probe",
+        "",
+        `- **Status**: \`${status}\``,
+        ...(message ? [`- **Message**: ${message}`] : []),
+        ...(runId ? [`- **Run**: \`${runId}\``] : []),
+        ...(sessionId ? [`- **Session**: \`${sessionId}\``] : [])
+      ].join("\n");
+    }
     if (notification.method === "thread/tokenUsage/updated") {
       const tokenUsage = asObjectRecord(notification.params.tokenUsage);
       const total = asObjectRecord(tokenUsage.total);

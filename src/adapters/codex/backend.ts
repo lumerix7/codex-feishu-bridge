@@ -16,6 +16,7 @@ export interface CodexRunHooks {
   onStatus?: (text: string) => Promise<void> | void;
   onUpdate?: (update: string) => Promise<void> | void;
   onNotification?: (notification: CodexNotification) => Promise<void> | void;
+  onBridgeProbe?: (notification: CodexNotification) => Promise<void> | void;
   onServerRequest?: (
     request: CodexServerRequest
   ) => Promise<Record<string, unknown> | undefined> | Record<string, unknown> | undefined;

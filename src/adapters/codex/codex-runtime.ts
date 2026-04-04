@@ -119,6 +119,7 @@ class AppServerCodexBackend implements CodexBackend {
       lastActivityAt = Date.now();
       void hooks?.onUpdate?.(update);
     };
+    let emitBridgeProbe = (_status: "working" | "unresponsive", _message: string): void => {};
 
     sendStatus(
       formatStatusWithProject(
@@ -149,10 +150,7 @@ class AppServerCodexBackend implements CodexBackend {
           .then(() => {
             if (active.cancelled) return;
             if (Date.now() - lastActivityAt < this.config.spawnStatusIntervalMs) return;
-            sendStatus(
-              `${formatStatusWithProject(this.config, project, "Codex is still working...")}\nrun=${runId}`
-              
-            );
+            emitBridgeProbe("working", "Codex is still working...");
           })
           .catch((error) => {
             if (active.cancelled) return;
@@ -162,13 +160,7 @@ class AppServerCodexBackend implements CodexBackend {
               project,
               error: error instanceof Error ? error.message : String(error)
             });
-            sendStatus(
-              `${formatStatusWithProject(
-                this.config,
-                project,
-                "Codex app-server is not responding..."
-              )}\nrun=${runId}`
-            );
+            emitBridgeProbe("unresponsive", "Codex app-server is not responding...");
           })
           .finally(() => {
             active.heartbeatProbeInFlight = false;
@@ -197,7 +189,26 @@ class AppServerCodexBackend implements CodexBackend {
         flushStreamText(true);
       };
 
-          const renderOperationalBlock = (
+      emitBridgeProbe = (status: "working" | "unresponsive", message: string): void => {
+        const notification = {
+          method: "bridge/probe",
+          params: {
+            status,
+            message,
+            runId,
+            sessionId: resolvedSessionId,
+            project
+          }
+        };
+        if (inlineBlockMode !== "off") {
+          const lines = ["```text", "🩺 Bridge Probe", `status: ${status}`, `message: ${message}`];
+          lines.push("```");
+          pushOperationalBlock(lines.join("\n"));
+        }
+        void hooks?.onBridgeProbe?.(notification);
+      };
+
+      const renderOperationalBlock = (
           method: string,
           params: Record<string, unknown>
         ): string | undefined => {
