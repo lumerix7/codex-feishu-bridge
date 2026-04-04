@@ -264,8 +264,8 @@ but new config should use the structured schema.
 - The checked-in defaults are:
   - `codex.appServer.sidebandCards = false`
   - `codex.appServer.inlineBlocks = "full"`
-- The streamed card keeps the same final content shape as normal cards:
-  rendered markdown, a raw fenced markdown appendix, and the footer/meta block.
+- `/help` keeps the raw fenced markdown appendix for debugging and exact markdown inspection.
+- Other bridge replies and Codex streams render without the raw markdown appendix and keep only the rendered markdown plus footer/meta block.
 - Large replies now use paged streaming cards first instead of dropping straight to normal chunked cards.
 - If CardKit create or update fails, the bridge falls back to the normal interactive-card send path.
 - Current practical limits:

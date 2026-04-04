@@ -325,25 +325,32 @@ export class FeishuGateway {
         active.lastText = rendered;
       }
 
-      if (message.finalizeStreaming) {
-        await this.withFeishuRetry(async () =>
-          this.client.cardkit.v1.cardElement.update({
-            path: {
-              card_id: active.cardId,
-              element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
-            },
-            data: {
-              element: JSON.stringify({
-                tag: "markdown",
-                content: wrapRawMarkdown(rendered),
+      if (active.hasRawMarkdownElement) {
+        const nextRawMarkdown = message.includeRawMarkdown !== false ? wrapRawMarkdown(rendered) : "";
+        if (nextRawMarkdown !== active.rawMarkdownContent) {
+          await this.withFeishuRetry(async () =>
+            this.client.cardkit.v1.cardElement.update({
+              path: {
+                card_id: active.cardId,
                 element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
-              }),
-              sequence: active.sequence
-            }
-          }),
-          "streaming raw markdown"
-        );
-        active.sequence += 1;
+              },
+              data: {
+                element: JSON.stringify({
+                  tag: "markdown",
+                  content: nextRawMarkdown,
+                  element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
+                }),
+                sequence: active.sequence
+              }
+            }),
+            "streaming raw markdown"
+          );
+          active.sequence += 1;
+          active.rawMarkdownContent = nextRawMarkdown;
+        }
+      }
+
+      if (message.finalizeStreaming) {
         await this.withFeishuRetry(async () =>
           this.client.cardkit.v1.card.settings({
             path: {
@@ -372,6 +379,9 @@ export class FeishuGateway {
       cardId: active.cardId,
       streamKey,
       final: Boolean(message.finalizeStreaming),
+      includeRawMarkdown: message.includeRawMarkdown !== false,
+      rawMarkdownTag: active.hasRawMarkdownElement ? "MARKDOWN_CONTENT" : "(disabled)",
+      rawMarkdownPreview: active.hasRawMarkdownElement ? previewText(active.rawMarkdownContent) : "(disabled)",
       textPreview: previewText(rendered),
       footerPreview: previewText(message.footer || buildCardMetaMarkdown(message.title))
     });
@@ -403,24 +413,27 @@ export class FeishuGateway {
         }
       }
 
-      await this.withFeishuRetry(async () =>
-        this.client.cardkit.v1.cardElement.update({
-          path: {
-            card_id: active.cardId,
-            element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
-          },
-          data: {
-            element: JSON.stringify({
-              tag: "markdown",
-              content: wrapRawMarkdown(rendered),
+      if (active.hasRawMarkdownElement) {
+        await this.withFeishuRetry(async () =>
+          this.client.cardkit.v1.cardElement.update({
+            path: {
+              card_id: active.cardId,
               element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
-            }),
-            sequence: active.sequence
-          }
-        }),
-        "streaming raw markdown"
-      );
-      active.sequence += 1;
+            },
+            data: {
+              element: JSON.stringify({
+                tag: "markdown",
+                content: wrapRawMarkdown(rendered),
+                element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
+              }),
+              sequence: active.sequence
+            }
+          }),
+          "streaming raw markdown"
+        );
+        active.sequence += 1;
+        active.rawMarkdownContent = wrapRawMarkdown(rendered);
+      }
 
       await this.withFeishuRetry(async () =>
         this.client.cardkit.v1.card.settings({
@@ -445,6 +458,9 @@ export class FeishuGateway {
     console.log("Feishu outbound streaming card sent", {
       chatId: message.chatId,
       cardId: active.cardId,
+      includeRawMarkdown: message.includeRawMarkdown !== false,
+      rawMarkdownTag: active.hasRawMarkdownElement ? "MARKDOWN_CONTENT" : "(disabled)",
+      rawMarkdownPreview: active.hasRawMarkdownElement ? previewText(active.rawMarkdownContent) : "(disabled)",
       textPreview: previewText(rendered),
       footerPreview: previewText(message.footer || buildCardMetaMarkdown(message.title))
     });
@@ -465,7 +481,8 @@ export class FeishuGateway {
               message.title,
               message.template,
               footer,
-              summary
+              summary,
+              message.includeRawMarkdown !== false
             )
           )
         }
@@ -500,7 +517,9 @@ export class FeishuGateway {
       cardId,
       sequence: 1,
       lastText: "",
-      chatId: message.chatId
+      chatId: message.chatId,
+      hasRawMarkdownElement: message.includeRawMarkdown !== false,
+      rawMarkdownContent: ""
     };
   }
 
@@ -542,13 +561,19 @@ export class FeishuGateway {
     );
   }
 
-  async sendStartupReady(text: string, footer?: string, title?: string): Promise<void> {
+  async sendStartupReady(
+    text: string,
+    footer?: string,
+    title?: string,
+    includeRawMarkdown = false
+  ): Promise<void> {
     if (!this.config.startupNotifyChatId) return;
     await this.send({
       chatId: this.config.startupNotifyChatId,
       title,
       text,
-      footer
+      footer,
+      includeRawMarkdown
     });
   }
 
@@ -576,7 +601,7 @@ export class FeishuGateway {
     title?: string,
     template?: OutgoingMessage["template"],
     footer?: string,
-    includeRawMarkdown = true
+    includeRawMarkdown = false
   ): Promise<void> {
     await this.withFeishuRetry(async () =>
       this.client.im.v1.message.create({
@@ -593,6 +618,9 @@ export class FeishuGateway {
     );
     console.log("Feishu outbound message sent", {
       chatId,
+      includeRawMarkdown,
+      rawMarkdownTag: includeRawMarkdown ? "MARKDOWN_CONTENT" : "(disabled)",
+      rawMarkdownPreview: includeRawMarkdown ? previewText(wrapRawMarkdown(chunk)) : "(disabled)",
       textPreview: previewText(chunk),
       footerPreview: previewText(footer || buildCardMetaMarkdown(title))
     });
@@ -749,6 +777,8 @@ interface ActiveStreamingCard {
   sequence: number;
   lastText: string;
   chatId: string;
+  hasRawMarkdownElement: boolean;
+  rawMarkdownContent: string;
 }
 
 interface ActivePagedStreamingState {
@@ -1001,7 +1031,7 @@ function buildInteractiveCardContent(
   title?: string,
   template: OutgoingMessage["template"] = "blue",
   footer?: string,
-  includeRawMarkdown = true
+  includeRawMarkdown = false
 ): string {
   const rendered = text.trim();
   const summary = buildCardSummary(title, rendered);
@@ -1051,7 +1081,8 @@ function buildStreamingCard(
   title?: string,
   template: OutgoingMessage["template"] = "blue",
   footer?: string,
-  summary?: string
+  summary?: string,
+  includeRawMarkdown = false
 ): Record<string, unknown> {
   return {
     schema: "2.0",
@@ -1097,11 +1128,11 @@ function buildStreamingCard(
           content: text,
           element_id: STREAMING_MARKDOWN_ELEMENT_ID
         },
-        {
+        ...(includeRawMarkdown ? [{
           tag: "markdown",
           content: "",
           element_id: STREAMING_RAW_MARKDOWN_ELEMENT_ID
-        },
+        }] : []),
         {
           tag: "markdown",
           content: footer || buildCardMetaMarkdown(title),
@@ -1205,7 +1236,7 @@ function wrapRawMarkdown(text: string): string {
     ...Array.from(text.matchAll(/`+/g), (match) => match[0].length)
   );
   const fence = "`".repeat(Math.max(4, longestBacktickRun + 1));
-  return `${fence}markdown\n${text}\n${fence}`;
+  return `${fence}\n${text}\n${fence}`;
 }
 
 function splitMarkdownBlocks(text: string): string[] {
@@ -1268,19 +1299,20 @@ function splitOversizedMarkdownBlock(block: string, maxChars: number): string[] 
   const body = lines.slice(1, closingIndex).join("\n");
   const wrapperCost = opening.length + closing.length + 2;
   const innerMax = Math.max(1, maxChars - wrapperCost);
-  const innerChunks = splitPlainTextBlock(body, innerMax);
+  const innerChunks = splitPlainTextBlock(body, innerMax, true);
   return innerChunks.map((chunk) => `${opening}\n${chunk}\n${closing}`);
 }
 
-function splitPlainTextBlock(text: string, maxChars: number): string[] {
+function splitPlainTextBlock(text: string, maxChars: number, preserveWhitespace = false): string[] {
   if (text.length <= maxChars) return [text];
 
   const chunks: string[] = [];
   let remaining = text;
   while (remaining.length > maxChars) {
     const splitAt = pickSplitPoint(remaining, maxChars);
-    chunks.push(remaining.slice(0, splitAt).trimEnd());
-    remaining = remaining.slice(splitAt).trimStart();
+    const nextChunk = remaining.slice(0, splitAt);
+    chunks.push(preserveWhitespace ? nextChunk : nextChunk.trimEnd());
+    remaining = preserveWhitespace ? remaining.slice(splitAt) : remaining.slice(splitAt).trimStart();
   }
   if (remaining) chunks.push(remaining);
   return chunks;

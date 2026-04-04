@@ -136,6 +136,7 @@ export class App {
         const messageTitle = this.titleForCommand(commandName, message.text);
         const messageTemplate = this.templateForCommand(commandName);
         const messageFooter = this.footerForMessage(commandName, currentBinding);
+        const includeRawMarkdown = this.shouldIncludeRawMarkdownForMessage(commandName);
         const formatForFeishu = (text: string): string =>
           commandName ? this.stripLeadingMarkdownHeading(text) : text;
         try {
@@ -182,7 +183,7 @@ export class App {
                   replyToMessageId: message.messageId,
                   threadId: message.threadId,
                   streaming: false,
-                  includeRawMarkdown: false
+                  includeRawMarkdown
                 });
               } catch (error) {
                 console.error("failed to send Feishu update", {
@@ -215,6 +216,7 @@ export class App {
                 template: messageTemplate,
                 footer: this.footerForCodexReply(latestBinding),
                 text: snapshot,
+                includeRawMarkdown,
                 replyToMessageId: message.messageId,
                 threadId: message.threadId,
                 streaming: true,
@@ -306,7 +308,7 @@ export class App {
               replyToMessageId: message.messageId,
               threadId: message.threadId,
               streaming: true,
-              includeRawMarkdown: false,
+              includeRawMarkdown,
               ...(commandName ? {} : { streamKey, finalizeStreaming: true, suppressChunkFooter: true, preserveStreamingPages: true })
             });
           }
@@ -326,6 +328,7 @@ export class App {
               template: "red",
               footer: this.buildIsoFooter(),
               text: `bridge error: ${text}`,
+              includeRawMarkdown: false,
               replyToMessageId: message.messageId,
               threadId: message.threadId
             });
@@ -343,7 +346,7 @@ export class App {
 
   async handleIncoming(
     message: IncomingMessage,
-    onUpdate?: (text: string) => Promise<void>,
+    onUpdate?: (update: string) => Promise<void>,
     onStatus?: (text: string) => Promise<void>
   ): Promise<string | AppResponse> {
     if (message.chatType !== "p2p") {
@@ -1931,7 +1934,8 @@ export class App {
       await this.feishu?.sendStartupReady(
         this.buildStartupReadyMessage(title, binding?.project),
         this.buildIsoFooter(),
-        title
+        title,
+        false
       );
       console.log(logLabel, {
         chatId: this.config.feishu.startupNotifyChatId,
@@ -2256,6 +2260,10 @@ export class App {
     ].includes(commandName);
   }
 
+  private shouldIncludeRawMarkdownForMessage(commandName?: string): boolean {
+    return commandName === "help";
+  }
+
   private codexFooterModeLabel(): string | undefined {
     return this.config.codex.sandboxMode === "danger-full-access"
       ? "full-access"
@@ -2485,6 +2493,7 @@ export class App {
         template,
         footer: this.buildIsoFooter(),
         text,
+        includeRawMarkdown: false,
         replyToMessageId: message.messageId,
         threadId: message.threadId
       });

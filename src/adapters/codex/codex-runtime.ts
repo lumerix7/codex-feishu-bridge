@@ -115,9 +115,9 @@ class AppServerCodexBackend implements CodexBackend {
       void hooks?.onStatus?.(text);
     };
 
-    const sendUpdate = (text: string): void => {
+    const sendUpdate = (update: string): void => {
       lastActivityAt = Date.now();
-      void hooks?.onUpdate?.(text);
+      void hooks?.onUpdate?.(update);
     };
 
     sendStatus(
