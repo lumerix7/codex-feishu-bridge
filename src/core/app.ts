@@ -442,20 +442,20 @@ export class App {
           "",
           "## Codex",
           "",
-          `- **status**: ${this.formatUpdateStatusBadge(updateStatus.codex.status)}`,
-          `- **package**: \`${updateStatus.codex.packageName}\``,
-          `- **current**: \`${updateStatus.codex.current || "(unknown)"}\``,
-          `- **latest**: \`${updateStatus.codex.latest || "(unavailable)"}\``,
-          `- **note**: ${updateStatus.codex.detail}`,
+          `- **Status**: ${this.formatUpdateStatusBadge(updateStatus.codex.status)}`,
+          `- **Package**: \`${updateStatus.codex.packageName}\``,
+          `- **Current**: \`${updateStatus.codex.current || "(unknown)"}\``,
+          `- **Latest**: \`${updateStatus.codex.latest || "(unavailable)"}\``,
+          `- **Note**: ${updateStatus.codex.detail}`,
           "",
           "## Feishu",
           "",
-          `- **status**: ${this.formatUpdateStatusBadge(updateStatus.feishu.status)}`,
-          `- **package**: \`${updateStatus.feishu.packageName}\``,
-          ...(updateStatus.feishu.declared ? [`- **declared**: \`${updateStatus.feishu.declared}\``] : []),
-          `- **installed**: \`${updateStatus.feishu.current || "(unknown)"}\``,
-          `- **latest**: \`${updateStatus.feishu.latest || "(unavailable)"}\``,
-          `- **note**: ${updateStatus.feishu.detail}`
+          `- **Status**: ${this.formatUpdateStatusBadge(updateStatus.feishu.status)}`,
+          `- **Package**: \`${updateStatus.feishu.packageName}\``,
+          ...(updateStatus.feishu.declared ? [`- **Declared**: \`${updateStatus.feishu.declared}\``] : []),
+          `- **Installed**: \`${updateStatus.feishu.current || "(unknown)"}\``,
+          `- **Latest**: \`${updateStatus.feishu.latest || "(unavailable)"}\``,
+          `- **Note**: ${updateStatus.feishu.detail}`
         ].join("\n");
       }
       const sessionId = existing?.codexSessionId || "(none)";
@@ -502,48 +502,48 @@ export class App {
         "",
         "## Codex",
         "",
-        ...(runtimeMeta.version ? [`- **codex**: \`${runtimeMeta.version}\``] : []),
-        `- **model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`,
-        `- **directory**: \`${project}\``,
-        `- **permissions**: \`${this.formatSandboxLabel(this.config.codex.sandboxMode)}\``,
-        `- **agents.md**: \`${hasAgents ? agentsPath : "<none>"}\``,
-        ...(accountSummary ? [`- **account**: ${accountSummary}`] : []),
-        `- **session**: \`${sessionId}\``,
+        ...(runtimeMeta.version ? [`- **Codex**: \`${runtimeMeta.version}\``] : []),
+        `- **Model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`,
+        `- **Directory**: \`${project}\``,
+        `- **Permissions**: \`${this.formatSandboxLabel(this.config.codex.sandboxMode)}\``,
+        `- **Agents.md**: \`${hasAgents ? agentsPath : "<none>"}\``,
+        ...(accountSummary ? [`- **Account**: ${accountSummary}`] : []),
+        `- **Session**: \`${sessionId}\``,
         ...(usage ? [this.formatContextWindowStatusLine(usage)] : []),
         ...(rateLimits ? this.formatRateLimitStatusLines(rateLimits) : []),
         "",
         "## Bridge",
         "",
-        `- **conversation**: \`${key}\``,
-        `- **backend**: \`${this.codex.mode}\``,
-        `- **project trusted**: \`${trustedProjects.includes(project) ? "yes" : "no"}\``,
-        `- **auth**: \`${runtimeMeta.authMode || "(unknown)"}\``,
-        `- **search**: \`${existing?.searchEnabled ? "on" : "off"}\``,
-        `- **profile**: \`${existing?.profile || "(default)"}\``,
-        `- **run**: \`${activeRun ? `${activeRun.status}:${activeRun.runId}` : "idle"}\``,
-        `- **session time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
-        `- **session cwd**: \`${session?.cwd || "(unknown)"}\``,
-        `- **session about**: ${session?.preview || "(no preview)"}`,
+        `- **Conversation**: \`${key}\``,
+        `- **Backend**: \`${this.codex.mode}\``,
+        `- **Project Trusted**: \`${trustedProjects.includes(project) ? "yes" : "no"}\``,
+        `- **Auth**: \`${runtimeMeta.authMode || "(unknown)"}\``,
+        `- **Search**: \`${existing?.searchEnabled ? "on" : "off"}\``,
+        `- **Profile**: \`${existing?.profile || "(default)"}\``,
+        `- **Run**: \`${activeRun ? `${activeRun.status}:${activeRun.runId}` : "idle"}\``,
+        `- **Session Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
+        `- **Session Cwd**: \`${session?.cwd || "(unknown)"}\``,
+        `- **Session About**: ${session?.preview || "(no preview)"}`,
         ...(thread
           ? [
-              `- **thread name**: ${this.readString(thread.name) || "(none)"}`,
-              `- **thread status**: \`${this.readString(thread.status) || "(unknown)"}\``,
-              `- **thread source**: \`${this.readString(thread.source) || "(unknown)"}\``
+              `- **Thread Name**: ${this.readString(thread.name) || "(none)"}`,
+              `- **Thread Status**: \`${this.readString(thread.status) || "(unknown)"}\``,
+              `- **Thread Source**: \`${this.readString(thread.source) || "(unknown)"}\``
             ]
           : []),
         ...(reroute
-          ? [`- **model reroute**: \`${reroute.fromModel}\` -> \`${reroute.toModel}\`${reroute.reason ? ` (${reroute.reason})` : ""}`]
+          ? [`- **Model Reroute**: \`${reroute.fromModel}\` -> \`${reroute.toModel}\`${reroute.reason ? ` (${reroute.reason})` : ""}`]
           : []),
         ...(plan?.plan.length
-          ? [`- **plan**: ${plan.plan.map((step) => `${this.readString(step.status) || "pending"}:${this.readString(step.step) || "(step)"}`).join(" | ")}`]
+          ? [`- **Plan**: ${plan.plan.map((step) => `${this.readString(step.status) || "pending"}:${this.readString(step.step) || "(step)"}`).join(" | ")}`]
           : []),
         "",
         "## Feishu",
         "",
-        `- **sdk**: \`${feishuSdkVersion || "(unknown)"}\``,
-        ...(feishuDiagnostics ? [`- **status**: ${this.formatFeishuDoctorVerdict(feishuDiagnostics)}`] : []),
-        ...(feishuDiagnostics ? [`- **ws**: ${this.formatFeishuWsSummary(feishuDiagnostics)}`] : []),
-        ...(feishuDiagnostics ? [`- **send**: ${this.formatFeishuSendSummary(feishuDiagnostics)}`] : [])
+        `- **Sdk**: \`${feishuSdkVersion || "(unknown)"}\``,
+        ...(feishuDiagnostics ? [`- **Status**: ${this.formatFeishuDoctorVerdict(feishuDiagnostics)}`] : []),
+        ...(feishuDiagnostics ? [`- **Ws**: ${this.formatFeishuWsSummary(feishuDiagnostics)}`] : []),
+        ...(feishuDiagnostics ? [`- **Send**: ${this.formatFeishuSendSummary(feishuDiagnostics)}`] : [])
       ].join("\n");
     }
 
@@ -554,7 +554,7 @@ export class App {
       const project = existing?.project || this.config.project.defaultProject;
       const sessionId = existing?.codexSessionId;
       if (!sessionId) {
-        return "# Thread\n\n- **error**: no session is currently bound.";
+        return "# Thread\n\n- **Error**: no session is currently bound.";
       }
       const includeTurns = command.args.includes("--turns");
       const threadInfo =
@@ -563,7 +563,7 @@ export class App {
           : undefined;
       const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
       if (!thread) {
-        return "# Thread\n\n- **error**: app-server thread details are unavailable for the current backend/session.";
+        return "# Thread\n\n- **Error**: app-server thread details are unavailable for the current backend/session.";
       }
       const turns = Array.isArray(thread.turns)
         ? thread.turns.filter((item): item is Record<string, unknown> => isRecord(item))
@@ -572,33 +572,33 @@ export class App {
       return [
         "# Thread",
         "",
-        `- **session**: \`${sessionId}\``,
-        `- **thread id**: \`${this.readString(thread.id) || sessionId}\``,
-        `- **name**: ${this.readString(thread.name) || "(none)"}`,
-        `- **status**: \`${this.formatThreadStatus(thread.status)}\``,
-        `- **source**: \`${this.formatSessionSource(thread.source)}\``,
-        `- **cwd**: \`${this.readString(thread.cwd) || project}\``,
-        `- **path**: \`${this.readString(thread.path) || "(none)"}\``,
-        `- **preview**: ${this.readString(thread.preview) || "(none)"}`,
-        `- **created**: ${this.formatUnixTimestamp(thread.createdAt)}`,
-        `- **updated**: ${this.formatUnixTimestamp(thread.updatedAt)}`,
-        `- **model provider**: \`${this.readString(thread.modelProvider) || "(unknown)"}\``,
-        `- **ephemeral**: \`${thread.ephemeral ? "yes" : "no"}\``,
+        `- **Session**: \`${sessionId}\``,
+        `- **Thread Id**: \`${this.readString(thread.id) || sessionId}\``,
+        `- **Name**: ${this.readString(thread.name) || "(none)"}`,
+        `- **Status**: \`${this.formatThreadStatus(thread.status)}\``,
+        `- **Source**: \`${this.formatSessionSource(thread.source)}\``,
+        `- **Cwd**: \`${this.readString(thread.cwd) || project}\``,
+        `- **Path**: \`${this.readString(thread.path) || "(none)"}\``,
+        `- **Preview**: ${this.readString(thread.preview) || "(none)"}`,
+        `- **Created**: ${this.formatUnixTimestamp(thread.createdAt)}`,
+        `- **Updated**: ${this.formatUnixTimestamp(thread.updatedAt)}`,
+        `- **Model Provider**: \`${this.readString(thread.modelProvider) || "(unknown)"}\``,
+        `- **Ephemeral**: \`${thread.ephemeral ? "yes" : "no"}\``,
         ...(gitInfo.branch || gitInfo.sha || gitInfo.originUrl
           ? [
-              `- **git**: branch=\`${this.readString(gitInfo.branch) || "(unknown)"}\` sha=\`${this.readString(gitInfo.sha) || "(unknown)"}\`${this.readString(gitInfo.originUrl) ? ` origin=${this.readString(gitInfo.originUrl)}` : ""}`
+              `- **Git**: branch=\`${this.readString(gitInfo.branch) || "(unknown)"}\` sha=\`${this.readString(gitInfo.sha) || "(unknown)"}\`${this.readString(gitInfo.originUrl) ? ` origin=${this.readString(gitInfo.originUrl)}` : ""}`
             ]
           : []),
         ...(includeTurns
           ? [
-              `- **turn count**: \`${turns.length}\``,
+              `- **Turn Count**: \`${turns.length}\``,
               ...turns.slice(0, 10).map((turn, index) => {
                 const items = Array.isArray(turn.items) ? turn.items.length : 0;
-                return `- **turn ${index + 1}**: \`${this.readString(turn.id) || "(unknown)"}\` status=\`${this.formatThreadStatus(turn.status)}\` items=\`${items}\``;
+                return `- **Turn ${index + 1}**: \`${this.readString(turn.id) || "(unknown)"}\` status=\`${this.formatThreadStatus(turn.status)}\` items=\`${items}\``;
               }),
-              ...(turns.length > 10 ? [`- **more turns**: \`${turns.length - 10}\` not shown`] : [])
+              ...(turns.length > 10 ? [`- **More Turns**: \`${turns.length - 10}\` not shown`] : [])
             ]
-          : [`- **turns**: \`${turns.length || 0}\`${turns.length === 0 ? " (use `--turns` to fetch them)" : ""}`])
+          : [`- **Turns**: \`${turns.length || 0}\`${turns.length === 0 ? " (use `--turns` to fetch them)" : ""}`])
       ].join("\n");
     }
 
@@ -619,8 +619,8 @@ export class App {
         return [
           "# Compact",
           "",
-          `- **backend**: \`${this.codex.mode}\``,
-          "- **status**: `unsupported`",
+          `- **Backend**: \`${this.codex.mode}\``,
+          "- **Status**: `unsupported`",
           "- Native session compaction is currently available only in `app-server` mode."
         ].join("\n");
       }
@@ -633,20 +633,20 @@ export class App {
       return [
         "# Compact",
         "",
-        `- **session**: \`${existing.codexSessionId}\``,
-        `- **project**: \`${project}\``,
-        `- **status**: \`${this.readString(compactResult?.status) || "completed"}\``,
+        `- **Session**: \`${existing.codexSessionId}\``,
+        `- **Project**: \`${project}\``,
+        `- **Status**: \`${this.readString(compactResult?.status) || "completed"}\``,
         ...(this.readString(compactResult?.turnId)
-          ? [`- **turn**: \`${this.readString(compactResult?.turnId)}\``]
+          ? [`- **Turn**: \`${this.readString(compactResult?.turnId)}\``]
           : []),
         ...(this.readString(summary.preview)
-          ? [`- **summary**: ${this.readString(summary.preview)}`]
+          ? [`- **Summary**: ${this.readString(summary.preview)}`]
           : []),
         ...(this.readString(summary.updatedAt)
-          ? [`- **updated**: ${this.formatAnyTimestamp(summary.updatedAt)}`]
+          ? [`- **Updated**: ${this.formatAnyTimestamp(summary.updatedAt)}`]
           : []),
         ...(this.readString(summary.cwd)
-          ? [`- **cwd**: \`${this.readString(summary.cwd)}\``]
+          ? [`- **Cwd**: \`${this.readString(summary.cwd)}\``]
           : [])
       ].join("\n");
     }
@@ -662,7 +662,7 @@ export class App {
         return "No session is currently bound. Use `/new`, `/resume`, or `/session list` first.";
       }
       if (!this.codex.getConversationSummary) {
-        return "# Summary\n\n- **status**: `unsupported`\n- Native conversation summary is currently available only in `app-server` mode.";
+        return "# Summary\n\n- **Status**: `unsupported`\n- Native conversation summary is currently available only in `app-server` mode.";
       }
       const project = existing.project || this.config.project.defaultProject;
       await sendEarlyUpdate(`reading conversation summary for session \`${existing.codexSessionId}\`...`);
@@ -671,15 +671,15 @@ export class App {
       return [
         "# Summary",
         "",
-        `- **session**: \`${existing.codexSessionId}\``,
-        `- **project**: \`${project}\``,
-        `- **conversation**: \`${this.readString(summary.conversationId) || existing.codexSessionId}\``,
-        `- **source**: \`${this.formatSessionSource(summary.source)}\``,
-        `- **updated**: ${this.formatAnyTimestamp(summary.updatedAt)}`,
-        `- **cwd**: \`${this.readString(summary.cwd) || project}\``,
-        `- **preview**: ${this.readString(summary.preview) || "(none)"}`,
-        ...(this.readString(summary.path) ? [`- **path**: \`${this.readString(summary.path)}\``] : []),
-        ...(this.readString(summary.cliVersion) ? [`- **cli**: \`${this.readString(summary.cliVersion)}\``] : [])
+        `- **Session**: \`${existing.codexSessionId}\``,
+        `- **Project**: \`${project}\``,
+        `- **Conversation**: \`${this.readString(summary.conversationId) || existing.codexSessionId}\``,
+        `- **Source**: \`${this.formatSessionSource(summary.source)}\``,
+        `- **Updated**: ${this.formatAnyTimestamp(summary.updatedAt)}`,
+        `- **Cwd**: \`${this.readString(summary.cwd) || project}\``,
+        `- **Preview**: ${this.readString(summary.preview) || "(none)"}`,
+        ...(this.readString(summary.path) ? [`- **Path**: \`${this.readString(summary.path)}\``] : []),
+        ...(this.readString(summary.cliVersion) ? [`- **Cli**: \`${this.readString(summary.cliVersion)}\``] : [])
       ].join("\n");
     }
 
@@ -695,13 +695,13 @@ export class App {
       }
       const latestDiff = this.latestTurnDiff.get(existing.codexSessionId);
       if (!latestDiff?.diff.trim()) {
-        return "# Diff\n\n- **status**: `(no cached turn diff)`";
+        return "# Diff\n\n- **Status**: `(no cached turn diff)`";
       }
       return [
         "# Diff",
         "",
-        `- **session**: \`${existing.codexSessionId}\``,
-        `- **turn**: \`${latestDiff.turnId}\``,
+        `- **Session**: \`${existing.codexSessionId}\``,
+        `- **Turn**: \`${latestDiff.turnId}\``,
         "",
         "```diff",
         latestDiff.diff.trim(),
@@ -719,7 +719,7 @@ export class App {
         return "Usage: `/skills [--reload] [-h|--help]`";
       }
       if (!this.codex.listSkills) {
-        return "# Skills\n\n- **status**: `unsupported`\n- Native skills listing is currently available only in `app-server` mode.";
+        return "# Skills\n\n- **Status**: `unsupported`\n- Native skills listing is currently available only in `app-server` mode.";
       }
       const project = existing?.project || this.config.project.defaultProject;
       await sendEarlyUpdate(`reading Codex skills for project \`${project}\`${forceReload ? " with reload" : ""}...`);
@@ -735,15 +735,15 @@ export class App {
         return list.map((skill) => ({ cwd, skill }));
       });
       if (skills.length === 0) {
-        return "# Skills\n\n- **status**: `(no skills found)`";
+        return "# Skills\n\n- **Status**: `(no skills found)`";
       }
       const lines = [
         "# Skills",
         "",
-        `- **project**: \`${project}\``,
-        `- **count**: \`${skills.length}\``,
+        `- **Project**: \`${project}\``,
+        `- **Count**: \`${skills.length}\``,
         "",
-        "| # | name | scope | enabled | cwd | path | description |",
+        "| # | Name | Scope | Enabled | Cwd | Path | Description |",
         "| --- | --- | --- | --- | --- | --- | --- |"
       ];
       for (const [index, item] of skills.entries()) {
@@ -776,16 +776,16 @@ export class App {
           return [
             "# Config",
             "",
-            `- **path**: \`${configTomlPath}\``,
-            "- **status**: `(not found)`"
+            `- **Path**: \`${configTomlPath}\``,
+            "- **Status**: `(not found)`"
           ].join("\n");
         }
         return [
           "# Config",
           "",
-          `- **project**: \`${project}\``,
-          `- **path**: \`${configTomlPath}\``,
-          "- **mode**: `redacted raw toml`",
+          `- **Project**: \`${project}\``,
+          `- **Path**: \`${configTomlPath}\``,
+          "- **Mode**: `redacted raw toml`",
           "",
           "```toml",
           this.redactToml(raw),
@@ -793,7 +793,7 @@ export class App {
         ].join("\n");
       }
       if (!this.codex.readConfig) {
-        return "# Config\n\n- **status**: `unsupported`\n- Native config read is currently available only in `app-server` mode.";
+        return "# Config\n\n- **Status**: `unsupported`\n- Native config read is currently available only in `app-server` mode.";
       }
       await sendEarlyUpdate(`reading Codex config for project \`${project}\`${includeLayers ? " with layers" : ""}...`);
       const configResult = await this.codex.readConfig(project, { includeLayers });
@@ -804,21 +804,21 @@ export class App {
       const lines = [
         "# Config",
         "",
-        `- **project**: \`${project}\``,
-        `- **model**: \`${this.readString(codexConfig.model) || "(default)"}\``,
-        `- **profile**: \`${this.readString(codexConfig.profile) || "(default)"}\``,
-        `- **model provider**: \`${this.readString(codexConfig.model_provider) || "(unknown)"}\``,
-        `- **sandbox**: \`${this.readString(codexConfig.sandbox_mode) || "(unknown)"}\``,
-        `- **approval policy**: \`${this.readString(codexConfig.approval_policy) || "(unknown)"}\``,
-        `- **web search**: \`${this.readString(codexConfig.web_search) || "(unknown)"}\``,
-        `- **reasoning effort**: \`${this.readString(codexConfig.model_reasoning_effort) || "(default)"}\``,
-        `- **reasoning summary**: \`${this.readString(codexConfig.model_reasoning_summary) || "(default)"}\``,
-        `- **verbosity**: \`${this.readString(codexConfig.model_verbosity) || "(default)"}\``,
+        `- **Project**: \`${project}\``,
+        `- **Model**: \`${this.readString(codexConfig.model) || "(default)"}\``,
+        `- **Profile**: \`${this.readString(codexConfig.profile) || "(default)"}\``,
+        `- **Model Provider**: \`${this.readString(codexConfig.model_provider) || "(unknown)"}\``,
+        `- **Sandbox**: \`${this.readString(codexConfig.sandbox_mode) || "(unknown)"}\``,
+        `- **Approval Policy**: \`${this.readString(codexConfig.approval_policy) || "(unknown)"}\``,
+        `- **Web Search**: \`${this.readString(codexConfig.web_search) || "(unknown)"}\``,
+        `- **Reasoning Effort**: \`${this.readString(codexConfig.model_reasoning_effort) || "(default)"}\``,
+        `- **Reasoning Summary**: \`${this.readString(codexConfig.model_reasoning_summary) || "(default)"}\``,
+        `- **Verbosity**: \`${this.readString(codexConfig.model_verbosity) || "(default)"}\``,
         ...(includeLayers ? [
           "",
           "## Layers",
           "",
-          ...layers.map((layer, index) => `- **layer ${index + 1}**: \`${this.readString(layer.name) || this.readString(layer.path) || "(unknown)"}\``)
+          ...layers.map((layer, index) => `- **Layer ${index + 1}**: \`${this.readString(layer.name) || this.readString(layer.path) || "(unknown)"}\``)
         ] : [])
       ];
       return lines.join("\n");
@@ -832,7 +832,7 @@ export class App {
       }
       const diagnostics = this.feishu?.diagnostics();
       if (!diagnostics) {
-        return "# Feishu\n\n- **status**: `(gateway unavailable)`";
+        return "# Feishu\n\n- **Status**: `(gateway unavailable)`";
       }
       if (!feishuMode) {
         return this.renderFeishuSummary(diagnostics);
@@ -871,7 +871,7 @@ export class App {
         "Feishu",
         `unknown subcommand \`${feishuMode}\``,
         "`/feishu [ws|send|doctor] [-h|--help]`",
-        ["- **choices**: `ws`, `send`, `doctor`"]
+        ["- **Choices**: `ws`, `send`, `doctor`"]
       );
     }
 
@@ -884,7 +884,7 @@ export class App {
         return [
           "# Approval Pending",
           "",
-          `- **kind**: \`${pendingApproval.label}\``,
+          `- **Kind**: \`${pendingApproval.label}\``,
           "- Reply in chat with one of the requested answers, or use `/stop` to cancel the active run."
         ].join("\n");
       }
@@ -1018,7 +1018,7 @@ export class App {
           "Resume",
           `unsupported bridge option \`${resumeArgs.peek()}\``,
           "`/resume [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>] [-C|--cd <dir>]`",
-          ["- **note**: Use a normal follow-up message after `/resume ...` if you want to continue the bound session."]
+          ["- **Note**: Use a normal follow-up message after `/resume ...` if you want to continue the bound session."]
         );
       }
 
@@ -1084,8 +1084,8 @@ export class App {
             `no native Codex sessions found for project \`${resumeProject}\``,
             `\`/new -C ${resumeProject}\``,
             [
-              `- **sessions dir**: \`${this.config.codex.sessionsDir}\``,
-              "- **note**: Use `/new -C <dir>` to start a fresh session there."
+              `- **Sessions Dir**: \`${this.config.codex.sessionsDir}\``,
+              "- **Note**: Use `/new -C <dir>` to start a fresh session there."
             ]
           );
         }
@@ -1117,18 +1117,18 @@ export class App {
           `session \`${targetSessionId}\` is bound to a different project`,
           `\`/new -C ${resolvedProject}\``,
           [
-            `- **session project**: \`${sessionProject}\``,
-            `- **requested project**: \`${resolvedProject}\``,
-            "- **note**: Use `/new -C <dir>` to start a fresh session in a different project."
+            `- **Session Project**: \`${sessionProject}\``,
+            `- **Requested Project**: \`${resolvedProject}\``,
+            "- **Note**: Use `/new -C <dir>` to start a fresh session in a different project."
           ]
         );
       }
-      await sendEarlyUpdate(`resolving session ${targetSessionId} for project \`${resolvedProject}\`...`);
+      await sendEarlyUpdate(`Resolving Session \`${targetSessionId}\` for Project \`${resolvedProject}\`...`);
       const sessionExists = await this.codex.getSession(targetSessionId);
       if (!sessionExists) {
         return this.renderCommandError(
           "Resume",
-          `session not found: ${targetSessionId}`
+          `Session not found: ${targetSessionId}`
         );
       }
       const binding = this.makeBinding(
@@ -1141,14 +1141,14 @@ export class App {
       const sections = [
         "# Resume Session",
         "",
-        `- **source**: \`${resumeSource}\``,
-        ...(resumeIndex ? [`- **index**: \`${resumeIndex}\``] : []),
-        `- **session**: \`${binding.codexSessionId}\``,
-        `- **project**: \`${binding.project}\``,
-        `- **time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
-        `- **cwd**: \`${session?.cwd || "(unknown)"}\``,
-        `- **about**: ${session?.preview || "(no preview)"}`,
-        ...(resumeWarning ? [`- **warning**: ${resumeWarning}`] : [])
+        `- **Source**: \`${resumeSource}\``,
+        ...(resumeIndex ? [`- **Index**: \`${resumeIndex}\``] : []),
+        `- **Session**: \`${binding.codexSessionId}\``,
+        `- **Project**: \`${binding.project}\``,
+        `- **Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
+        `- **Cwd**: \`${session?.cwd || "(unknown)"}\``,
+        `- **About**: ${session?.preview || "(no preview)"}`,
+        ...(resumeWarning ? [`- **Warning**: ${resumeWarning}`] : [])
       ];
       const sessionChanged = existing?.codexSessionId !== binding.codexSessionId;
       const resumedSessionId = binding.codexSessionId || targetSessionId;
@@ -1294,12 +1294,12 @@ export class App {
           "`/new`, `/resume`, or `/session list`"
         );
       }
-      await sendEarlyUpdate(`forking session \`${targetSessionId}\` for project \`${forkProject}\`...`);
+      await sendEarlyUpdate(`Forking Session \`${targetSessionId}\` for Project \`${forkProject}\`...`);
       const sessionExists = await this.codex.getSession(targetSessionId);
       if (!sessionExists) {
         return this.renderCommandError(
           "Fork",
-          `session not found: ${targetSessionId}`
+          `Session not found: ${targetSessionId}`
         );
       }
       const forkResult = await this.codex.forkSession(targetSessionId, forkProject, this.resolveTurnOptions(existing));
@@ -1308,7 +1308,7 @@ export class App {
       if (!forkedSessionId) {
         return this.renderCommandError(
           "Fork",
-          "fork failed: Codex returned no forked session id"
+          "Fork failed: Codex returned no forked session id"
         );
       }
       const binding = this.makeBinding(key, forkedSessionId, forkProject, existing);
@@ -1316,13 +1316,13 @@ export class App {
       return [
         "# Fork Session",
         "",
-        `- **source**: \`${forkSource}\``,
-        ...(forkIndex ? [`- **index**: \`${forkIndex}\``] : []),
-        `- **from**: \`${targetSessionId}\``,
-        `- **session**: \`${forkedSessionId}\``,
-        `- **project**: \`${binding.project}\``,
-        ...(this.readString(forkedThread?.preview) ? [`- **about**: ${this.readString(forkedThread?.preview)}`] : []),
-        ...(forkWarning ? [`- **warning**: ${forkWarning}`] : [])
+        `- **Source**: \`${forkSource}\``,
+        ...(forkIndex ? [`- **Index**: \`${forkIndex}\``] : []),
+        `- **From**: \`${targetSessionId}\``,
+        `- **Session**: \`${forkedSessionId}\``,
+        `- **Project**: \`${binding.project}\``,
+        ...(this.readString(forkedThread?.preview) ? [`- **About**: ${this.readString(forkedThread?.preview)}`] : []),
+        ...(forkWarning ? [`- **Warning**: ${forkWarning}`] : [])
       ].join("\n");
     }
 
@@ -1370,7 +1370,7 @@ export class App {
             "Session",
             `unknown source \`${sourceKind}\``,
             "`/session list [--source <source>]`",
-            [`- **available**: ${SESSION_SOURCE_KINDS.map((item) => `\`${item}\``).join(", ")}`]
+            [`- **Available**: ${SESSION_SOURCE_KINDS.map((item) => `\`${item}\``).join(", ")}`]
           );
         }
         const limit = this.parseSessionsListLimit(listArgs);
@@ -1447,13 +1447,13 @@ export class App {
       return [
         "# Current Session",
         "",
-        `- **session**: \`${existing.codexSessionId}\``,
-        `- **project**: \`${project}\``,
-        ...(effectiveSource ? [`- **source**: \`${effectiveSource}\``] : []),
-        ...(effectiveModel ? [`- **model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`] : []),
-        `- **time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
-        `- **cwd**: \`${session?.cwd || "(unknown)"}\``,
-        `- **about**: ${session?.preview || "(no preview)"}`
+        `- **Session**: \`${existing.codexSessionId}\``,
+        `- **Project**: \`${project}\``,
+        ...(effectiveSource ? [`- **Source**: \`${effectiveSource}\``] : []),
+        ...(effectiveModel ? [`- **Model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`] : []),
+        `- **Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
+        `- **Cwd**: \`${session?.cwd || "(unknown)"}\``,
+        `- **About**: ${session?.preview || "(no preview)"}`
       ].join("\n");
     }
 
@@ -1477,18 +1477,18 @@ export class App {
       if (!newArgs.isEmpty()) {
         return "Usage: `/new [-C|--cd <dir>]`";
       }
-      await sendEarlyUpdate(`creating a new Codex session for project \`${project}\`...`);
+      await sendEarlyUpdate(`Creating a New Codex Session for Project \`${project}\`...`);
       const sessionId = await this.codex.createSession(project, this.resolveTurnOptions(binding));
       const nextBinding = this.makeBinding(key, sessionId, project, binding);
       await this.store.put(nextBinding);
       return [
         "# New Session",
         "",
-        `- **session**: \`${sessionId}\``,
-        `- **project**: \`${nextBinding.project}\``,
-        `- **search**: \`${nextBinding.searchEnabled ? "on" : "off"}\``,
-        `- **model**: \`${nextBinding.model || "(default)"}\``,
-        `- **profile**: \`${nextBinding.profile || "(default)"}\``
+        `- **Session**: \`${sessionId}\``,
+        `- **Project**: \`${nextBinding.project}\``,
+        `- **Search**: \`${nextBinding.searchEnabled ? "on" : "off"}\``,
+        `- **Model**: \`${nextBinding.model || "(default)"}\``,
+        `- **Profile**: \`${nextBinding.profile || "(default)"}\``
       ].join("\n");
     }
 
@@ -1504,7 +1504,7 @@ export class App {
       this.activeRuns.set(key, { ...activeRun, status: "stopping" });
       const stopped = await this.codex.stop(activeRun.runId);
       return stopped
-        ? `# Stop Run\n\n- **run**: \`${activeRun.runId}\`\n- **status**: \`stop requested\``
+        ? `# Stop Run\n\n- **Run**: \`${activeRun.runId}\`\n- **Status**: \`stop requested\``
         : "Run already finished before stop completed.";
     }
 
@@ -1519,9 +1519,9 @@ export class App {
         return [
           "# Project",
           "",
-          `- **project**: \`${currentProject}\``,
-          `- **trusted**: \`${trustedProjects.includes(currentProject) ? "yes" : "no"}\``,
-          `- **allowed roots**: ${this.config.project.allowedRoots.map((root) => `\`${root}\``).join(", ")}`
+          `- **Project**: \`${currentProject}\``,
+          `- **Trusted**: \`${trustedProjects.includes(currentProject) ? "yes" : "no"}\``,
+          `- **Allowed Roots**: ${this.config.project.allowedRoots.map((root) => `\`${root}\``).join(", ")}`
         ].join("\n");
       }
 
@@ -1565,7 +1565,7 @@ export class App {
           return [
             "# Project",
             "",
-            `- **error**: refusing to unbind the current conversation project \`${project}\``,
+            `- **Error**: refusing to unbind the current conversation project \`${project}\``,
             "- Bind this conversation to another project first if you want to remove stored bindings for this project."
           ].join("\n");
         }
@@ -1574,8 +1574,8 @@ export class App {
         return [
           "# Project",
           "",
-          `- **project**: \`${project}\``,
-          `- **removed bindings**: \`${removed}\``
+          `- **Project**: \`${project}\``,
+          `- **Removed Bindings**: \`${removed}\``
         ].join("\n");
       }
 
@@ -1637,9 +1637,9 @@ export class App {
       return [
         "# Project",
         "",
-        `- **project**: \`${project}\``,
-        `- **trusted**: \`${trustedProjects.includes(project) ? "yes" : "no"}\``,
-        ...(bindWarning ? [`- **warning**: ${bindWarning}`] : [])
+        `- **Project**: \`${project}\``,
+        `- **Trusted**: \`${trustedProjects.includes(project) ? "yes" : "no"}\``,
+        ...(bindWarning ? [`- **Warning**: ${bindWarning}`] : [])
       ].join("\n");
     }
 
@@ -1667,7 +1667,7 @@ export class App {
 
     if (command?.name === "git") {
       const project = binding?.project || this.config.project.defaultProject;
-      await sendEarlyUpdate(`running git in project \`${project}\`...`);
+      await sendEarlyUpdate(`Running Git in Project \`${project}\`...`);
       return this.runGitCommand(project, command.args);
     }
 
@@ -1685,7 +1685,7 @@ export class App {
     ) {
       const localCommandName = command.name;
       const project = binding?.project || this.config.project.defaultProject;
-      await sendEarlyUpdate(`running ${localCommandName} in project \`${project}\`...`);
+      await sendEarlyUpdate(`Running ${localCommandName} in Project \`${project}\`...`);
       return this.runLocalCommand(localCommandName, project, command.args);
     }
 
@@ -1698,8 +1698,8 @@ export class App {
         return [
           "# Approvals",
           "",
-          `- **mode**: \`${this.config.codex.sandboxMode}\``,
-          `- **choices**: ${this.approvalChoicesText()}`
+          `- **Mode**: \`${this.config.codex.sandboxMode}\``,
+          `- **Choices**: ${this.approvalChoicesText()}`
         ].join("\n");
       }
       if (activeRun) {
@@ -1711,7 +1711,7 @@ export class App {
           "Approvals",
           `unknown mode \`${approvalArgs.remainingText()}\``,
           "`/approvals [mode] [-h|--help]`",
-          [`- **choices**: ${this.approvalChoicesText()}`]
+          [`- **Choices**: ${this.approvalChoicesText()}`]
         );
       }
       await sendEarlyUpdate(`switching approvals to \`${nextMode}\`...`);
@@ -1720,7 +1720,7 @@ export class App {
       return [
         "# Approvals",
         "",
-        `- **mode**: \`${nextMode}\``,
+        `- **Mode**: \`${nextMode}\``,
         `- ${this.describeApprovalMode(nextMode)}`
       ].join("\n");
     }
@@ -1732,7 +1732,7 @@ export class App {
       }
       const enabled = binding?.searchEnabled ?? this.config.project.defaultSearchEnabled;
       if (searchArgs.isEmpty()) {
-        return `# Search\n\n- **mode**: \`${enabled ? "on" : "off"}\``;
+        return `# Search\n\n- **Mode**: \`${enabled ? "on" : "off"}\``;
       }
       if (activeRun) {
         return `Cannot change search while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
@@ -1755,7 +1755,7 @@ export class App {
           );
       await sendEarlyUpdate(`switching search ${normalized}...`);
       await this.store.put(nextBinding);
-      return `# Search\n\n- **mode**: \`${nextBinding.searchEnabled ? "on" : "off"}\``;
+      return `# Search\n\n- **Mode**: \`${nextBinding.searchEnabled ? "on" : "off"}\``;
     }
 
     if (command?.name === "model") {
@@ -1781,7 +1781,7 @@ export class App {
       }
       const current = binding?.model || "(default)";
       if (modelArgs.isEmpty()) {
-        return `# Model\n\n- **model**: \`${current}\``;
+        return `# Model\n\n- **Model**: \`${current}\``;
       }
       if (activeRun) {
         return `Cannot change model while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
@@ -1805,7 +1805,7 @@ export class App {
         `switching model to \`${nextBinding.model || "(default)"}\`...`
       );
       await this.store.put(nextBinding);
-      return `# Model\n\n- **model**: \`${nextBinding.model || "(default)"}\``;
+      return `# Model\n\n- **Model**: \`${nextBinding.model || "(default)"}\``;
     }
 
     if (command?.name === "profile") {
@@ -1815,7 +1815,7 @@ export class App {
       }
       const current = binding?.profile || "(default)";
       if (profileArgs.isEmpty()) {
-        return `# Profile\n\n- **profile**: \`${current}\``;
+        return `# Profile\n\n- **Profile**: \`${current}\``;
       }
       if (activeRun) {
         return `Cannot change profile while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
@@ -1839,20 +1839,20 @@ export class App {
         `switching profile to \`${nextBinding.profile || "(default)"}\`...`
       );
       await this.store.put(nextBinding);
-      return `# Profile\n\n- **profile**: \`${nextBinding.profile || "(default)"}\``;
+      return `# Profile\n\n- **Profile**: \`${nextBinding.profile || "(default)"}\``;
     }
 
     if (activeRun) {
       return [
         "# Active Run",
         "",
-        `- **run**: \`${activeRun.runId}\``,
-        `- **status**: \`${activeRun.status}\``
+        `- **Run**: \`${activeRun.runId}\``,
+        `- **Status**: \`${activeRun.status}\``
       ].join("\n");
     }
 
     const project = binding?.project || this.config.project.defaultProject;
-    await sendEarlyUpdate("handing off to Codex...");
+    await sendEarlyUpdate("Handing Off to Codex...");
     const provisionalRunId = `pending:${randomUUID()}`;
     this.activeRuns.set(key, {
       conversationKey: key,
@@ -1948,13 +1948,13 @@ export class App {
   private buildStartupReadyMessage(title = "Bridge Ready", currentProject?: string): string {
     const feishuDiagnostics = this.feishu?.diagnostics();
     return [
-      `- **backend**: \`${this.codex.mode}\``,
-      `- **profile**: \`${this.config.codex.profileMode}\``,
-      `- **default project**: \`${this.config.project.defaultProject}\``,
-      ...(currentProject ? [`- **current project**: \`${currentProject}\``] : []),
-      `- **sandbox**: \`${this.config.codex.sandboxMode}\``,
-      `- **search default**: \`${this.config.project.defaultSearchEnabled ? "on" : "off"}\``,
-      ...(feishuDiagnostics ? [`- **feishu**: ${this.formatFeishuStatusSummary(feishuDiagnostics)}`] : [])
+      `- **Backend**: \`${this.codex.mode}\``,
+      `- **Profile**: \`${this.config.codex.profileMode}\``,
+      `- **Default Project**: \`${this.config.project.defaultProject}\``,
+      ...(currentProject ? [`- **Current Project**: \`${currentProject}\``] : []),
+      `- **Sandbox**: \`${this.config.codex.sandboxMode}\``,
+      `- **Search Default**: \`${this.config.project.defaultSearchEnabled ? "on" : "off"}\``,
+      ...(feishuDiagnostics ? [`- **Feishu**: ${this.formatFeishuStatusSummary(feishuDiagnostics)}`] : [])
     ].join("\n");
   }
 
@@ -2165,8 +2165,8 @@ export class App {
       text: [
       `# ${title}`,
       "",
-      `- **error**: ${error}`,
-      ...(usage ? [`- **usage**: ${usage}`] : []),
+      `- **Error**: ${error}`,
+      ...(usage ? [`- **Usage**: ${usage}`] : []),
       ...extraLines
       ].join("\n")
     };
@@ -2465,8 +2465,8 @@ export class App {
         [
           "# Approval Timed Out",
           "",
-          `- **kind**: \`${pending.label}\``,
-          `- **timeout**: \`${Math.round(this.config.codex.approvalTimeoutMs / 1000)}s\``,
+          `- **Kind**: \`${pending.label}\``,
+          `- **Timeout**: \`${Math.round(this.config.codex.approvalTimeoutMs / 1000)}s\``,
           "- Codex was sent a timeout-safe response."
         ].join("\n")
       );
@@ -2513,7 +2513,7 @@ export class App {
       return [
         "# Approval Reply",
         "",
-        `- **error**: ${parsed.error}`,
+        `- **Error**: ${parsed.error}`,
         "- Reply again with one of the listed answers, or use `/stop` to cancel the run."
       ].join("\n");
     }
@@ -2565,8 +2565,8 @@ export class App {
     return [
       "# Approval Reply",
       "",
-      `- **kind**: \`${label}\``,
-      `- **answer**: ${summary || "`sent`"}`
+      `- **Kind**: \`${label}\``,
+      `- **Answer**: ${summary || "`sent`"}`
     ].join("\n");
   }
 
@@ -2626,19 +2626,19 @@ export class App {
       return [
         "# 📍 Codex Event",
         "",
-        "- **type**: `thread/tokenUsage/updated`",
-        ...(contextWindow !== undefined ? [`- **context window**: \`${contextWindow}\``] : []),
-        ...(total.totalTokens !== undefined ? [`- **total tokens**: \`${String(total.totalTokens)}\``] : []),
-        ...(total.inputTokens !== undefined ? [`- **total input**: \`${String(total.inputTokens)}\``] : []),
-        ...(total.outputTokens !== undefined ? [`- **total output**: \`${String(total.outputTokens)}\``] : []),
-        ...(last.totalTokens !== undefined ? [`- **last turn tokens**: \`${String(last.totalTokens)}\``] : [])
+        "- **Type**: `thread/tokenUsage/updated`",
+        ...(contextWindow !== undefined ? [`- **Context Window**: \`${contextWindow}\``] : []),
+        ...(total.totalTokens !== undefined ? [`- **Total Tokens**: \`${String(total.totalTokens)}\``] : []),
+        ...(total.inputTokens !== undefined ? [`- **Total Input**: \`${String(total.inputTokens)}\``] : []),
+        ...(total.outputTokens !== undefined ? [`- **Total Output**: \`${String(total.outputTokens)}\``] : []),
+        ...(last.totalTokens !== undefined ? [`- **Last Turn Tokens**: \`${String(last.totalTokens)}\``] : [])
       ].join("\n");
     }
     if (notification.method === "account/rateLimits/updated") {
       const lines = [
         "# 📍 Codex Event",
         "",
-        "- **type**: `account/rateLimits/updated`"
+        "- **Type**: `account/rateLimits/updated`"
       ];
       lines.push(...this.formatRateLimitStatusLines(notification.params));
       return lines.join("\n");
@@ -2651,9 +2651,9 @@ export class App {
       return [
         "# 📍 Codex Event",
         "",
-        "- **type**: `account/updated`",
-        ...(email ? [`- **email**: \`${email}\``] : []),
-        ...(planType ? [`- **plan**: \`${planType}\``] : [])
+        "- **Type**: `account/updated`",
+        ...(email ? [`- **Email**: \`${email}\``] : []),
+        ...(planType ? [`- **Plan**: \`${planType}\``] : [])
       ].join("\n");
     }
     if (notification.method === "thread/status/changed") {
@@ -2665,9 +2665,9 @@ export class App {
       return [
         "# 📍 Codex Event",
         "",
-        "- **type**: `thread/status/changed`",
-        `- **status**: \`${statusType}\``,
-        ...(activeFlags.length > 0 ? [`- **flags**: ${activeFlags.map((item) => `\`${item}\``).join(", ")}`] : [])
+        "- **Type**: `thread/status/changed`",
+        `- **Status**: \`${statusType}\``,
+        ...(activeFlags.length > 0 ? [`- **Flags**: ${activeFlags.map((item) => `\`${item}\``).join(", ")}`] : [])
       ].join("\n");
     }
     if (notification.method === "thread/compacted") {
@@ -2675,12 +2675,12 @@ export class App {
       return [
         "# 📍 Codex Event",
         "",
-        "- **type**: `thread/compacted`",
-        ...(turnId ? [`- **turn**: \`${turnId}\``] : [])
+        "- **Type**: `thread/compacted`",
+        ...(turnId ? [`- **Turn**: \`${turnId}\``] : [])
       ].join("\n");
     }
     if (notification.method === "thread/closed") {
-      return "# 📍 Codex Event\n\n- **type**: `thread/closed`";
+      return "# 📍 Codex Event\n\n- **Type**: `thread/closed`";
     }
     if (notification.method === "turn/started") {
       const turn = asObjectRecord(notification.params.turn);
@@ -2688,12 +2688,12 @@ export class App {
       return [
         "# 📍 Codex Event",
         "",
-        "- **type**: `turn/started`",
-        ...(turnId ? [`- **turn**: \`${turnId}\``] : [])
+        "- **Type**: `turn/started`",
+        ...(turnId ? [`- **Turn**: \`${turnId}\``] : [])
       ].join("\n");
     }
     if (notification.method === "turn/interrupted") {
-      return "# 📍 Codex Event\n\n- **type**: `turn/interrupted`";
+      return "# 📍 Codex Event\n\n- **Type**: `turn/interrupted`";
     }
     if (notification.method === "turn/failed") {
       const turn = asObjectRecord(notification.params.turn);
@@ -2702,18 +2702,18 @@ export class App {
       return [
         "# 📍 Codex Event",
         "",
-        "- **type**: `turn/failed`",
-        ...(message ? [`- **error**: ${message}`] : [])
+        "- **Type**: `turn/failed`",
+        ...(message ? [`- **Error**: ${message}`] : [])
       ].join("\n");
     }
     if (notification.method === "turn/completed") {
-      return "# 📍 Codex Event\n\n- **type**: `turn/completed`";
+      return "# 📍 Codex Event\n\n- **Type**: `turn/completed`";
     }
     if (notification.method === "model/rerouted") {
       const fromModel = this.readString(notification.params.fromModel) || "(unknown)";
       const toModel = this.readString(notification.params.toModel) || "(unknown)";
       const reason = this.readString(notification.params.reason);
-      return `# 🔀 Model Rerouted\n\n- **from**: \`${fromModel}\`\n- **to**: \`${toModel}\`${reason ? `\n- **reason**: ${reason}` : ""}`;
+      return `# 🔀 Model Rerouted\n\n- **From**: \`${fromModel}\`\n- **To**: \`${toModel}\`${reason ? `\n- **Reason**: ${reason}` : ""}`;
     }
     if (notification.method === "turn/plan/updated") {
       const plan = Array.isArray(notification.params.plan)
@@ -2723,7 +2723,7 @@ export class App {
       return [
         "# 🗺️ Plan Updated",
         "",
-        ...(this.readString(notification.params.explanation) ? [`- **note**: ${this.readString(notification.params.explanation)}`] : []),
+        ...(this.readString(notification.params.explanation) ? [`- **Note**: ${this.readString(notification.params.explanation)}`] : []),
         ...plan.map((step, index) => `${index + 1}. [${this.readString(step.status) || "pending"}] ${this.readString(step.step) || "(step)"}`)
       ].join("\n");
     }
@@ -2734,8 +2734,8 @@ export class App {
       return [
         "# 🧩 Diff Updated",
         "",
-        ...(turnId ? [`- **turn**: \`${turnId}\``] : []),
-        ...(files.length > 0 ? [`- **files**: ${files.map((item) => `\`${item}\``).join(", ")}`] : []),
+        ...(turnId ? [`- **Turn**: \`${turnId}\``] : []),
+        ...(files.length > 0 ? [`- **Files**: ${files.map((item) => `\`${item}\``).join(", ")}`] : []),
         "```diff",
         diff || "(empty diff)",
         "```"
@@ -2764,8 +2764,8 @@ export class App {
       const lines = [
         `# ${title}`,
         "",
-        `- **type**: \`${type}\``,
-        ...(id ? [`- **id**: \`${id}\``] : [])
+        `- **Type**: \`${type}\``,
+        ...(id ? [`- **Id**: \`${id}\``] : [])
       ];
       lines.push(...this.renderCompletedItemDetails(item));
       return lines.join("\n");
@@ -2785,9 +2785,9 @@ export class App {
       const lines = [
         "# 🛠️ Tool Call",
         "",
-        ...(id ? [`- **id**: \`${id}\``] : []),
-        `- **tool**: \`${tool}\``,
-        `- **cwd**: \`${cwd}\``
+        ...(id ? [`- **Id**: \`${id}\``] : []),
+        `- **Tool**: \`${tool}\``,
+        `- **Cwd**: \`${cwd}\``
       ];
       if (args !== undefined) {
         lines.push("```json");
@@ -2825,14 +2825,14 @@ export class App {
     const exitCode = this.readNumber(item.exitCode);
     const durationMs = this.readNumber(item.durationMs);
 
-    if (command) lines.push(`- **command**: \`${command}\``);
-    if (tool) lines.push(`- **tool**: \`${tool}\``);
-    if (cwd) lines.push(`- **cwd**: \`${cwd}\``);
-    if (status) lines.push(`- **status**: \`${status}\``);
-    if (source) lines.push(`- **source**: \`${source}\``);
-    if (processId) lines.push(`- **process**: \`${processId}\``);
-    if (exitCode !== undefined) lines.push(`- **exit code**: \`${exitCode}\``);
-    if (durationMs !== undefined) lines.push(`- **duration**: \`${durationMs}ms\``);
+    if (command) lines.push(`- **Command**: \`${command}\``);
+    if (tool) lines.push(`- **Tool**: \`${tool}\``);
+    if (cwd) lines.push(`- **Cwd**: \`${cwd}\``);
+    if (status) lines.push(`- **Status**: \`${status}\``);
+    if (source) lines.push(`- **Source**: \`${source}\``);
+    if (processId) lines.push(`- **Process**: \`${processId}\``);
+    if (exitCode !== undefined) lines.push(`- **Exit Code**: \`${exitCode}\``);
+    if (durationMs !== undefined) lines.push(`- **Duration**: \`${durationMs}ms\``);
 
     if (type === "userMessage") {
       const content = this.readArray(item.content);
@@ -2849,7 +2849,7 @@ export class App {
         .map((part) => this.readString(part))
         .filter((part): part is string => Boolean(part));
       if (summary.length > 0) {
-        lines.push("- **summary**:");
+        lines.push("- **Summary**:");
         lines.push(...summary.map((part) => `  - ${part}`));
       }
       if (content.length > 0) {
@@ -2877,14 +2877,14 @@ export class App {
         .map((change) => this.readString(change.path) || this.readString(change.filePath))
         .filter((path): path is string => Boolean(path));
       if (changes.length > 0) {
-        lines.push(`- **files changed**: \`${changes.length}\``);
-        lines.push(`- **files**: ${changes.map((path) => `\`${path}\``).join(", ")}`);
+        lines.push(`- **Files Changed**: \`${changes.length}\``);
+        lines.push(`- **Files**: ${changes.map((path) => `\`${path}\``).join(", ")}`);
       } else if (rawChanges.length > 0) {
-        lines.push(`- **files changed**: \`${rawChanges.length}\``);
-        lines.push("- **files**: details unavailable");
+        lines.push(`- **Files Changed**: \`${rawChanges.length}\``);
+        lines.push("- **Files**: details unavailable");
       } else {
-        lines.push("- **files changed**: `yes`");
-        lines.push("- **files**: details unavailable");
+        lines.push("- **Files Changed**: `yes`");
+        lines.push("- **Files**: details unavailable");
       }
       return lines;
     }
@@ -2906,15 +2906,15 @@ export class App {
       const urls = results
         .map((entry) => this.readString(entry.url) || this.readString(entry.link))
         .filter((value): value is string => Boolean(value));
-      if (query) lines.push(`- **query**: ${query}`);
-      if (provider) lines.push(`- **provider**: \`${provider}\``);
-      if (resultCount !== undefined) lines.push(`- **results**: \`${resultCount}\``);
+      if (query) lines.push(`- **Query**: ${query}`);
+      if (provider) lines.push(`- **Provider**: \`${provider}\``);
+      if (resultCount !== undefined) lines.push(`- **Results**: \`${resultCount}\``);
       if (titles.length > 0) {
-        lines.push("- **titles**:");
+        lines.push("- **Titles**:");
         lines.push(...titles.map((value) => `  - ${value}`));
       }
       if (urls.length > 0) {
-        lines.push("- **urls**:");
+        lines.push("- **Urls**:");
         lines.push(...urls.map((value) => `  - ${value}`));
       }
       const renderedText = this.readString(item.text);
@@ -2933,11 +2933,11 @@ export class App {
       const reasoningEffort = this.readString(item.reasoningEffort);
       const result = item.result;
       const error = item.error;
-      if (server) lines.push(`- **server**: \`${server}\``);
-      if (model) lines.push(`- **model**: \`${model}\``);
-      if (reasoningEffort) lines.push(`- **reasoning effort**: \`${reasoningEffort}\``);
+      if (server) lines.push(`- **Server**: \`${server}\``);
+      if (model) lines.push(`- **Model**: \`${model}\``);
+      if (reasoningEffort) lines.push(`- **Reasoning Effort**: \`${reasoningEffort}\``);
       if (prompt) {
-        lines.push("- **prompt**:");
+        lines.push("- **Prompt**:");
         lines.push("```text");
         lines.push(prompt);
         lines.push("```");
@@ -2983,12 +2983,12 @@ export class App {
       }
       if (type === "image") {
         const url = this.readString(item.url);
-        otherParts.push(`- **image**: ${url || "(unknown)"}`);
+        otherParts.push(`- **Image**: ${url || "(unknown)"}`);
         continue;
       }
       if (type === "localImage") {
         const path = this.readString(item.path);
-        otherParts.push(`- **local image**: \`${path || "(unknown)"}\``);
+        otherParts.push(`- **Local Image**: \`${path || "(unknown)"}\``);
         continue;
       }
       if (type === "skill" || type === "mention") {
@@ -3027,13 +3027,13 @@ export class App {
     const usedTokens = Number(total.totalTokens || 0);
     const contextWindow = Number(tokenUsage.modelContextWindow || 0);
     if (!Number.isFinite(contextWindow) || contextWindow <= 0 || !Number.isFinite(usedTokens) || usedTokens < 0) {
-      return `- **context window**: ${this.formatTokenUsageSummary(tokenUsage)}`;
+      return `- **Context Window**: ${this.formatTokenUsageSummary(tokenUsage)}`;
     }
     if (usedTokens > contextWindow) {
-      return `- **context window**: ${this.formatTokenUsageSummary(tokenUsage)}`;
+      return `- **Context Window**: ${this.formatTokenUsageSummary(tokenUsage)}`;
     }
     const leftPercent = Math.max(0, ((contextWindow - usedTokens) / contextWindow) * 100);
-    return `- **context window**: \`${leftPercent.toFixed(0)}%\` left (${this.formatCompactTokenCount(usedTokens)} used / ${this.formatCompactTokenCount(contextWindow)})`;
+    return `- **Context Window**: \`${leftPercent.toFixed(0)}%\` left (${this.formatCompactTokenCount(usedTokens)} used / ${this.formatCompactTokenCount(contextWindow)})`;
   }
 
   private formatRateLimitLines(rateLimitPayload: Record<string, unknown>): string[] {
@@ -3041,9 +3041,9 @@ export class App {
     const entries = Object.entries(buckets);
     if (entries.length === 0) {
       const snapshot = asObjectRecord(rateLimitPayload.rateLimits);
-      return [`- **rate limits**: ${this.formatRateLimitSnapshot(snapshot)}`];
+      return [`- **Rate Limits**: ${this.formatRateLimitSnapshot(snapshot)}`];
     }
-    return entries.map(([key, value]) => `- **rate ${key}**: ${this.formatRateLimitSnapshot(asObjectRecord(value))}`);
+    return entries.map(([key, value]) => `- **Rate ${key}**: ${this.formatRateLimitSnapshot(asObjectRecord(value))}`);
   }
 
   private formatRateLimitSnapshot(snapshot: Record<string, unknown>): string {
@@ -3306,11 +3306,11 @@ export class App {
       prompt: [
         "# Approval Required",
         "",
-        `- **kind**: \`file change\``,
-        `- **project**: \`${project}\``,
-        ...(reason ? [`- **reason**: ${reason}`] : []),
-        ...(grantRoot ? [`- **grant root**: \`${grantRoot}\``] : []),
-        ...(fileList.length > 0 ? [`- **files**: ${fileList.map((item) => `\`${item}\``).join(", ")}`] : []),
+        `- **Kind**: \`file change\``,
+        `- **Project**: \`${project}\``,
+        ...(reason ? [`- **Reason**: ${reason}`] : []),
+        ...(grantRoot ? [`- **Grant Root**: \`${grantRoot}\``] : []),
+        ...(fileList.length > 0 ? [`- **Files**: ${fileList.map((item) => `\`${item}\``).join(", ")}`] : []),
         "",
         "## Reply",
         "",
@@ -3340,9 +3340,9 @@ export class App {
       prompt: [
         "# Approval Required",
         "",
-        `- **kind**: \`permissions\``,
-        `- **project**: \`${project}\``,
-        ...(reason ? [`- **reason**: ${reason}`] : []),
+        `- **Kind**: \`permissions\``,
+        `- **Project**: \`${project}\``,
+        ...(reason ? [`- **Reason**: ${reason}`] : []),
         ...items.map((item) => `- \`${item.index}\` ${item.key}`),
         "",
         "## Reply",
@@ -3394,7 +3394,7 @@ export class App {
       prompt: [
         "# User Input Required",
         "",
-        `- **project**: \`${project}\``,
+        `- **Project**: \`${project}\``,
         ...questions.flatMap((question, index) => this.renderToolQuestion(index + 1, question)),
         "",
         "## Reply",
@@ -3422,11 +3422,11 @@ export class App {
       prompt: [
         "# User Input Required",
         "",
-        `- **kind**: \`mcp elicitation\``,
-        `- **project**: \`${project}\``,
-        `- **mode**: \`${mode}\``,
-        `- **message**: ${message}`,
-        ...(url ? [`- **url**: ${url}`] : []),
+        `- **Kind**: \`mcp elicitation\``,
+        `- **Project**: \`${project}\``,
+        `- **Mode**: \`${mode}\``,
+        `- **Message**: ${message}`,
+        ...(url ? [`- **Url**: ${url}`] : []),
         "",
         "## Reply",
         "",
@@ -3484,8 +3484,8 @@ export class App {
     return [
       `## ${index}. ${header}`,
       "",
-      `- **id**: \`${id}\``,
-      `- **question**: ${prompt}`,
+      `- **Id**: \`${id}\``,
+      `- **Question**: ${prompt}`,
       ...options.map((option, optionIndex) => {
         const label = this.readString(option.label) || `option ${optionIndex + 1}`;
         const description = this.readString(option.description);
@@ -3989,7 +3989,7 @@ export class App {
     const lines = [
       `# ${title}`,
       "",
-      "| # | project | time | session | source | about | flags |",
+      "| # | Project | Time | Session | Source | About | Flags |",
       "| --- | --- | --- | --- | --- | --- | --- |"
     ];
     for (const [index, session] of sortedSessions.entries()) {
@@ -4046,7 +4046,7 @@ export class App {
       [
         `# Recent Message ${index + 1}`,
         "",
-        `- **role**: \`${message.role === "assistant" ? "codex" : message.role}\``,
+      `- **Role**: \`${message.role === "assistant" ? "codex" : message.role}\``,
         "",
         "```text",
         message.text,
@@ -4080,7 +4080,7 @@ export class App {
     const lines = [
       `# ${title}`,
       "",
-      "| # | name | flags | updated | path |",
+      "| # | Name | Flags | Updated | Path |",
       "| --- | --- | --- | --- | --- |"
     ];
     for (const [index, item] of projects.entries()) {
@@ -4238,9 +4238,9 @@ export class App {
     return [
       "# Feishu",
       "",
-      `- **status**: ${this.formatFeishuDoctorVerdict(diagnostics)}`,
-      `- **ws**: ${this.formatFeishuWsSummary(diagnostics)}`,
-      `- **send**: ${this.formatFeishuSendSummary(diagnostics)}`,
+      `- **Status**: ${this.formatFeishuDoctorVerdict(diagnostics)}`,
+      `- **Ws**: ${this.formatFeishuWsSummary(diagnostics)}`,
+      `- **Send**: ${this.formatFeishuSendSummary(diagnostics)}`,
       "",
       "## More",
       "",
@@ -4254,22 +4254,22 @@ export class App {
     return [
       "# Feishu WS",
       "",
-      `- **connected once**: \`${diagnostics.wsConnectedOnce ? "yes" : "no"}\``,
-      `- **reconnecting**: \`${diagnostics.wsReconnecting ? "yes" : "no"}\``,
-      `- **reconnect count**: \`${diagnostics.reconnectCount}\``,
-      `- **auto reconnect**: \`${this.config.feishu.wsAutoReconnect ? "yes" : "no"}\``,
-      `- **logger level**: \`${this.config.feishu.wsLoggerLevel}\``,
-      `- **agent keepalive ms**: \`${this.config.feishu.wsAgentKeepAliveMsecs}\``,
-      `- **agent max sockets**: \`${this.config.feishu.wsAgentMaxSockets}\``,
-      `- **agent max free sockets**: \`${this.config.feishu.wsAgentMaxFreeSockets}\``,
-      `- **connect warn after ms**: \`${this.config.feishu.wsConnectWarnAfterMs}\``,
-      `- **reconnect warn threshold**: \`${this.config.feishu.wsReconnectWarnThreshold}\``,
-      `- **reconnect debounce ms**: \`${this.config.feishu.reconnectReadyDebounceMs}\``,
-      `- **last reconnect started**: ${this.formatAnyTimestamp(diagnostics.lastReconnectStartedAt, "(never)")}`,
-      `- **last ws ready**: ${this.formatAnyTimestamp(diagnostics.lastWsReadyAt)}`,
-      `- **last reconnect ready**: ${this.formatAnyTimestamp(diagnostics.lastReconnectReadyAt, "(never)")}`,
-      `- **last inbound message**: ${this.formatAnyTimestamp(diagnostics.lastInboundMessageAt)}`,
-      `- **last inbound message id**: \`${diagnostics.lastInboundMessageId || "(unknown)"}\``
+      `- **Connected Once**: \`${diagnostics.wsConnectedOnce ? "yes" : "no"}\``,
+      `- **Reconnecting**: \`${diagnostics.wsReconnecting ? "yes" : "no"}\``,
+      `- **Reconnect Count**: \`${diagnostics.reconnectCount}\``,
+      `- **Auto Reconnect**: \`${this.config.feishu.wsAutoReconnect ? "yes" : "no"}\``,
+      `- **Logger Level**: \`${this.config.feishu.wsLoggerLevel}\``,
+      `- **Agent Keepalive Ms**: \`${this.config.feishu.wsAgentKeepAliveMsecs}\``,
+      `- **Agent Max Sockets**: \`${this.config.feishu.wsAgentMaxSockets}\``,
+      `- **Agent Max Free Sockets**: \`${this.config.feishu.wsAgentMaxFreeSockets}\``,
+      `- **Connect Warn After Ms**: \`${this.config.feishu.wsConnectWarnAfterMs}\``,
+      `- **Reconnect Warn Threshold**: \`${this.config.feishu.wsReconnectWarnThreshold}\``,
+      `- **Reconnect Debounce Ms**: \`${this.config.feishu.reconnectReadyDebounceMs}\``,
+      `- **Last Reconnect Started**: ${this.formatAnyTimestamp(diagnostics.lastReconnectStartedAt, "(never)")}`,
+      `- **Last Ws Ready**: ${this.formatAnyTimestamp(diagnostics.lastWsReadyAt)}`,
+      `- **Last Reconnect Ready**: ${this.formatAnyTimestamp(diagnostics.lastReconnectReadyAt, "(never)")}`,
+      `- **Last Inbound Message**: ${this.formatAnyTimestamp(diagnostics.lastInboundMessageAt)}`,
+      `- **Last Inbound Message Id**: \`${diagnostics.lastInboundMessageId || "(unknown)"}\``
     ].join("\n");
   }
 
@@ -4277,16 +4277,16 @@ export class App {
     return [
       "# Feishu Send",
       "",
-      `- **retry max attempts**: \`${this.config.feishu.sendRetryMaxAttempts}\``,
-      `- **retry base delay ms**: \`${this.config.feishu.sendRetryBaseDelayMs}\``,
-      `- **retry multiplier**: \`${this.config.feishu.sendRetryMultiplier}\``,
-      `- **retry max delay ms**: \`${this.config.feishu.sendRetryMaxDelayMs}\``,
-      `- **outbound retries**: \`${diagnostics.outboundRetryCount}\``,
-      `- **outbound failures**: \`${diagnostics.outboundFailureCount}\``,
-      `- **active chat send queues**: \`${diagnostics.activeChatSendQueues}\``,
-      `- **queued chats**: ${diagnostics.queuedChatIds.length > 0 ? diagnostics.queuedChatIds.map((chatId) => `\`${chatId}\``).join(", ") : "(none)"}`,
-      `- **active streaming cards**: \`${diagnostics.activeStreamingCards}\``,
-      `- **last send error**: ${diagnostics.lastSendError || "(none)"}`
+      `- **Retry Max Attempts**: \`${this.config.feishu.sendRetryMaxAttempts}\``,
+      `- **Retry Base Delay Ms**: \`${this.config.feishu.sendRetryBaseDelayMs}\``,
+      `- **Retry Multiplier**: \`${this.config.feishu.sendRetryMultiplier}\``,
+      `- **Retry Max Delay Ms**: \`${this.config.feishu.sendRetryMaxDelayMs}\``,
+      `- **Outbound Retries**: \`${diagnostics.outboundRetryCount}\``,
+      `- **Outbound Failures**: \`${diagnostics.outboundFailureCount}\``,
+      `- **Active Chat Send Queues**: \`${diagnostics.activeChatSendQueues}\``,
+      `- **Queued Chats**: ${diagnostics.queuedChatIds.length > 0 ? diagnostics.queuedChatIds.map((chatId) => `\`${chatId}\``).join(", ") : "(none)"}`,
+      `- **Active Streaming Cards**: \`${diagnostics.activeStreamingCards}\``,
+      `- **Last Send Error**: ${diagnostics.lastSendError || "(none)"}`
     ].join("\n");
   }
 
@@ -4328,9 +4328,9 @@ export class App {
     return [
       "# Feishu Doctor",
       "",
-      `- **verdict**: ${this.formatFeishuDoctorVerdict(diagnostics)}`,
-      `- **ws summary**: ${this.formatFeishuWsSummary(diagnostics)}`,
-      `- **send summary**: ${this.formatFeishuSendSummary(diagnostics)}`,
+      `- **Verdict**: ${this.formatFeishuDoctorVerdict(diagnostics)}`,
+      `- **Ws Summary**: ${this.formatFeishuWsSummary(diagnostics)}`,
+      `- **Send Summary**: ${this.formatFeishuSendSummary(diagnostics)}`,
       "",
       "## Findings",
       "",
@@ -4781,7 +4781,7 @@ export class App {
       const lines = [
         "# Model List",
         "",
-        "| # | model | reasoning | input | personality | default | hidden | upgrade | notes |",
+        "| # | Model | Reasoning | Input | Personality | Default | Hidden | Upgrade | Notes |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"
       ];
       for (const [index, model] of sortedModels.entries()) {
@@ -4818,7 +4818,7 @@ export class App {
     return [
       "# Model List",
       "",
-      "| # | model | reasoning | input | personality | default | hidden | upgrade | notes |",
+      "| # | Model | Reasoning | Input | Personality | Default | Hidden | Upgrade | Notes |",
       "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
       "| 1 | gpt-5.4 | medium | text, image | - | yes | - | - | - |",
       "| 2 | gpt-5.4-mini | - | text, image | - | - | - | - | GPT-5.4-Mini |",
@@ -4979,10 +4979,10 @@ export class App {
       return [
         "# Log",
         "",
-        `- **unit**: \`codex-feishu-bridge.service\``,
-        `- **lines**: \`${query.limit}\``,
-        ...(query.since ? [`- **since**: \`${query.since}\``] : []),
-        ...(query.grep ? [`- **grep**: \`${query.grep}\``] : []),
+        `- **Unit**: \`codex-feishu-bridge.service\``,
+        `- **Lines**: \`${query.limit}\``,
+        ...(query.since ? [`- **Since**: \`${query.since}\``] : []),
+        ...(query.grep ? [`- **Grep**: \`${query.grep}\``] : []),
         "",
         "```text",
         this.truncateOutput(filtered || "(no output)"),
@@ -4994,9 +4994,9 @@ export class App {
       return [
         "# Log",
         "",
-        `- **unit**: \`codex-feishu-bridge.service\``,
-        `- **status**: \`failed\``,
-        `- **code**: \`${String(maybe.code ?? "(unknown)")}\``,
+        `- **Unit**: \`codex-feishu-bridge.service\``,
+        `- **Status**: \`failed\``,
+        `- **Code**: \`${String(maybe.code ?? "(unknown)")}\``,
         "",
         "```text",
         this.truncateOutput(output || maybe.message || "journalctl failed"),
@@ -5018,8 +5018,8 @@ export class App {
       return [
         "# Git",
         "",
-        `- **project**: \`${project}\``,
-        `- **command**: \`${commandText}\``,
+        `- **Project**: \`${project}\``,
+        `- **Command**: \`${commandText}\``,
         "",
         "```text",
         this.truncateOutput(combined || "(no output)"),
@@ -5038,11 +5038,11 @@ export class App {
         text: [
           "# Git",
           "",
-          `- **project**: \`${project}\``,
-          `- **command**: \`${commandText}\``,
-          `- **status**: ⚠️ \`failed\``,
-          `- **code**: \`${String(maybe.code ?? "(unknown)")}\``,
-          ...(maybe.signal ? [`- **signal**: \`${maybe.signal}\``] : []),
+          `- **Project**: \`${project}\``,
+          `- **Command**: \`${commandText}\``,
+          `- **Status**: ⚠️ \`failed\``,
+          `- **Code**: \`${String(maybe.code ?? "(unknown)")}\``,
+          ...(maybe.signal ? [`- **Signal**: \`${maybe.signal}\``] : []),
           "",
           "```text",
           this.truncateOutput(output || maybe.message || "git command failed"),
@@ -5069,8 +5069,8 @@ export class App {
       return [
         `# ${command.toUpperCase()}`,
         "",
-        `- **project**: \`${project}\``,
-        `- **command**: \`${commandText || command}\``,
+        `- **Project**: \`${project}\``,
+        `- **Command**: \`${commandText || command}\``,
         "",
         "```text",
         this.truncateOutput(combined || "(no output)"),
@@ -5089,11 +5089,11 @@ export class App {
         text: [
           `# ${command.toUpperCase()}`,
           "",
-          `- **project**: \`${project}\``,
-          `- **command**: \`${commandText || command}\``,
-          `- **status**: ⚠️ \`failed\``,
-          `- **code**: \`${String(maybe.code ?? "(unknown)")}\``,
-          ...(maybe.signal ? [`- **signal**: \`${maybe.signal}\``] : []),
+          `- **Project**: \`${project}\``,
+          `- **Command**: \`${commandText || command}\``,
+          `- **Status**: ⚠️ \`failed\``,
+          `- **Code**: \`${String(maybe.code ?? "(unknown)")}\``,
+          ...(maybe.signal ? [`- **Signal**: \`${maybe.signal}\``] : []),
           "",
           "```text",
           this.truncateOutput(output || maybe.message || `${command} command failed`),
