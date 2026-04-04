@@ -54,6 +54,8 @@ This distinction is important for:
 - preferred backend
 - richer structured notifications and server requests
 - supports approvals, user-input requests, thread/account reads, rate limits, and model listing
+- reference: <https://developers.openai.com/codex/app-server>
+- implementation reference: <https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md>
 
 ### `spawn`
 

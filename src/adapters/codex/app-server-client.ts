@@ -226,11 +226,13 @@ export class AppServerSessionClient {
   async listModels(options?: {
     includeHidden?: boolean;
     limit?: number;
+    cursor?: string;
   }): Promise<Record<string, unknown> | undefined> {
     await this.ensureStarted();
     const result = await this.request("model/list", {
       ...(options?.includeHidden !== undefined ? { includeHidden: options.includeHidden } : {}),
-      ...(options?.limit ? { limit: options.limit } : {})
+      ...(options?.limit ? { limit: options.limit } : {}),
+      ...(options?.cursor ? { cursor: options.cursor } : {})
     });
     return isRecord(result) ? result : undefined;
   }

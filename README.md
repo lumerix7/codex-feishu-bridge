@@ -87,7 +87,7 @@ Working v1 bridge:
 - `/project bind -n <index>` to bind from `/project list`, which is ordered current project first and then by project name ascending
 - `/project unbind <path>` to remove stored bridge bindings for a specific project path; the current conversation project is rejected
 - `/approvals` to switch the Codex approval mode used for future runs
-- `/model --list` to query available models from Codex app-server when supported, with a bridge-side fallback list otherwise
+- `/model --list [--no-hidden]` to query available models from Codex app-server when supported, with a bridge-side fallback list otherwise
 - `/thread` to show richer app-server thread metadata for the current bound session
 - `/compact` to trigger native Codex thread compaction in `app-server` mode for the current bound session
 - `/summary` to read the native Codex conversation summary for the current bound session
@@ -179,6 +179,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - `app-server` keeps a local `codex app-server` subprocess per bound native session and talks to it over
   stdio JSON-RPC for `thread/start`, `thread/resume`, `turn/start`,
   `turn/interrupt`, approval callbacks, user-input requests, live token usage, thread/account reads, and model listing.
+- Official Codex app-server docs: <https://developers.openai.com/codex/app-server>
 - `codex.backendMode = "spawn"` starts one `codex exec` or `codex exec resume`
   process per turn while the bridge persists the native session id.
 - `spawn` is still useful as a simpler fallback backend when you want fewer moving parts and do not need the richer `app-server` features.
@@ -193,7 +194,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - In `app-server`, `codex.sandboxMode = "danger-full-access"` maps to `sandbox=danger-full-access` plus `approvalPolicy=never`.
 - In `app-server`, only `default` and `full-access` are advertised in `/approvals`.
   `auto` is still accepted as a compatibility alias for `default`.
-- In `app-server`, `/model --list` now uses the native `model/list` RPC when available.
+- In `app-server`, `/model --list` now uses the native `model/list` RPC when available, follows `nextCursor`, and includes hidden models by default unless `--no-hidden` is passed.
 - In `app-server`, `/compact` uses the native `thread/compact/start` RPC and then reads the updated conversation summary.
 - In `app-server`, `/summary`, `/skills`, and `/config` use native `getConversationSummary`, `skills/list`, and `config/read` RPCs.
 - In `app-server`, `/diff` reads the latest cached `turn/diff/updated` notification for the bound session.
@@ -214,6 +215,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - `feishu.wsReconnectWarnThreshold` is the doctor threshold for repeated reconnects after startup.
 - `feishu.reconnectReadyDebounceMs` controls how often the bridge may send a Feishu `Reconnected` ready card after websocket recovery.
 - `feishu.titleMaxLength` controls how long Feishu card titles may grow before the bridge shortens them as `begin...end`. The checked-in default is `80`.
+- `codex.modelListMaxCount` controls how many entries `/model --list` will fetch at most while following app-server `model/list` pagination. The checked-in default is `100`.
 - `/feishu ws` and `/feishu doctor` include reconnect counters so you can tell the difference between an occasional reconnect and a flapping long-connection session.
 - Outbound Feishu replies currently use interactive cards with a schema `2.0` markdown body, card title, chat-list summary, and per-reply header template color.
 - `codex.terminal.flushIdleMs` controls the quiet window before terminal output

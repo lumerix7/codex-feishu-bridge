@@ -71,7 +71,7 @@ export interface CodexBackend {
   readAccountRateLimits?(project: string): Promise<Record<string, unknown> | undefined>;
   listModels?(
     project: string,
-    options?: { includeHidden?: boolean; limit?: number }
+    options?: { includeHidden?: boolean; limit?: number; cursor?: string }
   ): Promise<Record<string, unknown> | undefined>;
   listSkills?(
     project: string,

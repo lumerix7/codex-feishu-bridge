@@ -1762,9 +1762,18 @@ export class App {
         return this.modelHelpText();
       }
       if (modelArgs.peek() === "--list" || modelArgs.peek() === "list") {
+        modelArgs.shift();
+        const includeHidden = !modelArgs.takeFlag("--no-hidden");
+        if (!modelArgs.isEmpty()) {
+          return this.renderCommandError(
+            "Model",
+            `unsupported args: \`${modelArgs.remainingText()}\``,
+            "Usage: `/model --list [--no-hidden]`"
+          );
+        }
         const project = binding?.project || this.config.project.defaultProject;
         const liveModels = this.codex.listModels
-          ? await this.codex.listModels(project, { includeHidden: false, limit: 100 }).catch(() => undefined)
+          ? await this.fetchModelCatalog(project, includeHidden).catch(() => undefined)
           : undefined;
         return this.modelListText(liveModels);
       }
@@ -3877,8 +3886,6 @@ export class App {
     const lines = [
       `# ${title}`,
       "",
-      "- sorted by: `current project first, then project asc, then time desc`",
-      "",
       "| # | project | time | session | source | about | flags |",
       "| --- | --- | --- | --- | --- | --- | --- |"
     ];
@@ -3969,8 +3976,6 @@ export class App {
   ): string {
     const lines = [
       `# ${title}`,
-      "",
-      "- sorted by: `current first, then name asc`",
       "",
       "| # | name | flags | updated | path |",
       "| --- | --- | --- | --- | --- |"
@@ -4628,12 +4633,13 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/model [--list|name|clear]`",
+      "- `/model [--list [--no-hidden]|name|clear]`",
       "- `/model -h|--help`",
       "",
       "## Options",
       "",
-      "- `--list` show common model IDs you can try",
+      "- `--list` show available model IDs from Codex app-server when supported",
+      "- `--no-hidden` hide models that app-server marks as hidden",
       "- `name` set the conversation-level model override",
       "- `clear` remove the conversation-level model override",
       "- `default` remove the conversation-level model override",
@@ -4643,13 +4649,14 @@ export class App {
       "## Behavior",
       "",
       "- `clear`, `default`, and `reset` remove the conversation-level override.",
-      "- `/model --list` shows common model IDs you can try; exact availability depends on your Codex account/backend.",
+      `- \`/model --list\` fetches up to \`${this.config.codex.modelListMaxCount}\` models and includes hidden models by default.`,
       "- The configured override is used for future turns.",
       "",
       "## Examples",
       "",
       "- `/model`",
       "- `/model --list`",
+      "- `/model --list --no-hidden`",
       "- `/model gpt-5.4`"
     ].join("\n");
   }
@@ -4659,20 +4666,46 @@ export class App {
       ? modelList.data.filter((item): item is Record<string, unknown> => isRecord(item))
       : [];
     if (liveModels.length > 0) {
-      return [
+      const sortedModels = [...liveModels].sort((a, b) => {
+        const aDefault = Boolean(a.isDefault);
+        const bDefault = Boolean(b.isDefault);
+        if (aDefault && !bDefault) return -1;
+        if (bDefault && !aDefault) return 1;
+        const aId = (this.readString(a.model) || this.readString(a.id) || "").toLowerCase();
+        const bId = (this.readString(b.model) || this.readString(b.id) || "").toLowerCase();
+        return aId.localeCompare(bId);
+      });
+      const lines = [
         "# Model List",
         "",
-        ...liveModels.map((model) => {
-          const id = this.readString(model.model) || this.readString(model.id) || "(unknown)";
-          const displayName = this.readString(model.displayName);
-          const defaultFlag = model.isDefault ? " default" : "";
-          const description = this.readString(model.description);
-          return `- \`${id}\`${displayName && displayName !== id ? ` (${displayName}${defaultFlag})` : defaultFlag ? ` (${defaultFlag.trim()})` : ""}${description ? `: ${description}` : ""}`;
-        }),
-        "",
-        "## Notes",
+        "| # | model | reasoning | input | personality | default | hidden | upgrade | notes |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+      ];
+      for (const [index, model] of sortedModels.entries()) {
+        const id = this.readString(model.model) || this.readString(model.id) || "(unknown)";
+        const displayName = this.readString(model.displayName);
+        const defaultEffort = this.readString(model.defaultReasoningEffort) || "-";
+        const effortOptions = this.modelReasoningEfforts(model);
+        const reasoning = effortOptions ? `${defaultEffort} (${effortOptions})` : defaultEffort;
+        const input = this.modelInputModalities(model);
+        const personality = model.supportsPersonality === true ? "yes" : model.supportsPersonality === false ? "no" : "-";
+        const defaultFlag = model.isDefault ? "yes" : "-";
+        const hiddenFlag = model.hidden ? "yes" : "-";
+        const upgrade = this.readString(model.upgrade) || "-";
+        const notes = [
+          displayName && displayName !== id ? displayName : "",
+          this.readString(model.description) || ""
+        ].filter(Boolean).join(" ; ") || "-";
+        lines.push(
+          `| ${index + 1} | ${escapeMarkdownCell(id)} | ${escapeMarkdownCell(reasoning)} | ${escapeMarkdownCell(input)} | ${escapeMarkdownCell(personality)} | ${escapeMarkdownCell(defaultFlag)} | ${escapeMarkdownCell(hiddenFlag)} | ${escapeMarkdownCell(upgrade)} | ${escapeMarkdownCell(notes)} |`
+        );
+      }
+      return [
+        ...lines,
         "",
         "- This list comes from Codex app-server `model/list`.",
+        `- The bridge fetches up to \`${this.config.codex.modelListMaxCount}\` models and follows \`nextCursor\` until that cap is reached.`,
+        "- Hidden models are included by default; use `/model --list --no-hidden` to hide them.",
         "- Exact availability still depends on your current account and server-side routing.",
         "- Use `/model <name>` to set one for future turns in this conversation.",
         "- Use `/model clear` to remove the override."
@@ -4682,21 +4715,69 @@ export class App {
     return [
       "# Model List",
       "",
-      "- `gpt-5.4`",
-      "- `gpt-5.4-mini`",
-      "- `gpt-5.3-codex`",
-      "- `gpt-5.2-codex`",
-      "- `gpt-5.2`",
-      "- `gpt-5.1-codex-max`",
-      "- `gpt-5.1-codex-mini`",
-      "",
-      "## Notes",
+      "| # | model | reasoning | input | personality | default | hidden | upgrade | notes |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| 1 | gpt-5.4 | medium | text, image | - | yes | - | - | - |",
+      "| 2 | gpt-5.4-mini | - | text, image | - | - | - | - | GPT-5.4-Mini |",
+      "| 3 | gpt-5.3-codex | - | text, image | - | - | - | - | - |",
+      "| 4 | gpt-5.2-codex | - | text, image | - | - | - | - | - |",
+      "| 5 | gpt-5.2 | - | text, image | - | - | - | - | - |",
+      "| 6 | gpt-5.1-codex-max | - | text, image | - | - | - | - | - |",
+      "| 7 | gpt-5.1-codex-mini | - | text, image | - | - | - | - | - |",
       "",
       "- This is a bridge-side fallback list because a live app-server model list was unavailable.",
+      `- The checked-in bridge cap is \`${this.config.codex.modelListMaxCount}\` models.`,
       "- Exact availability depends on your current Codex account, backend, and server-side routing.",
       "- Use `/model <name>` to set one for future turns in this conversation.",
       "- Use `/model clear` to remove the override."
     ].join("\n");
+  }
+
+  private async fetchModelCatalog(project: string, includeHidden: boolean): Promise<Record<string, unknown> | undefined> {
+    if (!this.codex.listModels) return undefined;
+    const maxCount = this.config.codex.modelListMaxCount;
+    const pageSize = Math.min(maxCount, 100);
+    const data: Record<string, unknown>[] = [];
+    const seenIds = new Set<string>();
+    let cursor: string | undefined;
+
+    while (data.length < maxCount) {
+      const page = await this.codex.listModels(project, {
+        includeHidden,
+        limit: Math.max(1, Math.min(pageSize, maxCount - data.length)),
+        ...(cursor ? { cursor } : {})
+      });
+      if (!page) {
+        return data.length > 0 ? { data, nextCursor: null } : undefined;
+      }
+      const entries = this.readArray(page.data).filter((item): item is Record<string, unknown> => isRecord(item));
+      for (const entry of entries) {
+        const id = this.readString(entry.id) || this.readString(entry.model) || `${data.length}`;
+        if (seenIds.has(id)) continue;
+        seenIds.add(id);
+        data.push(entry);
+        if (data.length >= maxCount) break;
+      }
+      const nextCursor = this.readString(page.nextCursor);
+      if (!nextCursor || entries.length === 0 || nextCursor === cursor) {
+        return { ...page, data, nextCursor: null };
+      }
+      cursor = nextCursor;
+    }
+
+    return { data, nextCursor: null };
+  }
+
+  private modelReasoningEfforts(model: Record<string, unknown>): string | undefined {
+    const efforts = this.readArray(model.supportedReasoningEfforts)
+      .map((item) => this.readString(asObjectRecord(item).reasoningEffort) || this.readString(item))
+      .filter((item): item is string => Boolean(item));
+    return efforts.length > 0 ? efforts.join(", ") : undefined;
+  }
+
+  private modelInputModalities(model: Record<string, unknown>): string {
+    const modalities = readStringArray(model.inputModalities);
+    return modalities && modalities.length > 0 ? modalities.join(", ") : "text, image";
   }
 
   private profileHelpText(): string {
