@@ -14,7 +14,7 @@
     "wsConnectWarnAfterMs": 30000,
     "wsReconnectWarnThreshold": 3,
     "reconnectReadyDebounceMs": 60000,
-    "titleMaxLength": 80,
+    "titleMaxLength": 120,
     "sendRetry": {
       "maxAttempts": 5,
       "baseDelayMs": 1000,

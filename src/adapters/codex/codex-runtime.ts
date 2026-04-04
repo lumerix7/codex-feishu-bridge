@@ -196,7 +196,7 @@ class AppServerCodexBackend implements CodexBackend {
         flushStreamText(true);
       };
 
-        const renderOperationalBlock = (
+          const renderOperationalBlock = (
           method: string,
           params: Record<string, unknown>
         ): string | undefined => {
@@ -234,7 +234,7 @@ class AppServerCodexBackend implements CodexBackend {
           const reason = String(params.reason || "").trim();
           const grantRoot = String(params.grantRoot || "").trim();
           const fileChanges = isRecord(params.fileChanges) ? params.fileChanges : {};
-          const fileList = Object.keys(fileChanges).slice(0, 8);
+          const fileList = Object.keys(fileChanges);
           const lines = ["```text", "🔐 Approval Required", "kind: file change"];
           if (id) lines.push(`id: ${id}`);
           if (reason) lines.push(`reason: ${reason}`);
@@ -291,6 +291,13 @@ class AppServerCodexBackend implements CodexBackend {
           const item = isRecord(params.item) ? params.item : {};
           const type = String(item.type || "").trim();
           if (!type || type === "agentMessage") return undefined;
+          if (type === "reasoning") {
+            console.debug("Codex app-server reasoning item completed", {
+              sessionId: resolvedSessionId,
+              turnId: active.turnId,
+              item
+            });
+          }
           const id = String(item.id || "").trim();
           if (inlineBlockMode === "full") {
             return renderCompletedItemFullBlock(item);
@@ -341,6 +348,82 @@ class AppServerCodexBackend implements CodexBackend {
           }
           lines.push("```");
           return lines.join("\n");
+        }
+        if (method === "thread/tokenUsage/updated") {
+          const tokenUsage = isRecord(params.tokenUsage) ? params.tokenUsage : {};
+          const total = isRecord(tokenUsage.total) ? tokenUsage.total : {};
+          const last = isRecord(tokenUsage.last) ? tokenUsage.last : {};
+          const contextWindow = typeof tokenUsage.modelContextWindow === "number" ? tokenUsage.modelContextWindow : undefined;
+          const lines = ["```text", "📍 Codex Event", "type: thread/tokenUsage/updated"];
+          if (contextWindow !== undefined) lines.push(`context window: ${contextWindow}`);
+          if (typeof total.totalTokens === "number") lines.push(`total tokens: ${total.totalTokens}`);
+          if (typeof total.inputTokens === "number") lines.push(`total input: ${total.inputTokens}`);
+          if (typeof total.outputTokens === "number") lines.push(`total output: ${total.outputTokens}`);
+          if (typeof last.totalTokens === "number") lines.push(`last turn tokens: ${last.totalTokens}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
+        if (method === "account/rateLimits/updated") {
+          const rateLimits = isRecord(params.rateLimits) ? params.rateLimits : {};
+          const lines = ["```text", "📍 Codex Event", "type: account/rateLimits/updated"];
+          const planType = String(rateLimits.planType || "").trim();
+          if (planType) lines.push(`plan: ${planType}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
+        if (method === "account/updated") {
+          const account = isRecord(params.account) ? params.account : params;
+          const email = String(account.email || "").trim();
+          const planType = String(account.planType || account.plan || "").trim();
+          const lines = ["```text", "📍 Codex Event", "type: account/updated"];
+          if (email) lines.push(`email: ${email}`);
+          if (planType) lines.push(`plan: ${planType}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
+        if (method === "thread/status/changed") {
+          const status = isRecord(params.status) ? params.status : {};
+          const type = String(status.type || "").trim() || "(unknown)";
+          const activeFlags = Array.isArray(status.activeFlags)
+            ? status.activeFlags.map((item) => String(item || "").trim()).filter(Boolean)
+            : [];
+          const lines = ["```text", "📍 Codex Event", "type: thread/status/changed", `status: ${type}`];
+          if (activeFlags.length > 0) lines.push(`flags: ${activeFlags.join(", ")}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
+        if (method === "thread/compacted") {
+          const turnId = String(params.turnId || "").trim();
+          const lines = ["```text", "📍 Codex Event", "type: thread/compacted"];
+          if (turnId) lines.push(`turn: ${turnId}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
+        if (method === "thread/closed") {
+          return ["```text", "📍 Codex Event", "type: thread/closed", "```"].join("\n");
+        }
+        if (method === "turn/started") {
+          const turn = isRecord(params.turn) ? params.turn : {};
+          const turnId = String(turn.id || params.turnId || "").trim();
+          const lines = ["```text", "📍 Codex Event", "type: turn/started"];
+          if (turnId) lines.push(`turn: ${turnId}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
+        if (method === "turn/interrupted") {
+          return ["```text", "📍 Codex Event", "type: turn/interrupted", "```"].join("\n");
+        }
+        if (method === "turn/failed") {
+          const turn = isRecord(params.turn) ? params.turn : {};
+          const error = isRecord(turn.error) ? turn.error : {};
+          const message = String(error.message || turn.error || "").trim();
+          const lines = ["```text", "📍 Codex Event", "type: turn/failed"];
+          if (message) lines.push(`error: ${message}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
+        if (method === "turn/completed") {
+          return ["```text", "📍 Codex Event", "type: turn/completed", "```"].join("\n");
         }
         return undefined;
       };
@@ -401,6 +484,10 @@ class AppServerCodexBackend implements CodexBackend {
 
       const handleNotification = (method: string, params: Record<string, unknown>): void => {
         void hooks?.onNotification?.({ method, params });
+        const earlyBlock = renderOperationalBlock(method, params);
+        if (earlyBlock) {
+          pushOperationalBlock(earlyBlock);
+        }
         if (String(params.threadId || "") !== resolvedSessionId) {
           return;
         }
@@ -435,10 +522,6 @@ class AppServerCodexBackend implements CodexBackend {
         }
 
         if (method === "item/completed") {
-          const operationalBlock = renderOperationalBlock(method, params);
-          if (operationalBlock) {
-            pushOperationalBlock(operationalBlock);
-          }
           const item = isRecord(params.item) ? params.item : {};
           if (String(item.type || "") !== "agentMessage") return;
           const itemId = String(item.id || "").trim();
@@ -1434,7 +1517,6 @@ function summarizeDiffFiles(diff: string): string[] {
     if (file && !files.includes(file)) {
       files.push(file);
     }
-    if (files.length >= 8) break;
   }
   return files;
 }
@@ -1536,12 +1618,10 @@ function renderCompletedItemFullBlock(item: Record<string, unknown>): string | u
             : undefined;
     const urls = results
       .map((result) => String(result.url || result.link || "").trim())
-      .filter(Boolean)
-      .slice(0, 8);
+      .filter(Boolean);
     const titles = results
       .map((result) => String(result.title || result.name || "").trim())
-      .filter(Boolean)
-      .slice(0, 8);
+      .filter(Boolean);
     const detailLines = ["```text"];
     if (query) detailLines.push(`query: ${query}`);
     if (provider) detailLines.push(`provider: ${provider}`);

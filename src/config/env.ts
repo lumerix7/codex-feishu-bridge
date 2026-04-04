@@ -276,7 +276,7 @@ export function loadConfig(): AppConfig {
       ),
       titleMaxLength: readIntegerSetting(
         "FEISHU_TITLE_MAX_LENGTH",
-        80,
+        120,
         jsonConfig,
         ["feishu", "titleMaxLength"],
         { min: 8 }

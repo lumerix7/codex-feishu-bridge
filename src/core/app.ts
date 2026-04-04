@@ -2618,6 +2618,97 @@ export class App {
   }
 
   private renderCodexNotificationUpdate(notification: { method: string; params: Record<string, unknown> }): string | undefined {
+    if (notification.method === "thread/tokenUsage/updated") {
+      const tokenUsage = asObjectRecord(notification.params.tokenUsage);
+      const total = asObjectRecord(tokenUsage.total);
+      const last = asObjectRecord(tokenUsage.last);
+      const contextWindow = this.readNumber(tokenUsage.modelContextWindow);
+      return [
+        "# 📍 Codex Event",
+        "",
+        "- **type**: `thread/tokenUsage/updated`",
+        ...(contextWindow !== undefined ? [`- **context window**: \`${contextWindow}\``] : []),
+        ...(total.totalTokens !== undefined ? [`- **total tokens**: \`${String(total.totalTokens)}\``] : []),
+        ...(total.inputTokens !== undefined ? [`- **total input**: \`${String(total.inputTokens)}\``] : []),
+        ...(total.outputTokens !== undefined ? [`- **total output**: \`${String(total.outputTokens)}\``] : []),
+        ...(last.totalTokens !== undefined ? [`- **last turn tokens**: \`${String(last.totalTokens)}\``] : [])
+      ].join("\n");
+    }
+    if (notification.method === "account/rateLimits/updated") {
+      const lines = [
+        "# 📍 Codex Event",
+        "",
+        "- **type**: `account/rateLimits/updated`"
+      ];
+      lines.push(...this.formatRateLimitStatusLines(notification.params));
+      return lines.join("\n");
+    }
+    if (notification.method === "account/updated") {
+      const nestedAccount = asObjectRecord(notification.params.account);
+      const account = Object.keys(nestedAccount).length > 0 ? nestedAccount : notification.params;
+      const email = this.readString(account.email);
+      const planType = this.readString(account.planType) || this.readString(account.plan);
+      return [
+        "# 📍 Codex Event",
+        "",
+        "- **type**: `account/updated`",
+        ...(email ? [`- **email**: \`${email}\``] : []),
+        ...(planType ? [`- **plan**: \`${planType}\``] : [])
+      ].join("\n");
+    }
+    if (notification.method === "thread/status/changed") {
+      const status = asObjectRecord(notification.params.status);
+      const statusType = this.readString(status.type) || "(unknown)";
+      const activeFlags = this.readArray(status.activeFlags)
+        .map((item) => this.readString(item))
+        .filter((item): item is string => Boolean(item));
+      return [
+        "# 📍 Codex Event",
+        "",
+        "- **type**: `thread/status/changed`",
+        `- **status**: \`${statusType}\``,
+        ...(activeFlags.length > 0 ? [`- **flags**: ${activeFlags.map((item) => `\`${item}\``).join(", ")}`] : [])
+      ].join("\n");
+    }
+    if (notification.method === "thread/compacted") {
+      const turnId = this.readString(notification.params.turnId);
+      return [
+        "# 📍 Codex Event",
+        "",
+        "- **type**: `thread/compacted`",
+        ...(turnId ? [`- **turn**: \`${turnId}\``] : [])
+      ].join("\n");
+    }
+    if (notification.method === "thread/closed") {
+      return "# 📍 Codex Event\n\n- **type**: `thread/closed`";
+    }
+    if (notification.method === "turn/started") {
+      const turn = asObjectRecord(notification.params.turn);
+      const turnId = this.readString(turn.id) || this.readString(notification.params.turnId);
+      return [
+        "# 📍 Codex Event",
+        "",
+        "- **type**: `turn/started`",
+        ...(turnId ? [`- **turn**: \`${turnId}\``] : [])
+      ].join("\n");
+    }
+    if (notification.method === "turn/interrupted") {
+      return "# 📍 Codex Event\n\n- **type**: `turn/interrupted`";
+    }
+    if (notification.method === "turn/failed") {
+      const turn = asObjectRecord(notification.params.turn);
+      const error = asObjectRecord(turn.error);
+      const message = this.readString(error.message) || this.readString(turn.error);
+      return [
+        "# 📍 Codex Event",
+        "",
+        "- **type**: `turn/failed`",
+        ...(message ? [`- **error**: ${message}`] : [])
+      ].join("\n");
+    }
+    if (notification.method === "turn/completed") {
+      return "# 📍 Codex Event\n\n- **type**: `turn/completed`";
+    }
     if (notification.method === "model/rerouted") {
       const fromModel = this.readString(notification.params.fromModel) || "(unknown)";
       const toModel = this.readString(notification.params.toModel) || "(unknown)";
@@ -2653,6 +2744,11 @@ export class App {
     if (notification.method === "item/completed") {
       const item = asObjectRecord(notification.params.item);
       const type = this.readString(item.type) || "(unknown)";
+      if (type === "reasoning") {
+        console.debug("Codex reasoning item for Feishu render", {
+          item
+        });
+      }
       if (type === "agentMessage") {
         return undefined;
       }
@@ -2712,7 +2808,6 @@ export class App {
       if (file && !files.includes(file)) {
         files.push(file);
       }
-      if (files.length >= 8) break;
     }
     return files;
   }
@@ -2755,7 +2850,7 @@ export class App {
         .filter((part): part is string => Boolean(part));
       if (summary.length > 0) {
         lines.push("- **summary**:");
-        lines.push(...summary.slice(0, 8).map((part) => `  - ${part}`));
+        lines.push(...summary.map((part) => `  - ${part}`));
       }
       if (content.length > 0) {
         lines.push("```text");
@@ -2783,7 +2878,7 @@ export class App {
         .filter((path): path is string => Boolean(path));
       if (changes.length > 0) {
         lines.push(`- **files changed**: \`${changes.length}\``);
-        lines.push(`- **files**: ${changes.slice(0, 12).map((path) => `\`${path}\``).join(", ")}`);
+        lines.push(`- **files**: ${changes.map((path) => `\`${path}\``).join(", ")}`);
       } else if (rawChanges.length > 0) {
         lines.push(`- **files changed**: \`${rawChanges.length}\``);
         lines.push("- **files**: details unavailable");
@@ -2816,11 +2911,11 @@ export class App {
       if (resultCount !== undefined) lines.push(`- **results**: \`${resultCount}\``);
       if (titles.length > 0) {
         lines.push("- **titles**:");
-        lines.push(...titles.slice(0, 8).map((value) => `  - ${value}`));
+        lines.push(...titles.map((value) => `  - ${value}`));
       }
       if (urls.length > 0) {
         lines.push("- **urls**:");
-        lines.push(...urls.slice(0, 8).map((value) => `  - ${value}`));
+        lines.push(...urls.map((value) => `  - ${value}`));
       }
       const renderedText = this.readString(item.text);
       if (renderedText) {
@@ -3199,7 +3294,7 @@ export class App {
     const reason = this.readString(request.params.reason);
     const grantRoot = this.readString(request.params.grantRoot);
     const fileChanges = asObjectRecord(request.params.fileChanges);
-    const fileList = Object.keys(fileChanges).slice(0, 5);
+    const fileList = Object.keys(fileChanges);
     const choices: ChoiceReply[] = [
       { label: "allow once", aliases: ["1", "approve", "allow", "yes"], result: { decision: legacy ? "approved" : "accept" } },
       { label: "allow for session", aliases: ["2", "session"], result: { decision: legacy ? "approved_for_session" : "acceptForSession" } },
