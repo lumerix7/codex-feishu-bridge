@@ -56,7 +56,8 @@ export interface CodexBackend {
   ): Promise<Record<string, unknown> | undefined>;
   compactSession?(
     sessionId: string,
-    project: string
+    project: string,
+    hooks?: Pick<CodexRunHooks, "onNotification">
   ): Promise<Record<string, unknown> | undefined>;
   getConversationSummary?(
     sessionId: string,

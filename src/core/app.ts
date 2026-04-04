@@ -626,15 +626,27 @@ export class App {
       }
       const project = existing.project || this.config.project.defaultProject;
       await sendEarlyUpdate(`Compacting Codex session \`${existing.codexSessionId}\`...`);
-      const compactResult = await this.codex.compactSession(existing.codexSessionId, project);
+      const compactResult = await this.codex.compactSession(existing.codexSessionId, project, {
+        onNotification: async (notification) => {
+          if (
+            notification.method === "item/started" &&
+            this.readString(asObjectRecord(notification.params.item).type) === "contextCompaction"
+          ) {
+            return;
+          }
+          const rendered = this.renderCodexNotificationUpdate(notification);
+          if (rendered) {
+            await this.sendCodexNotificationCard(message, existing, rendered);
+          }
+        }
+      });
       const nextBinding = { ...existing, updatedAt: new Date().toISOString() };
       await this.store.put(nextBinding);
       const summary = asObjectRecord(compactResult?.summary);
       return [
         "# Compact",
         "",
-        `- **Session**: \`${existing.codexSessionId}\``,
-        `- **Project**: \`${project}\``,
+        "**Context compaction completed**",
         `- **Status**: \`${this.readString(compactResult?.status) || "completed"}\``,
         ...(this.readString(compactResult?.turnId)
           ? [`- **Turn**: \`${this.readString(compactResult?.turnId)}\``]
@@ -646,6 +658,7 @@ export class App {
           ? [`- **Updated**: ${this.formatAnyTimestamp(summary.updatedAt)}`]
           : []),
         ...(this.readString(summary.cwd)
+          && this.readString(summary.cwd) !== project
           ? [`- **Cwd**: \`${this.readString(summary.cwd)}\``]
           : [])
       ].join("\n");
@@ -2220,6 +2233,29 @@ export class App {
     return `${normalizedExisting}\n\n${normalizedNext}`;
   }
 
+  private async sendCodexNotificationCard(
+    message: IncomingMessage,
+    binding: SessionBinding | undefined,
+    rendered: string
+  ): Promise<void> {
+    const heading = this.extractLeadingMarkdownHeading(rendered);
+    const title = heading
+      ? this.composeTitle("Codex", "🤖", heading.heading)
+      : this.composeTitle("Codex", "🤖", "event");
+    const text = heading ? heading.body : rendered;
+    await this.feishu?.send({
+      chatId: message.chatId,
+      title,
+      template: this.templateForCommand(undefined),
+      footer: this.footerForCodexReply(binding),
+      text,
+      replyToMessageId: message.messageId,
+      threadId: message.threadId,
+      streaming: false,
+      includeRawMarkdown: false
+    });
+  }
+
   private footerForMessage(commandName: string | undefined, binding?: SessionBinding): string | undefined {
     if (!commandName) return undefined;
     if (this.commandUsesCodexFooter(commandName)) {
@@ -2765,10 +2801,36 @@ export class App {
         `# ${title}`,
         "",
         `- **Type**: \`${type}\``,
+        ...(type === "contextCompaction" ? ["- **Phase**: `completed`"] : []),
         ...(id ? [`- **Id**: \`${id}\``] : [])
       ];
       lines.push(...this.renderCompletedItemDetails(item));
       return lines.join("\n");
+    }
+    if (notification.method === "item/started") {
+      const item = asObjectRecord(notification.params.item);
+      const type = this.readString(item.type) || "(unknown)";
+      if (type !== "contextCompaction") return undefined;
+      const id = this.readString(item.id);
+      const reason = this.readString(item.reason);
+      const trigger =
+        this.readString(item.trigger) ||
+        this.readString(item.cause) ||
+        this.readString(item.source);
+      const summary =
+        this.readString(item.summary) ||
+        this.readString(item.compactionSummary) ||
+        this.readString(item.text);
+      return [
+        "# 📍 Codex Event",
+        "",
+        "- **Type**: `contextCompaction`",
+        "- **Phase**: `started`",
+        ...(id ? [`- **Id**: \`${id}\``] : []),
+        ...(reason ? [`- **Reason**: ${reason}`] : []),
+        ...(trigger ? [`- **Trigger**: \`${trigger}\``] : []),
+        ...(summary ? [`- **Summary**: ${summary}`] : [])
+      ].join("\n");
     }
     return undefined;
   }
@@ -2867,6 +2929,47 @@ export class App {
         lines.push(output);
         lines.push("```");
       }
+      return lines;
+    }
+
+    if (type === "contextCompaction") {
+      const reason = this.readString(item.reason);
+      const trigger =
+        this.readString(item.trigger) ||
+        this.readString(item.cause) ||
+        this.readString(item.source);
+      const summary =
+        this.readString(item.summary) ||
+        this.readString(item.compactionSummary) ||
+        this.readString(item.text);
+      const tokenUsage = asObjectRecord(item.tokenUsage);
+      const total = asObjectRecord(tokenUsage.total);
+      const last = asObjectRecord(tokenUsage.last);
+      const contextWindow =
+        this.readNumber(tokenUsage.modelContextWindow) ??
+        this.readNumber(item.modelContextWindow) ??
+        this.readNumber(item.contextWindow);
+      const totalTokens =
+        this.readNumber(total.totalTokens) ??
+        this.readNumber(item.totalTokens) ??
+        this.readNumber(item.tokens);
+      const inputTokens =
+        this.readNumber(total.inputTokens) ??
+        this.readNumber(item.inputTokens);
+      const outputTokens =
+        this.readNumber(total.outputTokens) ??
+        this.readNumber(item.outputTokens);
+      const lastTurnTokens =
+        this.readNumber(last.totalTokens) ??
+        this.readNumber(item.lastTurnTokens);
+      if (reason) lines.push(`- **Reason**: ${reason}`);
+      if (trigger) lines.push(`- **Trigger**: \`${trigger}\``);
+      if (summary) lines.push(`- **Summary**: ${summary}`);
+      if (contextWindow !== undefined) lines.push(`- **Context Window**: \`${contextWindow}\``);
+      if (totalTokens !== undefined) lines.push(`- **Total Tokens**: \`${String(totalTokens)}\``);
+      if (inputTokens !== undefined) lines.push(`- **Input Tokens**: \`${String(inputTokens)}\``);
+      if (outputTokens !== undefined) lines.push(`- **Output Tokens**: \`${String(outputTokens)}\``);
+      if (lastTurnTokens !== undefined) lines.push(`- **Last Turn Tokens**: \`${String(lastTurnTokens)}\``);
       return lines;
     }
 

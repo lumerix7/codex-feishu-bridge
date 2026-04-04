@@ -303,6 +303,9 @@ class AppServerCodexBackend implements CodexBackend {
           if (inlineBlockMode === "full") {
             return renderCompletedItemFullBlock(item);
           }
+          if (type === "contextCompaction") {
+            return renderContextCompactionCompactBlock(item, id);
+          }
           const title =
             type === "commandExecution"
               ? "🧾 Command Completed"
@@ -320,6 +323,29 @@ class AppServerCodexBackend implements CodexBackend {
           if (command) lines.push(`command: ${command}`);
           if (tool) lines.push(`tool: ${tool}`);
           if (cwd) lines.push(`cwd: ${cwd}`);
+          lines.push("```");
+          return lines.join("\n");
+        }
+        if (method === "item/started") {
+          const item = isRecord(params.item) ? params.item : {};
+          const type = String(item.type || "").trim();
+          if (type !== "contextCompaction") return undefined;
+          const id = String(item.id || "").trim();
+          const reason = String(item.reason || "").trim();
+          const trigger =
+            String(item.trigger || "").trim() ||
+            String(item.cause || "").trim() ||
+            String(item.source || "").trim();
+          const summary =
+            String(item.summary || "").trim() ||
+            String(item.compactionSummary || "").trim() ||
+            String(item.text || "").trim();
+          const lines = ["```text", "🗜️ Context Compaction", "Context compaction started"];
+          if (id) lines.push(`id: ${id}`);
+          lines.push("type: contextCompaction");
+          if (reason) lines.push(`reason: ${reason}`);
+          if (trigger) lines.push(`trigger: ${trigger}`);
+          if (summary) lines.push(`summary: ${previewText(summary, 240)}`);
           lines.push("```");
           return lines.join("\n");
         }
@@ -671,14 +697,15 @@ class AppServerCodexBackend implements CodexBackend {
 
   async compactSession(
     sessionId: string,
-    project: string
+    project: string,
+    hooks?: Pick<CodexRunHooks, "onNotification">
   ): Promise<Record<string, unknown> | undefined> {
     const clientInfo = await this.getOrCreateClient(project, sessionId);
     if (this.hasActiveRunForClient(clientInfo.client)) {
       throw new Error(`Codex session ${sessionId} already has an active run.`);
     }
     try {
-      const compact = await clientInfo.client.compactSession(sessionId);
+      const compact = await clientInfo.client.compactSession(sessionId, hooks);
       const summary = await clientInfo.client.getConversationSummary(sessionId).catch(() => undefined);
       return {
         ...(compact || {}),
@@ -1529,12 +1556,16 @@ function renderCompletedItemFullBlock(item: Record<string, unknown>): string | u
   const title =
     type === "commandExecution"
       ? "🧾 Command Completed"
+      : type === "contextCompaction"
+        ? "🗜️ Context Compaction"
       : type === "userMessage"
         ? "💬 User Message"
         : type === "reasoning"
           ? "🧠 Reasoning"
           : "📍 Codex Event";
-  const lines = ["```text", title, `type: ${type}`];
+  const lines = ["```text", title];
+  if (type === "contextCompaction") lines.push("Context compaction completed");
+  lines.push(`type: ${type}`);
   if (id) lines.push(`id: ${id}`);
   const command = String(item.command || "").trim();
   const tool = String(item.tool || "").trim();
@@ -1558,6 +1589,69 @@ function renderCompletedItemFullBlock(item: Record<string, unknown>): string | u
     const output = String(item.aggregatedOutput || "");
     if (output) {
       lines.push("", "```text", output, "```");
+    }
+    return lines.join("\n");
+  }
+
+  if (type === "contextCompaction") {
+    const reason = String(item.reason || "").trim();
+    const trigger =
+      String(item.trigger || "").trim() ||
+      String(item.cause || "").trim() ||
+      String(item.source || "").trim();
+    const summary =
+      String(item.summary || "").trim() ||
+      String(item.compactionSummary || "").trim() ||
+      String(item.text || "").trim();
+    const tokenUsage = isRecord(item.tokenUsage) ? item.tokenUsage : {};
+    const total = isRecord(tokenUsage.total) ? tokenUsage.total : {};
+    const last = isRecord(tokenUsage.last) ? tokenUsage.last : {};
+    const contextWindow =
+      typeof tokenUsage.modelContextWindow === "number"
+        ? tokenUsage.modelContextWindow
+        : typeof item.modelContextWindow === "number"
+          ? item.modelContextWindow
+          : typeof item.contextWindow === "number"
+            ? item.contextWindow
+            : undefined;
+    const totalTokens =
+      typeof total.totalTokens === "number"
+        ? total.totalTokens
+        : typeof item.totalTokens === "number"
+          ? item.totalTokens
+          : typeof item.tokens === "number"
+            ? item.tokens
+            : undefined;
+    const inputTokens =
+      typeof total.inputTokens === "number"
+        ? total.inputTokens
+        : typeof item.inputTokens === "number"
+          ? item.inputTokens
+          : undefined;
+    const outputTokens =
+      typeof total.outputTokens === "number"
+        ? total.outputTokens
+        : typeof item.outputTokens === "number"
+          ? item.outputTokens
+          : undefined;
+    const lastTurnTokens =
+      typeof last.totalTokens === "number"
+        ? last.totalTokens
+        : typeof item.lastTurnTokens === "number"
+          ? item.lastTurnTokens
+          : undefined;
+    const detailLines = ["```text"];
+    if (reason) detailLines.push(`reason: ${reason}`);
+    if (trigger) detailLines.push(`trigger: ${trigger}`);
+    if (summary) detailLines.push(`summary: ${summary}`);
+    if (contextWindow !== undefined) detailLines.push(`context window: ${contextWindow}`);
+    if (totalTokens !== undefined) detailLines.push(`total tokens: ${totalTokens}`);
+    if (inputTokens !== undefined) detailLines.push(`input tokens: ${inputTokens}`);
+    if (outputTokens !== undefined) detailLines.push(`output tokens: ${outputTokens}`);
+    if (lastTurnTokens !== undefined) detailLines.push(`last turn tokens: ${lastTurnTokens}`);
+    detailLines.push("```");
+    if (detailLines.length > 2) {
+      lines.push("", ...detailLines);
     }
     return lines.join("\n");
   }
@@ -1674,6 +1768,46 @@ function renderCompletedItemFullBlock(item: Record<string, unknown>): string | u
   if (text) {
     lines.push("", "```text", text, "```");
   }
+  return lines.join("\n");
+}
+
+function renderContextCompactionCompactBlock(item: Record<string, unknown>, id?: string): string {
+  const reason = String(item.reason || "").trim();
+  const trigger =
+    String(item.trigger || "").trim() ||
+    String(item.cause || "").trim() ||
+    String(item.source || "").trim();
+  const summary =
+    String(item.summary || "").trim() ||
+    String(item.compactionSummary || "").trim() ||
+    String(item.text || "").trim();
+  const tokenUsage = isRecord(item.tokenUsage) ? item.tokenUsage : {};
+  const total = isRecord(tokenUsage.total) ? tokenUsage.total : {};
+  const contextWindow =
+    typeof tokenUsage.modelContextWindow === "number"
+      ? tokenUsage.modelContextWindow
+      : typeof item.modelContextWindow === "number"
+        ? item.modelContextWindow
+        : typeof item.contextWindow === "number"
+          ? item.contextWindow
+          : undefined;
+  const totalTokens =
+    typeof total.totalTokens === "number"
+      ? total.totalTokens
+      : typeof item.totalTokens === "number"
+        ? item.totalTokens
+        : typeof item.tokens === "number"
+          ? item.tokens
+          : undefined;
+  const lines = ["```text", "🗜️ Context Compaction"];
+  if (id) lines.push(`id: ${id}`);
+  lines.push("type: contextCompaction");
+  if (reason) lines.push(`reason: ${reason}`);
+  if (trigger) lines.push(`trigger: ${trigger}`);
+  if (summary) lines.push(`summary: ${previewText(summary, 240)}`);
+  if (contextWindow !== undefined) lines.push(`context window: ${contextWindow}`);
+  if (totalTokens !== undefined) lines.push(`total tokens: ${totalTokens}`);
+  lines.push("```");
   return lines.join("\n");
 }
 

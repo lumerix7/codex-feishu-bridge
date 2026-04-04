@@ -124,7 +124,10 @@ export class AppServerSessionClient {
     return isRecord(result) ? result : undefined;
   }
 
-  async compactSession(sessionId: string): Promise<Record<string, unknown> | undefined> {
+  async compactSession(
+    sessionId: string,
+    hooks?: { onNotification?: (notification: { method: string; params: Record<string, unknown> }) => Promise<void> | void }
+  ): Promise<Record<string, unknown> | undefined> {
     await this.ensureStarted();
     let cleanup = (): void => undefined;
     const completion = new Promise<Record<string, unknown>>((resolve, reject) => {
@@ -134,6 +137,10 @@ export class AppServerSessionClient {
       };
       const handler: NotificationHandler = async (method, params) => {
         if (this.readString(params.threadId) !== sessionId) return;
+        await hooks?.onNotification?.({
+          method,
+          params
+        });
         if (method === "thread/compacted") {
           cleanup();
           resolve({
