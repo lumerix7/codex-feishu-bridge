@@ -39,7 +39,6 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 ## Commands
 
 ### Core
-
 - `/help` show commands
 - `/status [check-update] [-h|--help]` show current session and run state
 - `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
@@ -62,9 +61,10 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/plan [mode] [-h|--help]` show or change the Codex collaboration mode for this conversation
 
 ### Project
+
 - `/project [list|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings
 - `/git [args...]` run `git` directly in the current bound project
-- `/cat`, `/find`, `/head`, `/ls`, `/pwd`, `/rg`, `/sha256sum`, `/tail`, `/tree`, `/wc` run local project commands
+- `/cat`, `/find`, `/head`, `/ls`, `/mkdir`, `/pwd`, `/rg`, `/rmdir`, `/sha256sum`, `/tail`, `/touch`, `/tree`, `/trash`, `/trash-list`, `/trash-restore`, `/wc` run local project commands
 
 ### Diagnostics
 - `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session
@@ -80,7 +80,7 @@ Working v1 bridge:
 - conversation to native Codex session binding
 - `/help` `/status` `/thread` `/compact` `/summary` `/diff` `/skills` `/config` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/feishu` `/log`
 - `/search` `/model` `/profile`
-- `/git` `/cat` `/find` `/head` `/ls` `/pwd` `/rg` `/sha256sum` `/tail` `/tree` `/wc`
+- `/git` `/cat` `/find` `/head` `/ls` `/mkdir` `/pwd` `/rg` `/rmdir` `/sha256sum` `/tail` `/touch` `/tree` `/trash` `/trash-list` `/trash-restore` `/wc`
 - `/new -C <path>` to switch/bind to another project and create a fresh session in one step
 - `/project bind <path>` to rebind a conversation to another directory under the allowed project roots
 - `/project bind -n <index>` to bind from `/project list`, which shows the merged bound-and-trusted project set

@@ -18,6 +18,12 @@ export type CommandName =
   | "git"
   | "pwd"
   | "ls"
+  | "mkdir"
+  | "rmdir"
+  | "touch"
+  | "trash"
+  | "trash-list"
+  | "trash-restore"
   | "cat"
   | "head"
   | "tail"
@@ -129,6 +135,12 @@ export function parseCommand(message: IncomingMessage): ParsedCommand | ParsedCo
       "git",
       "pwd",
       "ls",
+      "mkdir",
+      "rmdir",
+      "touch",
+      "trash",
+      "trash-list",
+      "trash-restore",
       "cat",
       "head",
       "tail",

@@ -395,7 +395,7 @@ export class App {
         "",
         "- `/project [list|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings",
         "- `/git [args...]` run `git` directly in the current bound project",
-        "- `/cat`, `/find`, `/head`, `/ls`, `/pwd`, `/rg`, `/sha256sum`, `/tail`, `/tree`, `/wc` run local project commands",
+        "- `/cat`, `/find`, `/head`, `/ls`, `/mkdir`, `/pwd`, `/rg`, `/rmdir`, `/sha256sum`, `/tail`, `/touch`, `/tree`, `/trash`, `/trash-list`, `/trash-restore`, `/wc` run local project commands",
         "",
         "## Diagnostics",
         "",
@@ -1713,10 +1713,16 @@ export class App {
       command?.name === "find" ||
       command?.name === "head" ||
       command?.name === "ls" ||
+      command?.name === "mkdir" ||
       command?.name === "pwd" ||
       command?.name === "rg" ||
+      command?.name === "rmdir" ||
       command?.name === "sha256sum" ||
       command?.name === "tail" ||
+      command?.name === "trash" ||
+      command?.name === "trash-list" ||
+      command?.name === "trash-restore" ||
+      command?.name === "touch" ||
       command?.name === "tree" ||
       command?.name === "wc"
     ) {
@@ -2148,17 +2154,29 @@ export class App {
       case "feishu":
         return "Feishu";
       case "pwd":
-        return "PWD";
+        return "pwd";
       case "ls":
-        return "LS";
+        return "ls";
+      case "mkdir":
+        return "mkdir";
+      case "rmdir":
+        return "rmdir";
+      case "touch":
+        return "touch";
+      case "trash":
+        return "trash";
+      case "trash-list":
+        return "trash-list";
+      case "trash-restore":
+        return "trash-restore";
       case "cat":
-        return "Cat";
+        return "cat";
       case "tree":
-        return "Tree";
+        return "tree";
       case "find":
-        return "Find";
+        return "find";
       case "rg":
-        return "RG";
+        return "rg";
       case "approvals":
         return "Approvals";
       case "search":
@@ -2212,6 +2230,12 @@ export class App {
         return "🪶";
       case "pwd":
       case "ls":
+      case "mkdir":
+      case "rmdir":
+      case "touch":
+      case "trash":
+      case "trash-list":
+      case "trash-restore":
       case "cat":
       case "tree":
       case "find":
@@ -5405,7 +5429,23 @@ export class App {
   }
 
   private async runLocalCommand(
-    command: "cat" | "find" | "head" | "ls" | "pwd" | "rg" | "sha256sum" | "tail" | "tree" | "wc",
+    command:
+      | "cat"
+      | "find"
+      | "head"
+      | "ls"
+      | "mkdir"
+      | "pwd"
+      | "rg"
+      | "rmdir"
+      | "sha256sum"
+      | "tail"
+      | "trash"
+      | "trash-list"
+      | "trash-restore"
+      | "touch"
+      | "tree"
+      | "wc",
     project: string,
     args: string[]
   ): Promise<string | AppResponse> {
