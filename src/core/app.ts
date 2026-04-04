@@ -17,7 +17,6 @@ import { getCodexRuntimeMeta } from "../adapters/codex/runtime-meta.js";
 
 const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 30_000;
-const GIT_OUTPUT_SOFT_LIMIT = 12_000;
 
 type SessionListEntry = {
   sessionId: string;
@@ -4891,7 +4890,7 @@ export class App {
         ...(query.grep ? [`- **grep**: \`${query.grep}\``] : []),
         "",
         "```text",
-        truncateOutput(filtered || "(no output)"),
+        this.truncateOutput(filtered || "(no output)"),
         "```"
       ].join("\n");
     } catch (error) {
@@ -4905,7 +4904,7 @@ export class App {
         `- **code**: \`${String(maybe.code ?? "(unknown)")}\``,
         "",
         "```text",
-        truncateOutput(output || maybe.message || "journalctl failed"),
+        this.truncateOutput(output || maybe.message || "journalctl failed"),
         "```"
       ].join("\n");
     }
@@ -4928,7 +4927,7 @@ export class App {
         `- **command**: \`${commandText}\``,
         "",
         "```text",
-        truncateOutput(combined || "(no output)"),
+        this.truncateOutput(combined || "(no output)"),
         "```"
       ].join("\n");
     } catch (error) {
@@ -4951,7 +4950,7 @@ export class App {
           ...(maybe.signal ? [`- **signal**: \`${maybe.signal}\``] : []),
           "",
           "```text",
-          truncateOutput(output || maybe.message || "git command failed"),
+          this.truncateOutput(output || maybe.message || "git command failed"),
           "```"
         ].join("\n")
       };
@@ -4979,7 +4978,7 @@ export class App {
         `- **command**: \`${commandText || command}\``,
         "",
         "```text",
-        truncateOutput(combined || "(no output)"),
+        this.truncateOutput(combined || "(no output)"),
         "```"
       ].join("\n");
     } catch (error) {
@@ -5002,11 +5001,17 @@ export class App {
           ...(maybe.signal ? [`- **signal**: \`${maybe.signal}\``] : []),
           "",
           "```text",
-          truncateOutput(output || maybe.message || `${command} command failed`),
+          this.truncateOutput(output || maybe.message || `${command} command failed`),
           "```"
         ].join("\n")
       };
     }
+  }
+
+  private truncateOutput(value: string): string {
+    const limit = this.config.codex.outputSoftLimit;
+    if (value.length <= limit) return value;
+    return `${value.slice(0, limit)}\n\n[output truncated]`;
   }
 }
 
@@ -5051,11 +5056,6 @@ interface LogQuery {
 
 function escapeMarkdownCell(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\n/g, " ").trim();
-}
-
-function truncateOutput(value: string): string {
-  if (value.length <= GIT_OUTPUT_SOFT_LIMIT) return value;
-  return `${value.slice(0, GIT_OUTPUT_SOFT_LIMIT)}\n\n[output truncated]`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

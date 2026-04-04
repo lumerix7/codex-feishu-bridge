@@ -218,6 +218,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - `feishu.wsReconnectWarnThreshold` is the doctor threshold for repeated reconnects after startup.
 - `feishu.reconnectReadyDebounceMs` controls how often the bridge may send a Feishu `Reconnected` ready card after websocket recovery.
 - `feishu.titleMaxLength` controls how long Feishu card titles may grow before the bridge shortens them as `begin...end`. The checked-in default is `80`.
+- `codex.outputSoftLimit` controls when local bridge command output such as `/git`, `/rg`, `/find`, `/log`, and similar results will be cut off with `[output truncated]`. The checked-in default is `100000`.
 - `codex.modelListMaxCount` controls how many entries `/model --list` will fetch at most while following app-server `model/list` pagination. The checked-in default is `100`.
 - `/feishu ws` and `/feishu doctor` include reconnect counters so you can tell the difference between an occasional reconnect and a flapping long-connection session.
 - Outbound Feishu replies currently use interactive cards with a schema `2.0` markdown body, card title, chat-list summary, and per-reply header template color.

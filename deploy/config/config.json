@@ -28,6 +28,7 @@
     "home": "$HOME/.codex-feishu-bridge",
     "sessionsDir": "$HOME/.codex-feishu-bridge/sessions",
     "backendMode": "app-server",
+    "outputSoftLimit": 100000,
     "modelListMaxCount": 100,
     "appServer": {
       "sidebandCards": false,

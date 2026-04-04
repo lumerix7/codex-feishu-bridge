@@ -47,6 +47,7 @@ export interface AppConfig {
     sessionsDir: string;
     profileMode: "isolated" | "personal";
     backendMode: "spawn" | "terminal" | "app-server";
+    outputSoftLimit: number;
     modelListMaxCount: number;
     appServerSidebandCards: boolean;
     appServerInlineBlocks: "off" | "compact" | "full";
@@ -103,6 +104,7 @@ interface JsonConfigShape {
     sessionsDir?: unknown;
     profileMode?: unknown;
     backendMode?: unknown;
+    outputSoftLimit?: unknown;
     modelListMaxCount?: unknown;
     appServer?: {
       sidebandCards?: unknown;
@@ -296,6 +298,13 @@ export function loadConfig(): AppConfig {
           : codexBackendMode === "app-server"
             ? "app-server"
             : "spawn",
+      outputSoftLimit: readIntegerSetting(
+        "CODEX_OUTPUT_SOFT_LIMIT",
+        100000,
+        jsonConfig,
+        ["codex", "outputSoftLimit"],
+        { min: 1 }
+      ),
       modelListMaxCount: readIntegerSetting(
         "CODEX_MODEL_LIST_MAX_COUNT",
         100,
