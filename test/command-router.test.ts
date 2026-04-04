@@ -74,3 +74,11 @@ test("parseCommand reports unterminated quotes as a parse error", () => {
     parseError: "unterminated double quote"
   });
 });
+
+test("parseCommand strips Feishu markdown links in arguments back to plain text", () => {
+  const parsed = parseCommand(makeMessage("/head -n 3 [README.md](http://readme.md/)"));
+  assert.deepEqual(parsed, {
+    name: "head",
+    args: ["-n", "3", "README.md"]
+  });
+});

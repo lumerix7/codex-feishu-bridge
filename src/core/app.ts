@@ -134,7 +134,8 @@ export class App {
         const command = parsedCommand && "args" in parsedCommand ? parsedCommand : undefined;
         const currentBinding = await this.store.get(conversationKeyFor(message));
         const commandName = command?.name || ("name" in (parsedCommand || {}) ? parsedCommand?.name : undefined);
-        const messageTitle = this.titleForCommand(commandName, message.text);
+        const titleInput = command ? this.renderParsedCommand(command) : message.text;
+        const messageTitle = this.titleForCommand(commandName, titleInput);
         const messageTemplate = this.templateForCommand(commandName);
         const messageFooter = this.footerForMessage(commandName, currentBinding);
         const includeRawMarkdown = this.shouldIncludeRawMarkdownForMessage(commandName);
@@ -395,7 +396,7 @@ export class App {
         "",
         "- `/project [list|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings",
         "- `/git [args...]` run `git` directly in the current bound project",
-        "- `/cat`, `/find`, `/head`, `/ls`, `/mkdir`, `/pwd`, `/rg`, `/rmdir`, `/sha256sum`, `/tail`, `/touch`, `/tree`, `/trash`, `/trash-list`, `/trash-restore`, `/wc` run local project commands",
+      "- `/cat`, `/cp`, `/find`, `/head`, `/ln`, `/ls`, `/mkdir`, `/mv`, `/pwd`, `/readlink`, `/rg`, `/rmdir`, `/sha256sum`, `/tail`, `/tar`, `/touch`, `/tree`, `/trash`, `/trash-list`, `/trash-restore`, `/wc` run local project commands",
         "",
         "## Diagnostics",
         "",
@@ -1710,15 +1711,20 @@ export class App {
 
     if (
       command?.name === "cat" ||
+      command?.name === "cp" ||
       command?.name === "find" ||
       command?.name === "head" ||
+      command?.name === "ln" ||
       command?.name === "ls" ||
       command?.name === "mkdir" ||
+      command?.name === "mv" ||
       command?.name === "pwd" ||
+      command?.name === "readlink" ||
       command?.name === "rg" ||
       command?.name === "rmdir" ||
       command?.name === "sha256sum" ||
       command?.name === "tail" ||
+      command?.name === "tar" ||
       command?.name === "trash" ||
       command?.name === "trash-list" ||
       command?.name === "trash-restore" ||
@@ -2117,6 +2123,15 @@ export class App {
     return `${prefix}${this.shortenTitleInput(detail, maxLength - prefix.length)}`;
   }
 
+  private renderParsedCommand(command: { name: string; args: string[] }): string {
+    const parts = [`/${command.name}`, ...command.args.map((arg) => this.renderCommandArg(arg))];
+    return parts.join(" ");
+  }
+
+  private renderCommandArg(arg: string): string {
+    return /\s/.test(arg) ? JSON.stringify(arg) : arg;
+  }
+
   private commandBaseTitle(commandName: string): string {
     switch (commandName) {
       case "help":
@@ -2157,10 +2172,28 @@ export class App {
         return "pwd";
       case "ls":
         return "ls";
+      case "cp":
+        return "cp";
+      case "ln":
+        return "ln";
       case "mkdir":
         return "mkdir";
+      case "mv":
+        return "mv";
+      case "readlink":
+        return "readlink";
       case "rmdir":
         return "rmdir";
+      case "sha256sum":
+        return "sha256sum";
+      case "head":
+        return "head";
+      case "tail":
+        return "tail";
+      case "tar":
+        return "tar";
+      case "wc":
+        return "wc";
       case "touch":
         return "touch";
       case "trash":
@@ -2230,8 +2263,17 @@ export class App {
         return "🪶";
       case "pwd":
       case "ls":
+      case "cp":
+      case "ln":
       case "mkdir":
+      case "mv":
+      case "readlink":
       case "rmdir":
+      case "sha256sum":
+      case "head":
+      case "tail":
+      case "tar":
+      case "wc":
       case "touch":
       case "trash":
       case "trash-list":
@@ -5431,15 +5473,20 @@ export class App {
   private async runLocalCommand(
     command:
       | "cat"
+      | "cp"
       | "find"
       | "head"
+      | "ln"
       | "ls"
       | "mkdir"
+      | "mv"
       | "pwd"
+      | "readlink"
       | "rg"
       | "rmdir"
       | "sha256sum"
       | "tail"
+      | "tar"
       | "trash"
       | "trash-list"
       | "trash-restore"

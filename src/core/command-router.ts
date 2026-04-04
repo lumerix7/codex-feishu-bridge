@@ -18,7 +18,11 @@ export type CommandName =
   | "git"
   | "pwd"
   | "ls"
+  | "cp"
+  | "ln"
   | "mkdir"
+  | "mv"
+  | "readlink"
   | "rmdir"
   | "touch"
   | "trash"
@@ -29,6 +33,7 @@ export type CommandName =
   | "tail"
   | "wc"
   | "sha256sum"
+  | "tar"
   | "tree"
   | "find"
   | "rg"
@@ -48,6 +53,14 @@ export interface ParsedCommand {
 export interface ParsedCommandError {
   name?: CommandName;
   parseError: string;
+}
+
+function stripMarkdownLink(arg: string): string {
+  const match = arg.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+  if (!match) {
+    return arg;
+  }
+  return match[1];
 }
 
 function tokenizeCommandText(text: string): { tokens: string[]; parseError?: string } {
@@ -135,7 +148,11 @@ export function parseCommand(message: IncomingMessage): ParsedCommand | ParsedCo
       "git",
       "pwd",
       "ls",
+      "cp",
+      "ln",
       "mkdir",
+      "mv",
+      "readlink",
       "rmdir",
       "touch",
       "trash",
@@ -146,6 +163,7 @@ export function parseCommand(message: IncomingMessage): ParsedCommand | ParsedCo
       "tail",
       "wc",
       "sha256sum",
+      "tar",
       "tree",
       "find",
       "rg",
@@ -161,7 +179,7 @@ export function parseCommand(message: IncomingMessage): ParsedCommand | ParsedCo
     if (parseError) {
       return { name: head as CommandName, parseError };
     }
-    return { name: head as CommandName, args };
+    return { name: head as CommandName, args: args.map(stripMarkdownLink) };
   }
   return undefined;
 }
