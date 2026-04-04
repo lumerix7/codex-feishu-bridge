@@ -124,7 +124,7 @@ class AppServerCodexBackend implements CodexBackend {
       formatStatusWithProject(
         this.config,
         project,
-        sessionId ? `Resuming Codex Session ${resolvedSessionId}...` : "Starting a New Codex Session..."
+        sessionId ? `Resuming Codex session ${resolvedSessionId}...` : "Starting a new Codex session..."
       )
     );
 
@@ -150,7 +150,7 @@ class AppServerCodexBackend implements CodexBackend {
             if (active.cancelled) return;
             if (Date.now() - lastActivityAt < this.config.spawnStatusIntervalMs) return;
             sendStatus(
-              `${formatStatusWithProject(this.config, project, "Codex Is Still Working...")}\nrun=${runId}`
+              `${formatStatusWithProject(this.config, project, "Codex is still working...")}\nrun=${runId}`
               
             );
           })
@@ -166,7 +166,7 @@ class AppServerCodexBackend implements CodexBackend {
               `${formatStatusWithProject(
                 this.config,
                 project,
-                "Codex App-Server Is Not Responding..."
+                "Codex app-server is not responding..."
               )}\nrun=${runId}`
             );
           })
@@ -496,7 +496,7 @@ class AppServerCodexBackend implements CodexBackend {
         if (method === "turn/started") {
           const turn = isRecord(params.turn) ? params.turn : {};
           active.turnId = String(turn.id || "").trim();
-          sendStatus(formatStatusWithProject(this.config, project, "Codex Is Thinking..."));
+          sendStatus(formatStatusWithProject(this.config, project, "Codex is thinking..."));
           if (active.cancelled && active.turnId) {
             void active.client.interruptTurn(resolvedSessionId, active.turnId).catch(() => undefined);
           }
@@ -976,8 +976,8 @@ class SpawnCodexBackend implements CodexBackend {
         this.config,
         params.project,
         params.sessionId
-          ? `Resuming Codex Session ${params.sessionId}...`
-          : "Starting a New Codex Session..."
+          ? `Resuming Codex session ${params.sessionId}...`
+          : "Starting a new Codex session..."
       )
     );
     if (this.config.runTimeoutMs > 0) {
@@ -996,7 +996,7 @@ class SpawnCodexBackend implements CodexBackend {
       active.heartbeat = setInterval(() => {
         if (Date.now() - lastActivityAt >= this.config.spawnStatusIntervalMs) {
           sendStatus(
-            `${formatStatusWithProject(this.config, params.project, "Codex Is Still Working...")}\nrun=${runId}`
+            `${formatStatusWithProject(this.config, params.project, "Codex is still working...")}\nrun=${runId}`
           );
         }
       }, this.config.spawnStatusIntervalMs);
@@ -1032,7 +1032,7 @@ class SpawnCodexBackend implements CodexBackend {
         }
 
         if (event.type === "turn.started") {
-          sendStatus(formatStatusWithProject(this.config, params.project, "Codex Is Thinking..."));
+          sendStatus(formatStatusWithProject(this.config, params.project, "Codex is thinking..."));
           return;
         }
 

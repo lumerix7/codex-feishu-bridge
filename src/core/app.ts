@@ -428,8 +428,8 @@ export class App {
       }
       await sendEarlyUpdate(
         checkUpdates
-          ? "collecting status and checking npm registry for Codex and Feishu SDK updates..."
-          : "collecting current Codex, bridge, and Feishu status..."
+          ? "Collecting status and checking npm registry for Codex and Feishu SDK updates..."
+          : "Collecting current Codex, bridge, and Feishu status..."
       );
       const project = existing?.project || this.config.project.defaultProject;
       const runtimeMeta = await getCodexRuntimeMeta(this.config.codex.home);
@@ -625,7 +625,7 @@ export class App {
         ].join("\n");
       }
       const project = existing.project || this.config.project.defaultProject;
-      await sendEarlyUpdate(`compacting Codex session \`${existing.codexSessionId}\`...`);
+      await sendEarlyUpdate(`Compacting Codex session \`${existing.codexSessionId}\`...`);
       const compactResult = await this.codex.compactSession(existing.codexSessionId, project);
       const nextBinding = { ...existing, updatedAt: new Date().toISOString() };
       await this.store.put(nextBinding);
@@ -665,7 +665,7 @@ export class App {
         return "# Summary\n\n- **Status**: `unsupported`\n- Native conversation summary is currently available only in `app-server` mode.";
       }
       const project = existing.project || this.config.project.defaultProject;
-      await sendEarlyUpdate(`reading conversation summary for session \`${existing.codexSessionId}\`...`);
+      await sendEarlyUpdate(`Reading conversation summary for session \`${existing.codexSessionId}\`...`);
       const summaryResult = await this.codex.getConversationSummary(existing.codexSessionId, project);
       const summary = asObjectRecord(summaryResult?.summary);
       return [
@@ -722,7 +722,7 @@ export class App {
         return "# Skills\n\n- **Status**: `unsupported`\n- Native skills listing is currently available only in `app-server` mode.";
       }
       const project = existing?.project || this.config.project.defaultProject;
-      await sendEarlyUpdate(`reading Codex skills for project \`${project}\`${forceReload ? " with reload" : ""}...`);
+      await sendEarlyUpdate(`Reading Codex skills for project \`${project}\`${forceReload ? " with reload" : ""}...`);
       const skillResult = await this.codex.listSkills(project, { forceReload });
       const entries = Array.isArray(skillResult?.data)
         ? skillResult.data.filter((item): item is Record<string, unknown> => isRecord(item))
@@ -770,7 +770,7 @@ export class App {
       const project = existing?.project || this.config.project.defaultProject;
       if (showCodexToml) {
         const configTomlPath = path.join(this.config.codex.home, "config.toml");
-        await sendEarlyUpdate(`reading redacted Codex config from \`${configTomlPath}\`...`);
+        await sendEarlyUpdate(`Reading redacted Codex config from \`${configTomlPath}\`...`);
         const raw = await fs.readFile(configTomlPath, "utf8").catch(() => "");
         if (!raw) {
           return [
@@ -795,7 +795,7 @@ export class App {
       if (!this.codex.readConfig) {
         return "# Config\n\n- **Status**: `unsupported`\n- Native config read is currently available only in `app-server` mode.";
       }
-      await sendEarlyUpdate(`reading Codex config for project \`${project}\`${includeLayers ? " with layers" : ""}...`);
+      await sendEarlyUpdate(`Reading Codex config for project \`${project}\`${includeLayers ? " with layers" : ""}...`);
       const configResult = await this.codex.readConfig(project, { includeLayers });
       const codexConfig = asObjectRecord(configResult?.config);
       const layers = Array.isArray(configResult?.layers)
@@ -1123,7 +1123,7 @@ export class App {
           ]
         );
       }
-      await sendEarlyUpdate(`Resolving Session \`${targetSessionId}\` for Project \`${resolvedProject}\`...`);
+      await sendEarlyUpdate(`Resolving session \`${targetSessionId}\` for project \`${resolvedProject}\`...`);
       const sessionExists = await this.codex.getSession(targetSessionId);
       if (!sessionExists) {
         return this.renderCommandError(
@@ -1294,7 +1294,7 @@ export class App {
           "`/new`, `/resume`, or `/session list`"
         );
       }
-      await sendEarlyUpdate(`Forking Session \`${targetSessionId}\` for Project \`${forkProject}\`...`);
+      await sendEarlyUpdate(`Forking session \`${targetSessionId}\` for project \`${forkProject}\`...`);
       const sessionExists = await this.codex.getSession(targetSessionId);
       if (!sessionExists) {
         return this.renderCommandError(
@@ -1477,7 +1477,7 @@ export class App {
       if (!newArgs.isEmpty()) {
         return "Usage: `/new [-C|--cd <dir>]`";
       }
-      await sendEarlyUpdate(`Creating a New Codex Session for Project \`${project}\`...`);
+      await sendEarlyUpdate(`Creating a new Codex session for project \`${project}\`...`);
       const sessionId = await this.codex.createSession(project, this.resolveTurnOptions(binding));
       const nextBinding = this.makeBinding(key, sessionId, project, binding);
       await this.store.put(nextBinding);
@@ -1500,7 +1500,7 @@ export class App {
         return "No active run for this conversation.";
       }
       this.cancelPendingApproval(key, "cancelled by /stop");
-      await sendEarlyUpdate(`stopping run \`${activeRun.runId}\`...`);
+      await sendEarlyUpdate(`Stopping run \`${activeRun.runId}\`...`);
       this.activeRuns.set(key, { ...activeRun, status: "stopping" });
       const stopped = await this.codex.stop(activeRun.runId);
       return stopped
@@ -1569,7 +1569,7 @@ export class App {
             "- Bind this conversation to another project first if you want to remove stored bindings for this project."
           ].join("\n");
         }
-        await sendEarlyUpdate(`removing stored bindings for project \`${project}\`...`);
+        await sendEarlyUpdate(`Removing stored bindings for project \`${project}\`...`);
         const removed = await this.store.deleteProject(project);
         return [
           "# Project",
@@ -1632,7 +1632,7 @@ export class App {
       const nextBinding = binding
         ? { ...binding, project, updatedAt: new Date().toISOString() }
         : this.makeBinding(key, undefined, project);
-      await sendEarlyUpdate(`binding project \`${project}\`...`);
+      await sendEarlyUpdate(`Binding project \`${project}\`...`);
       await this.store.put(nextBinding);
       return [
         "# Project",
@@ -1661,13 +1661,13 @@ export class App {
         ...(query.since ? [`since \`${query.since}\``] : []),
         ...(query.grep ? [`grep \`${query.grep}\``] : [])
       ];
-      await sendEarlyUpdate(`reading ${filters.join(", ")} for \`codex-feishu-bridge.service\`...`);
+      await sendEarlyUpdate(`Reading ${filters.join(", ")} for \`codex-feishu-bridge.service\`...`);
       return this.readBridgeLogs(query);
     }
 
     if (command?.name === "git") {
       const project = binding?.project || this.config.project.defaultProject;
-      await sendEarlyUpdate(`Running Git in Project \`${project}\`...`);
+      await sendEarlyUpdate(`Running Git in project \`${project}\`...`);
       return this.runGitCommand(project, command.args);
     }
 
@@ -1685,7 +1685,7 @@ export class App {
     ) {
       const localCommandName = command.name;
       const project = binding?.project || this.config.project.defaultProject;
-      await sendEarlyUpdate(`Running ${localCommandName} in Project \`${project}\`...`);
+      await sendEarlyUpdate(`Running ${localCommandName} in project \`${project}\`...`);
       return this.runLocalCommand(localCommandName, project, command.args);
     }
 
@@ -1714,7 +1714,7 @@ export class App {
           [`- **Choices**: ${this.approvalChoicesText()}`]
         );
       }
-      await sendEarlyUpdate(`switching approvals to \`${nextMode}\`...`);
+      await sendEarlyUpdate(`Switching approvals to \`${nextMode}\`...`);
       this.config.codex.sandboxMode = nextMode;
       await this.persistJsonSetting(["codex", "sandboxMode"], nextMode);
       return [
@@ -1753,7 +1753,7 @@ export class App {
             this.config.project.defaultProject,
             { searchEnabled: normalized === "on" }
           );
-      await sendEarlyUpdate(`switching search ${normalized}...`);
+      await sendEarlyUpdate(`Switching search ${normalized}...`);
       await this.store.put(nextBinding);
       return `# Search\n\n- **Mode**: \`${nextBinding.searchEnabled ? "on" : "off"}\``;
     }
@@ -1802,7 +1802,7 @@ export class App {
             }
           );
       await sendEarlyUpdate(
-        `switching model to \`${nextBinding.model || "(default)"}\`...`
+        `Switching model to \`${nextBinding.model || "(default)"}\`...`
       );
       await this.store.put(nextBinding);
       return `# Model\n\n- **Model**: \`${nextBinding.model || "(default)"}\``;
@@ -1836,7 +1836,7 @@ export class App {
             }
           );
       await sendEarlyUpdate(
-        `switching profile to \`${nextBinding.profile || "(default)"}\`...`
+        `Switching profile to \`${nextBinding.profile || "(default)"}\`...`
       );
       await this.store.put(nextBinding);
       return `# Profile\n\n- **Profile**: \`${nextBinding.profile || "(default)"}\``;
@@ -1852,7 +1852,7 @@ export class App {
     }
 
     const project = binding?.project || this.config.project.defaultProject;
-    await sendEarlyUpdate("Handing Off to Codex...");
+    await sendEarlyUpdate("Handing off to Codex...");
     const provisionalRunId = `pending:${randomUUID()}`;
     this.activeRuns.set(key, {
       conversationKey: key,
