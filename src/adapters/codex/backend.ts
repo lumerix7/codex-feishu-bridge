@@ -24,6 +24,7 @@ export interface CodexRunHooks {
 export interface CodexTurnOptions {
   searchEnabled?: boolean;
   model?: string;
+  reasoningEffort?: string;
   profile?: string;
   planMode?: "default" | "plan";
 }

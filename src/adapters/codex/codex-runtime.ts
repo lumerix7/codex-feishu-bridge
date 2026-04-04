@@ -977,6 +977,9 @@ class SpawnCodexBackend implements CodexBackend {
     if (params.options?.searchEnabled !== undefined) {
       args.push("-c", `web_search="${params.options.searchEnabled ? "live" : "disabled"}"`);
     }
+    if (params.options?.reasoningEffort) {
+      args.push("-c", `model_reasoning_effort="${params.options.reasoningEffort}"`);
+    }
     if (params.options?.model) {
       args.push("-m", params.options.model);
     }

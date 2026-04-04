@@ -91,11 +91,13 @@ export class AppServerSessionClient {
   async startTurn(sessionId: string, prompt: string, options?: CodexTurnOptions): Promise<string> {
     await this.ensureStarted();
     const collaborationMode = await this.buildCollaborationMode(options);
+    const config = buildSessionConfig(options, { skipReasoningEffort: Boolean(collaborationMode) });
     const result = await this.request("turn/start", {
       threadId: sessionId,
       cwd: this.project,
       approvalPolicy: this.appServerApprovalPolicy(),
       ...(options?.model ? { model: options.model } : {}),
+      ...(config ? { config } : {}),
       ...(collaborationMode ? { collaborationMode } : {}),
       input: [
         {
@@ -403,7 +405,7 @@ export class AppServerSessionClient {
       mode,
       settings: {
         model,
-        reasoning_effort: readStringValue(preset.reasoning_effort) || null,
+        reasoning_effort: options?.reasoningEffort || readStringValue(preset.reasoning_effort) || null,
         developer_instructions: null
       }
     };
@@ -636,9 +638,16 @@ function sleep(delayMs: number): Promise<void> {
   });
 }
 
-function buildSessionConfig(options?: CodexTurnOptions): Record<string, unknown> | undefined {
-  if (options?.searchEnabled === undefined) return undefined;
-  return {
-    web_search: options.searchEnabled ? "live" : "disabled"
-  };
+function buildSessionConfig(
+  options?: CodexTurnOptions,
+  behavior?: { skipReasoningEffort?: boolean }
+): Record<string, unknown> | undefined {
+  const config: Record<string, unknown> = {};
+  if (options?.searchEnabled !== undefined) {
+    config.web_search = options.searchEnabled ? "live" : "disabled";
+  }
+  if (options?.reasoningEffort && !behavior?.skipReasoningEffort) {
+    config.model_reasoning_effort = options.reasoningEffort;
+  }
+  return Object.keys(config).length > 0 ? config : undefined;
 }

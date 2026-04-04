@@ -13,6 +13,7 @@ interface LegacySessionBinding {
   project?: string;
   searchEnabled?: boolean;
   model?: string;
+  reasoningEffort?: string;
   profile?: string;
   planMode?: "default" | "plan";
   createdAt?: string;
@@ -64,6 +65,7 @@ export class BindingStore {
             project: item.project || item.workspace || "",
             searchEnabled: item.searchEnabled,
             model: item.model,
+            reasoningEffort: item.reasoningEffort,
             profile: item.profile,
             planMode: item.planMode,
             createdAt: item.createdAt || new Date(0).toISOString(),
