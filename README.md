@@ -40,7 +40,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 
 ### Core
 
-- `/help [-h|--help]` show commands
+- `/help` show commands
 - `/status [check-update] [-h|--help]` show current session and run state
 - `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
 - `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork

@@ -368,7 +368,7 @@ export class App {
         "",
         "## Core",
         "",
-        "- `/help [-h|--help]` show commands",
+        "- `/help` show commands",
         "- `/status [check-update] [-h|--help]` show current session and run state",
         "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
         "- `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork",
@@ -509,23 +509,14 @@ export class App {
         `- **Permissions**: \`${this.formatSandboxLabel(this.config.codex.sandboxMode)}\``,
         `- **Agents.md**: \`${hasAgents ? agentsPath : "<none>"}\``,
         ...(accountSummary ? [`- **Account**: ${accountSummary}`] : []),
-        `- **Session**: \`${sessionId}\``,
-        ...(usage ? [this.formatContextWindowStatusLine(usage)] : []),
-        ...(rateLimits ? this.formatRateLimitStatusLines(rateLimits) : []),
-        "",
-        "## Bridge",
-        "",
-        `- **Conversation**: \`${key}\``,
-        `- **Backend**: \`${this.codex.mode}\``,
-        `- **Project Trusted**: \`${trustedProjects.includes(project) ? "yes" : "no"}\``,
         `- **Auth**: \`${runtimeMeta.authMode || "(unknown)"}\``,
-        `- **Search**: \`${existing?.searchEnabled ? "on" : "off"}\``,
-        `- **Profile**: \`${existing?.profile || "(default)"}\``,
-        `- **Plan**: \`${existing?.planMode || "default"}\``,
-        `- **Run**: \`${activeRun ? `${activeRun.status}:${activeRun.runId}` : "idle"}\``,
+        `- **Session**: \`${sessionId}\``,
         `- **Session Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
         `- **Session Cwd**: \`${session?.cwd || "(unknown)"}\``,
         `- **Session About**: ${session?.preview || "(no preview)"}`,
+        `- **Plan**: \`${existing?.planMode || "default"}\``,
+        ...(usage ? [this.formatContextWindowStatusLine(usage)] : []),
+        ...(rateLimits ? this.formatRateLimitStatusLines(rateLimits) : []),
         ...(thread
           ? [
               `- **Thread Name**: ${this.readString(thread.name) || "(none)"}`,
@@ -533,6 +524,15 @@ export class App {
               `- **Thread Source**: \`${this.readString(thread.source) || "(unknown)"}\``
             ]
           : []),
+        "",
+        "## Bridge",
+        "",
+        `- **Conversation**: \`${key}\``,
+        `- **Backend**: \`${this.codex.mode}\``,
+        `- **Project Trusted**: \`${trustedProjects.includes(project) ? "yes" : "no"}\``,
+        `- **Search**: \`${existing?.searchEnabled ? "on" : "off"}\``,
+        `- **Profile**: \`${existing?.profile || "(default)"}\``,
+        `- **Run**: \`${activeRun ? `${activeRun.status}:${activeRun.runId}` : "idle"}\``,
         ...(reroute
           ? [`- **Model Reroute**: \`${reroute.fromModel}\` -> \`${reroute.toModel}\`${reroute.reason ? ` (${reroute.reason})` : ""}`]
           : []),
@@ -542,7 +542,7 @@ export class App {
         "",
         "## Feishu",
         "",
-        `- **Sdk**: \`${feishuSdkVersion || "(unknown)"}\``,
+        `- **SDK**: \`${feishuSdkVersion || "(unknown)"}\``,
         ...(feishuDiagnostics ? [`- **Status**: ${this.formatFeishuDoctorVerdict(feishuDiagnostics)}`] : []),
         ...(feishuDiagnostics ? [`- **Ws**: ${this.formatFeishuWsSummary(feishuDiagnostics)}`] : []),
         ...(feishuDiagnostics ? [`- **Send**: ${this.formatFeishuSendSummary(feishuDiagnostics)}`] : [])
@@ -1466,9 +1466,16 @@ export class App {
         `- **Project**: \`${project}\``,
         ...(effectiveSource ? [`- **Source**: \`${effectiveSource}\``] : []),
         ...(effectiveModel ? [`- **Model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`] : []),
-        `- **Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
-        `- **Cwd**: \`${session?.cwd || "(unknown)"}\``,
-        `- **About**: ${session?.preview || "(no preview)"}`
+        `- **Session Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
+        `- **Session Cwd**: \`${session?.cwd || "(unknown)"}\``,
+        `- **Session About**: ${session?.preview || "(no preview)"}`,
+        ...(thread
+          ? [
+              `- **Thread Name**: ${this.readString(thread.name) || "(none)"}`,
+              `- **Thread Status**: \`${this.readString(thread.status) || "(unknown)"}\``,
+              `- **Thread Source**: \`${this.readString(thread.source) || "(unknown)"}\``
+            ]
+          : [])
       ].join("\n");
     }
 
@@ -2009,6 +2016,9 @@ export class App {
 
   private buildStartupReadyMessage(title = "Bridge Ready", currentProject?: string): string {
     const feishuDiagnostics = this.feishu?.diagnostics();
+    const feishuStatus = feishuDiagnostics
+      ? this.formatFeishuStartupStatusSummary(feishuDiagnostics)
+      : undefined;
     return [
       `- **Backend**: \`${this.codex.mode}\``,
       `- **Profile**: \`${this.config.codex.profileMode}\``,
@@ -2016,7 +2026,7 @@ export class App {
       ...(currentProject ? [`- **Current Project**: \`${currentProject}\``] : []),
       `- **Sandbox**: \`${this.config.codex.sandboxMode}\``,
       `- **Search Default**: \`${this.config.project.defaultSearchEnabled ? "on" : "off"}\``,
-      ...(feishuDiagnostics ? [`- **Feishu**: ${this.formatFeishuStatusSummary(feishuDiagnostics)}`] : [])
+      ...(feishuStatus ? [`- **Feishu**: ${feishuStatus}`] : [])
     ].join("\n");
   }
 
@@ -4502,6 +4512,12 @@ export class App {
     return `${this.formatFeishuDoctorVerdict(diagnostics)}; ${this.formatFeishuWsSummary(diagnostics)}; ${this.formatFeishuSendSummary(diagnostics)}`;
   }
 
+  private formatFeishuStartupStatusSummary(
+    diagnostics: ReturnType<FeishuGateway["diagnostics"]>
+  ): string {
+    return `${this.formatFeishuStartupVerdict(diagnostics)}; ${this.formatFeishuWsSummary(diagnostics)}; ${this.formatFeishuSendSummary(diagnostics)}`;
+  }
+
   private formatFeishuDoctorVerdict(
     diagnostics: ReturnType<FeishuGateway["diagnostics"]>
   ): string {
@@ -4515,6 +4531,21 @@ export class App {
       return "`attention` (outbound failures seen)";
     }
     return "`ok`";
+  }
+
+  private formatFeishuStartupVerdict(
+    diagnostics: ReturnType<FeishuGateway["diagnostics"]>
+  ): string {
+    if (!diagnostics.wsConnectedOnce) {
+      return "⚠️ not connected yet";
+    }
+    if (diagnostics.wsReconnecting) {
+      return "⚠️ reconnecting";
+    }
+    if (diagnostics.outboundFailureCount > 0) {
+      return "⚠️ outbound failures seen";
+    }
+    return "✅ ok";
   }
 
   private formatFeishuWsSummary(diagnostics: ReturnType<FeishuGateway["diagnostics"]>): string {
