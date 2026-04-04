@@ -57,7 +57,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project
 - `/approvals [mode] [-h|--help]` show or change Codex approvals for future runs
 - `/search [on|off] [-h|--help]` show or change live web search for this conversation
-- `/model [--list [--no-hidden]|name|clear|clear-reasoning] [--reasoning <level>] [-h|--help]` show, list, or change the Codex model for this conversation
+- `/model [--list [--no-hidden]|name] [--reasoning <level>] [-h|--help]` show, list, or change the native Codex model for the current session
 - `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation
 - `/plan [mode] [-h|--help]` show or change the Codex collaboration mode for this conversation
 

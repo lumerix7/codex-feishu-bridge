@@ -6,20 +6,6 @@ interface StoreShape {
   bindings: SessionBinding[];
 }
 
-interface LegacySessionBinding {
-  conversationKey: string;
-  codexSessionId?: string;
-  workspace?: string;
-  project?: string;
-  searchEnabled?: boolean;
-  model?: string;
-  reasoningEffort?: string;
-  profile?: string;
-  planMode?: "default" | "plan";
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 export class BindingStore {
   constructor(private readonly filePath: string) {}
 
@@ -55,7 +41,19 @@ export class BindingStore {
   private async read(): Promise<StoreShape> {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(raw) as { bindings?: LegacySessionBinding[] };
+      const parsed = JSON.parse(raw) as {
+        bindings?: Array<{
+          conversationKey: string;
+          codexSessionId?: string;
+          workspace?: string;
+          project?: string;
+          searchEnabled?: boolean;
+          profile?: string;
+          planMode?: "default" | "plan";
+          createdAt?: string;
+          updatedAt?: string;
+        }>;
+      };
       return {
         bindings: (parsed.bindings || [])
           .filter((item) => item.conversationKey && (item.project || item.workspace))
@@ -64,8 +62,6 @@ export class BindingStore {
             codexSessionId: item.codexSessionId,
             project: item.project || item.workspace || "",
             searchEnabled: item.searchEnabled,
-            model: item.model,
-            reasoningEffort: item.reasoningEffort,
             profile: item.profile,
             planMode: item.planMode,
             createdAt: item.createdAt || new Date(0).toISOString(),

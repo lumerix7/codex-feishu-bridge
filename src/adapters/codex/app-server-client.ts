@@ -263,6 +263,18 @@ export class AppServerSessionClient {
     return isRecord(result) ? result : undefined;
   }
 
+  async updateSessionOptions(
+    sessionId: string,
+    options: Pick<CodexTurnOptions, "model" | "reasoningEffort">
+  ): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("thread/resume", {
+      ...this.buildThreadParams(this.project, options),
+      threadId: sessionId
+    });
+    return isRecord(result) ? result : undefined;
+  }
+
   async readAccountRateLimits(): Promise<Record<string, unknown> | undefined> {
     await this.ensureStarted();
     const result = await this.request("account/rateLimits/read", {});
@@ -646,7 +658,7 @@ function buildSessionConfig(
   if (options?.searchEnabled !== undefined) {
     config.web_search = options.searchEnabled ? "live" : "disabled";
   }
-  if (options?.reasoningEffort && !behavior?.skipReasoningEffort) {
+  if (options?.reasoningEffort !== undefined && !behavior?.skipReasoningEffort) {
     config.model_reasoning_effort = options.reasoningEffort;
   }
   return Object.keys(config).length > 0 ? config : undefined;

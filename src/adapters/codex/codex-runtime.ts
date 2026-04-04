@@ -810,6 +810,18 @@ class AppServerCodexBackend implements CodexBackend {
     }
   }
 
+  async updateSessionOptions(
+    sessionId: string,
+    project: string,
+    options: Pick<CodexTurnOptions, "model" | "reasoningEffort">
+  ): Promise<Record<string, unknown> | undefined> {
+    const clientInfo = await this.getOrCreateClient(project, sessionId, undefined);
+    await clientInfo.client.updateSessionOptions(sessionId, options);
+    const result = await clientInfo.client.readThread(sessionId, false).catch(() => undefined);
+    this.scheduleClientShutdown(project, sessionId, clientInfo.client);
+    return result;
+  }
+
   private async getOrCreateClient(
     project: string,
     sessionId: string | undefined,

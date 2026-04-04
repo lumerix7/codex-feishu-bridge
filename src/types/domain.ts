@@ -6,8 +6,6 @@ export interface SessionBinding {
   codexSessionId?: CodexSessionId;
   project: string;
   searchEnabled?: boolean;
-  model?: string;
-  reasoningEffort?: string;
   profile?: string;
   planMode?: "default" | "plan";
   createdAt: string;

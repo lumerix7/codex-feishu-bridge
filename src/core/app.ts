@@ -100,6 +100,8 @@ export class App {
   private readonly latestPlan = new Map<string, { explanation?: string; plan: Array<Record<string, unknown>> }>();
   private readonly latestModelReroute = new Map<string, { fromModel: string; toModel: string; reason?: string }>();
   private readonly latestTurnDiff = new Map<string, { turnId: string; diff: string }>();
+  private readonly latestSessionModelState = new Map<string, { model?: string; reasoning?: string }>();
+  private readonly latestProjectModelState = new Map<string, { model?: string; reasoning?: string }>();
   private latestAccountUpdate?: Record<string, unknown>;
   private latestRateLimits?: Record<string, unknown>;
 
@@ -385,7 +387,7 @@ export class App {
         "- `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project",
         "- `/approvals [mode] [-h|--help]` show or change Codex approvals for future runs",
         "- `/search [on|off] [-h|--help]` show or change live web search for this conversation",
-        "- `/model [--list [--no-hidden]|name|clear|clear-reasoning] [--reasoning <level>] [-h|--help]` show, list, or change the Codex model for this conversation",
+        "- `/model [--list [--no-hidden]|name] [--reasoning <level>] [-h|--help]` show, list, or change the native Codex model for the current session",
         "- `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation",
         "- `/plan [mode] [-h|--help]` show or change the Codex collaboration mode for this conversation",
         "",
@@ -483,6 +485,11 @@ export class App {
       const usage = existing?.codexSessionId ? this.latestTokenUsage.get(existing.codexSessionId) : undefined;
       const reroute = existing?.codexSessionId ? this.latestModelReroute.get(existing.codexSessionId) : undefined;
       const plan = existing?.codexSessionId ? this.latestPlan.get(existing.codexSessionId) : undefined;
+      const configResult =
+        this.codex.readConfig
+          ? await this.codex.readConfig(project, { includeLayers: false }).catch(() => undefined)
+          : undefined;
+      const codexConfig = asObjectRecord(configResult?.config);
       const agentsPath = path.join(project, "AGENTS.md");
       const hasAgents = await fs
         .stat(agentsPath)
@@ -490,16 +497,16 @@ export class App {
         .catch(() => false);
       const effectiveModel =
         reroute?.toModel ||
-        existing?.model ||
         this.readThreadModel(threadInfo, thread) ||
+        this.readString(codexConfig.model) ||
         "(default)";
       const planType =
         this.readString(account.planType) || this.readString(accountUpdate.planType) || "(unknown)";
       const accountSummary = this.formatAccountSummary(account, planType);
       const feishuDiagnostics = this.feishu?.diagnostics();
       const effectiveReasoning =
-        existing?.reasoningEffort ||
         this.readThreadReasoningEffort(threadInfo, thread) ||
+        this.readString(codexConfig.model_reasoning_effort) ||
         "(default)";
       return [
         "# Bridge Status",
@@ -571,6 +578,11 @@ export class App {
       if (!thread) {
         return "# Thread\n\n- **Error**: app-server thread details are unavailable for the current backend/session.";
       }
+      const configResult =
+        this.codex.readConfig
+          ? await this.codex.readConfig(project, { includeLayers: false }).catch(() => undefined)
+          : undefined;
+      const codexConfig = asObjectRecord(configResult?.config);
       const turns = Array.isArray(thread.turns)
         ? thread.turns.filter((item): item is Record<string, unknown> => isRecord(item))
         : [];
@@ -583,8 +595,8 @@ export class App {
         `- **Name**: ${this.readString(thread.name) || "(none)"}`,
         `- **Status**: \`${this.formatThreadStatus(thread.status)}\``,
         `- **Source**: \`${this.formatSessionSource(thread.source)}\``,
-        `- **Model**: \`${this.readThreadModel(threadInfo, thread) || "(default)"}\``,
-        `- **Reasoning**: \`${this.readThreadReasoningEffort(threadInfo, thread) || "(default)"}\``,
+        `- **Model**: \`${this.readThreadModel(threadInfo, thread) || this.readString(codexConfig.model) || "(default)"}\``,
+        `- **Reasoning**: \`${this.readThreadReasoningEffort(threadInfo, thread) || this.readString(codexConfig.model_reasoning_effort) || "(default)"}\``,
         `- **Cwd**: \`${this.readString(thread.cwd) || project}\``,
         `- **Path**: \`${this.readString(thread.path) || "(none)"}\``,
         `- **Preview**: ${this.readString(thread.preview) || "(none)"}`,
@@ -1159,6 +1171,7 @@ export class App {
         existing
       );
       await this.store.put(binding);
+      await this.readCurrentModelState(resolvedProject, targetSessionId).catch(() => undefined);
       const sections = [
         "# Resume Session",
         "",
@@ -1461,9 +1474,8 @@ export class App {
       const reroute = this.latestModelReroute.get(existing.codexSessionId);
       const effectiveModel =
         reroute?.toModel ||
-        existing.model ||
-        this.readString(threadInfo?.model) ||
-        this.readString(thread?.model);
+        this.readThreadModel(threadInfo, thread);
+      const effectiveReasoning = this.readThreadReasoningEffort(threadInfo, thread);
       const effectiveSource = this.formatThreadSource(threadInfo?.source ?? thread?.source);
       return [
         "# Current Session",
@@ -1472,6 +1484,7 @@ export class App {
         `- **Project**: \`${project}\``,
         ...(effectiveSource ? [`- **Source**: \`${effectiveSource}\``] : []),
         ...(effectiveModel ? [`- **Model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`] : []),
+        ...(effectiveReasoning ? [`- **Reasoning**: \`${effectiveReasoning}\``] : []),
         `- **Session Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
         `- **Session Cwd**: \`${session?.cwd || "(unknown)"}\``,
         `- **Session About**: ${session?.preview || "(no preview)"}`,
@@ -1509,14 +1522,13 @@ export class App {
       const sessionId = await this.codex.createSession(project, this.resolveTurnOptions(binding));
       const nextBinding = this.makeBinding(key, sessionId, project, binding);
       await this.store.put(nextBinding);
+      await this.readCurrentModelState(project, sessionId).catch(() => undefined);
       return [
         "# New Session",
         "",
         `- **Session**: \`${sessionId}\``,
         `- **Project**: \`${nextBinding.project}\``,
         `- **Search**: \`${nextBinding.searchEnabled ? "on" : "off"}\``,
-        `- **Model**: \`${nextBinding.model || "(default)"}\``,
-        `- **Reasoning**: \`${nextBinding.reasoningEffort || "(default)"}\``,
         `- **Profile**: \`${nextBinding.profile || "(default)"}\``,
         `- **Plan**: \`${nextBinding.planMode || "default"}\``
       ].join("\n");
@@ -1804,14 +1816,15 @@ export class App {
           : undefined;
         return this.modelListText(liveModels);
       }
-      const current = binding?.model || "(default)";
-      const currentReasoning = binding?.reasoningEffort || "(default)";
+      const project = binding?.project || this.config.project.defaultProject;
+      const currentState = await this.readCurrentModelState(project, binding?.codexSessionId);
       if (modelArgs.isEmpty()) {
         return [
           "# Model",
           "",
-          `- **Model**: \`${current}\``,
-          `- **Reasoning**: \`${currentReasoning}\``
+          `- **Model**: \`${currentState.model || "(default)"}\``,
+          `- **Reasoning**: \`${currentState.reasoning || "(default)"}\``,
+          `- **Source**: \`${currentState.source}\``
         ].join("\n");
       }
       if (activeRun) {
@@ -1822,80 +1835,52 @@ export class App {
         return this.renderCommandError(
           "Model",
           "missing value for `--reasoning <level>`",
-          "Usage: `/model [--list [--no-hidden]|name|clear|clear-reasoning] [--reasoning <level>]`"
+          "Usage: `/model [--list [--no-hidden]|name] [--reasoning <level>]`"
         );
       }
       const remainingModelArgs = modelArgs.remaining();
       const nextValue = remainingModelArgs.join(" ").trim();
-      const firstArg = remainingModelArgs[0]?.toLowerCase();
-      const clearsModel = ["clear", "default", "reset"].includes(nextValue.toLowerCase());
-      const clearsReasoning = firstArg === "clear-reasoning";
       if (!nextValue && nextReasoning === undefined) {
         return this.renderCommandError(
           "Model",
-          "missing model name or reasoning override",
-          "Usage: `/model [--list [--no-hidden]|name|clear|clear-reasoning] [--reasoning <level>]`"
+          "missing model name or reasoning value",
+          "Usage: `/model [--list [--no-hidden]|name] [--reasoning <level>]`"
         );
       }
-      if (
-        clearsReasoning &&
-        (nextReasoning !== undefined || remainingModelArgs.length > 1)
-      ) {
-        return this.renderCommandError(
-          "Model",
-          "`clear-reasoning` does not accept extra arguments",
-          "Usage: `/model clear-reasoning`"
-        );
-      }
-      if (
-        !clearsReasoning &&
-        nextValue &&
-        nextValue.startsWith("-")
-      ) {
+      if (nextValue && nextValue.startsWith("-")) {
         return this.renderCommandError(
           "Model",
           `unsupported model argument \`${nextValue}\``,
-          "Usage: `/model [--list [--no-hidden]|name|clear|clear-reasoning] [--reasoning <level>]`"
+          "Usage: `/model [--list [--no-hidden]|name] [--reasoning <level>]`"
         );
       }
-      const nextBinding = binding
-        ? {
-            ...binding,
-            model: clearsModel ? undefined : clearsReasoning || !nextValue ? binding.model : nextValue,
-            reasoningEffort:
-              clearsReasoning
-                ? undefined
-                : nextReasoning !== undefined
-                  ? nextReasoning
-                  : binding.reasoningEffort,
-            updatedAt: new Date().toISOString()
-          }
-        : this.makeBinding(
-            key,
-            undefined,
-            this.config.project.defaultProject,
-            {
-              model: clearsModel ? undefined : clearsReasoning || !nextValue ? undefined : nextValue,
-              reasoningEffort: clearsReasoning ? undefined : nextReasoning
-            }
-          );
+      if (!binding?.codexSessionId || !this.codex.updateSessionOptions) {
+        return this.renderCommandError(
+          "Model",
+          "a bound app-server session is required to change model settings",
+          "`/new` or `/resume` first, then `/model ...`"
+        );
+      }
       const changedParts = [
-        nextValue ? `model to \`${nextBinding.model || "(default)"}\`` : "",
-        nextReasoning !== undefined || clearsReasoning
-          ? `reasoning to \`${nextBinding.reasoningEffort || "(default)"}\``
-          : ""
+        nextValue ? `model to \`${nextValue}\`` : "",
+        nextReasoning !== undefined ? `reasoning to \`${nextReasoning}\`` : ""
       ].filter(Boolean);
       await sendEarlyUpdate(
         changedParts.length > 0
           ? `Switching ${changedParts.join(" and ")}...`
           : "Switching model settings..."
       );
-      await this.store.put(nextBinding);
+      await this.codex.updateSessionOptions(binding.codexSessionId, project, {
+        ...(nextValue ? { model: nextValue } : {}),
+        ...(nextReasoning !== undefined ? { reasoningEffort: nextReasoning } : {})
+      });
+      const nextState = await this.readCurrentModelState(project, binding.codexSessionId);
       return [
         "# Model",
         "",
-        `- **Model**: \`${nextBinding.model || "(default)"}\``,
-        `- **Reasoning**: \`${nextBinding.reasoningEffort || "(default)"}\``
+        `- **Model**: \`${nextState.model || "(default)"}\``,
+        `- **Reasoning**: \`${nextState.reasoning || "(default)"}\``,
+        `- **Source**: \`${nextState.source}\``
       ].join("\n");
     }
 
@@ -2067,9 +2052,10 @@ export class App {
     if (!this.config.feishu.startupNotifyChatId) return;
     try {
       const binding = await this.store.get(`p2p:${this.config.feishu.startupNotifyChatId}`);
+      const footer = await this.buildStartupReadyFooter(binding);
       await this.feishu?.sendStartupReady(
         this.buildStartupReadyMessage(title, binding?.project),
-        this.buildIsoFooter(),
+        footer,
         title,
         false
       );
@@ -2390,11 +2376,7 @@ export class App {
 
   private footerForMessage(commandName: string | undefined, binding?: SessionBinding): string | undefined {
     if (!commandName) return undefined;
-    if (this.commandUsesCodexFooter(commandName)) {
-      return `${this.buildIsoFooter()}  |  ${this.buildCodexFooterSummary(binding, true)}`;
-    }
-    const project = binding?.project || this.config.project.defaultProject;
-    return `${this.buildIsoFooter()}  |  ${project}`;
+    return `${this.buildIsoFooter()}  |  ${this.buildCodexFooterSummary(binding, true)}`;
   }
 
   private footerForCodexReply(binding?: SessionBinding): string {
@@ -2402,41 +2384,49 @@ export class App {
   }
 
   private buildCodexFooterSummary(binding?: SessionBinding, includeSession = false): string {
-    const project = binding?.project || this.config.project.defaultProject;
+    return this.buildCodexFooterSummaryFromState(
+      binding?.project || this.config.project.defaultProject,
+      includeSession ? binding?.codexSessionId : undefined,
+      binding?.codexSessionId
+    );
+  }
+
+  private buildCodexFooterSummaryFromState(
+    project: string,
+    displayedSessionId?: string,
+    sessionStateId?: string
+  ): string {
+    const sessionState = sessionStateId
+      ? this.latestSessionModelState.get(sessionStateId)
+      : undefined;
+    const projectState = this.latestProjectModelState.get(project);
     const model =
-      (binding?.codexSessionId ? this.latestModelReroute.get(binding.codexSessionId)?.toModel : undefined) ||
-      binding?.model;
-    const reasoning = binding?.reasoningEffort;
-    const session = includeSession ? binding?.codexSessionId : undefined;
-    const mode = this.codexFooterModeLabel();
+      (sessionStateId ? this.latestModelReroute.get(sessionStateId)?.toModel : undefined) ||
+      sessionState?.model ||
+      projectState?.model;
+    const reasoning = sessionState?.reasoning || projectState?.reasoning;
+    const approval = this.codexFooterModeLabel();
     const modelAndReasoning =
       model && reasoning
         ? `${model} ${reasoning}`
         : model
           ? model
           : reasoning
-            ? `reasoning=${reasoning}`
+            ? reasoning
             : undefined;
-    return [modelAndReasoning, session, mode, project]
+    return [modelAndReasoning, project, displayedSessionId, approval]
       .filter((item): item is string => Boolean(item))
       .join(" · ");
   }
 
-  private commandUsesCodexFooter(commandName: string): boolean {
-    return [
-      "status",
-      "thread",
-      "compact",
-      "summary",
-      "diff",
-      "skills",
-      "config",
-      "session",
-      "new",
-      "fork",
-      "resume",
-      "plan"
-    ].includes(commandName);
+  private async buildStartupReadyFooter(binding?: SessionBinding): Promise<string> {
+    const targetProject = binding?.project || this.config.project.defaultProject;
+    await this.readCurrentModelState(targetProject, binding?.codexSessionId).catch(() => undefined);
+    return `${this.buildIsoFooter()}  |  ${this.buildCodexFooterSummaryFromState(
+      targetProject,
+      binding?.codexSessionId,
+      binding?.codexSessionId
+    )}`;
   }
 
   private shouldIncludeRawMarkdownForMessage(commandName?: string): boolean {
@@ -2483,8 +2473,6 @@ export class App {
       codexSessionId,
       project,
       searchEnabled: defaults?.searchEnabled ?? this.config.project.defaultSearchEnabled,
-      model: defaults?.model,
-      reasoningEffort: defaults?.reasoningEffort,
       profile: defaults?.profile,
       planMode: defaults?.planMode,
       createdAt: defaults?.createdAt || now,
@@ -2495,11 +2483,36 @@ export class App {
   private resolveTurnOptions(binding?: Partial<SessionBinding>) {
     return {
       searchEnabled: binding?.searchEnabled ?? this.config.project.defaultSearchEnabled,
-      model: binding?.model,
-      reasoningEffort: binding?.reasoningEffort,
       profile: binding?.profile,
       planMode: binding?.planMode
     };
+  }
+
+  private async readCurrentModelState(
+    project: string,
+    sessionId?: string
+  ): Promise<{ model?: string; reasoning?: string; source: "thread" | "config" | "unknown" }> {
+    if (sessionId && this.codex.readThread) {
+      const threadInfo = await this.codex.readThread(sessionId, project, false).catch(() => undefined);
+      const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+      const model = this.readThreadModel(threadInfo, thread);
+      const reasoning = this.readThreadReasoningEffort(threadInfo, thread);
+      if (model || reasoning) {
+        this.latestSessionModelState.set(sessionId, { model, reasoning });
+        return { model, reasoning, source: "thread" };
+      }
+    }
+    if (this.codex.readConfig) {
+      const configResult = await this.codex.readConfig(project, { includeLayers: false }).catch(() => undefined);
+      const codexConfig = asObjectRecord(configResult?.config);
+      const model = this.readString(codexConfig.model);
+      const reasoning = this.readString(codexConfig.model_reasoning_effort);
+      if (model || reasoning) {
+        this.latestProjectModelState.set(project, { model, reasoning });
+        return { model, reasoning, source: "config" };
+      }
+    }
+    return { source: "unknown" };
   }
 
   private async resolveProject(
@@ -5016,34 +5029,28 @@ export class App {
     return [
       "# Model",
       "",
-      "Show or change the Codex model override for this conversation.",
+      "Show or change the native Codex model and reasoning for the current session.",
       "",
       "## Usage",
       "",
-      "- `/model [--list [--no-hidden]|name|clear|clear-reasoning] [--reasoning <level>]`",
+      "- `/model [--list [--no-hidden]|name] [--reasoning <level>]`",
       "- `/model -h|--help`",
       "",
       "## Options",
       "",
       "- `--list` show available model IDs from Codex app-server when supported",
       "- `--no-hidden` hide models that app-server marks as hidden",
-      "- `name` set the conversation-level model override",
-      "- `--reasoning <level>` set the conversation-level reasoning override",
+      "- `name` set the native session model override",
+      "- `--reasoning <level>` set the native session reasoning override",
       "- `level` is typically one of `low`, `medium`, `high`, or `xhigh`; actual support depends on the selected model",
-      "- `clear` remove the conversation-level model override",
-      "- `clear-reasoning` remove the conversation-level reasoning override",
-      "- `default` remove the conversation-level model override",
-      "- `reset` remove the conversation-level model override",
       "- `-h, --help` show model help",
       "",
       "## Behavior",
       "",
-      "- `clear`, `default`, and `reset` remove the conversation-level model override.",
-      "- `clear-reasoning` removes the conversation-level reasoning override.",
       `- \`/model --list\` fetches up to \`${this.config.codex.modelListMaxCount}\` models and includes hidden models by default.`,
       "- Use `/model --list` to see the native reasoning options each model advertises.",
-      "- If no conversation-level reasoning override is set, the bridge leaves reasoning unset and Codex uses its normal default behavior.",
-      "- The configured model and reasoning overrides are used for future turns.",
+      "- `/model` reads the current bound session first, then falls back to native Codex config when the session does not report model or reasoning.",
+      "- Changing model settings requires a bound app-server session.",
       "",
       "## Examples",
       "",
@@ -5052,8 +5059,7 @@ export class App {
       "- `/model --list --no-hidden`",
       "- `/model gpt-5.4`",
       "- `/model --reasoning high`",
-      "- `/model gpt-5.4 --reasoning medium`",
-      "- `/model clear-reasoning`"
+      "- `/model gpt-5.4 --reasoning medium`"
     ].join("\n");
   }
 
@@ -5103,8 +5109,8 @@ export class App {
         `- The bridge fetches up to \`${this.config.codex.modelListMaxCount}\` models and follows \`nextCursor\` until that cap is reached.`,
         "- Hidden models are included by default; use `/model --list --no-hidden` to hide them.",
         "- Exact availability still depends on your current account and server-side routing.",
-        "- Use `/model <name>` to set one for future turns in this conversation.",
-        "- Use `/model clear` to remove the override."
+        "- Use `/model <name>` to update the current native session.",
+        "- Use `/model --reasoning <level>` to update the current native session reasoning."
       ].join("\n");
     }
 
@@ -5124,8 +5130,8 @@ export class App {
       "- This is a bridge-side fallback list because a live app-server model list was unavailable.",
       `- The checked-in bridge cap is \`${this.config.codex.modelListMaxCount}\` models.`,
       "- Exact availability depends on your current Codex account, backend, and server-side routing.",
-      "- Use `/model <name>` to set one for future turns in this conversation.",
-      "- Use `/model clear` to remove the override."
+      "- Use `/model <name>` to update the current native session.",
+      "- Use `/model --reasoning <level>` to update the current native session reasoning."
     ].join("\n");
   }
 

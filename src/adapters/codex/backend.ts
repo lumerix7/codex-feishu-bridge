@@ -96,4 +96,9 @@ export interface CodexBackend {
     project: string,
     options?: { includeLayers?: boolean }
   ): Promise<Record<string, unknown> | undefined>;
+  updateSessionOptions?(
+    sessionId: string,
+    project: string,
+    options: Pick<CodexTurnOptions, "model" | "reasoningEffort">
+  ): Promise<Record<string, unknown> | undefined>;
 }
