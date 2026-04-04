@@ -58,7 +58,8 @@
       "$HOME"
     ],
     "defaultPath": "$HOME",
-    "defaultSearchEnabled": true
+    "defaultSearchEnabled": true,
+    "listMaxCount": 100
   },
   "status": {
     "includeProject": true

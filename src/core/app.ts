@@ -391,7 +391,7 @@ export class App {
         "",
         "## Project",
         "",
-        "- `/project [list [options]|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings",
+        "- `/project [list|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings",
         "- `/git [args...]` run `git` directly in the current bound project",
         "- `/cat`, `/find`, `/head`, `/ls`, `/pwd`, `/rg`, `/sha256sum`, `/tail`, `/tree`, `/wc` run local project commands",
         "",
@@ -1552,19 +1552,14 @@ export class App {
 
       if (projectSubcommand === "list") {
         const listArgs = new ArgCursor(projectArgs.remaining());
-        const mode = listArgs.takeFlag("--trusted")
-          ? "trusted"
-          : listArgs.takeFlag("--all")
-            ? "all"
-            : "default";
         if (!listArgs.isEmpty()) {
           return this.renderCommandError(
             "Project",
             `unsupported project list argument \`${listArgs.peek()}\``,
-            "`/project list [--all|--trusted]`"
+            "`/project list`"
           );
         }
-        const projects = await this.listProjects(mode, currentProject, trustedProjects);
+        const projects = await this.listProjects(currentProject, trustedProjects);
         if (projects.length === 0) {
           return "# Projects\n\n- No projects found.";
         }
@@ -1606,7 +1601,7 @@ export class App {
         return this.renderCommandError(
           "Project",
           `unsupported project subcommand \`${projectSubcommand}\``,
-          "`/project [list [options]|bind [options]|unbind <path>] [-h|--help]`"
+          "`/project [list|bind [options]|unbind <path>] [-h|--help]`"
         );
       }
       if (activeRun) {
@@ -1632,7 +1627,7 @@ export class App {
         if (!Number.isInteger(index) || index < 1) {
           return "Usage: `/project bind -n <index>` where `<index>` is an integer >= 1.";
         }
-        const projects = await this.listProjects("default", currentProject, trustedProjects);
+        const projects = await this.listProjects(currentProject, trustedProjects);
         const selected = projects[index - 1];
         if (!selected) {
           return `project index out of range: ${index}. Use \`/project list\` first.`;
@@ -3831,7 +3826,6 @@ export class App {
   }
 
   private async listProjects(
-    mode: "default" | "all" | "trusted",
     currentProject: string,
     trustedProjects?: string[]
   ): Promise<ProjectListEntry[]> {
@@ -3871,22 +3865,14 @@ export class App {
       updatedAt: bindings.find((binding) => binding.project === currentProject)?.updatedAt
     };
 
-    if (mode === "trusted") {
-      const trustedList = [...boundProjects.filter((item) => item.trusted), ...trustedOnly];
-      if (!trustedList.find((item) => item.project === currentProject) && currentEntry.trusted) {
-        trustedList.unshift(currentEntry);
-      }
-      return this.sortProjectEntries(trustedList, currentProject);
-    }
-
     const defaultList = [...boundProjects];
     if (!defaultList.find((item) => item.project === currentProject) && this.isAllowedProject(currentProject)) {
       defaultList.unshift(currentEntry);
     }
-    if (mode === "default") {
-      return this.sortProjectEntries(defaultList, currentProject);
-    }
-    return this.sortProjectEntries([...defaultList, ...trustedOnly], currentProject);
+    return this.sortProjectEntries([...defaultList, ...trustedOnly], currentProject).slice(
+      0,
+      this.config.project.listMaxCount
+    );
   }
 
   private sortProjectEntries(projects: ProjectListEntry[], currentProject: string): ProjectListEntry[] {
@@ -3919,7 +3905,7 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/project [list [--all|--trusted]|bind [<path>|-n <index>|-m|--mkdir <path>]|unbind <path>]`",
+      "- `/project [list|bind [<path>|-n <index>|-m|--mkdir <path>]|unbind <path>]`",
       "- `/project -h|--help`",
       "",
       "## Options",
@@ -3927,8 +3913,6 @@ export class App {
       "### List",
       "",
       "- `list` browse known projects",
-      "- `--all` include trusted projects that are not currently bound in the bridge store",
-      "- `--trusted` show trusted projects only",
       "",
       "### Bind",
       "",
@@ -3948,14 +3932,14 @@ export class App {
       "",
       "- `/project` shows the current bound project for this conversation.",
       "- `/project list` is the source list used by `/project bind -n <index>`.",
-      "- `/project list` ordering is current project first, then project name ascending.",
+      `- \`/project list\` shows the merged project set and returns up to \`${this.config.project.listMaxCount}\` entries.`,
       "- `/project unbind <path>` rejects the current conversation project; switch elsewhere first.",
       `- Allowed roots: ${this.config.project.allowedRoots.map((root) => `\`${root}\``).join(", ")}`,
       "",
       "## Examples",
       "",
       "- `/project`",
-      "- `/project list --all`",
+      "- `/project list`",
       "- `/project bind /path/to/project`"
     ].join("\n");
   }

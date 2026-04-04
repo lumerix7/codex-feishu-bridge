@@ -69,6 +69,7 @@ export interface AppConfig {
     allowedRoots: string[];
     defaultProject: string;
     defaultSearchEnabled: boolean;
+    listMaxCount: number;
   };
   storePath: string;
 }
@@ -133,6 +134,7 @@ interface JsonConfigShape {
     allowedRoots?: unknown;
     defaultPath?: unknown;
     defaultSearchEnabled?: unknown;
+    listMaxCount?: unknown;
   };
   status?: {
     includeProject?: unknown;
@@ -422,6 +424,13 @@ export function loadConfig(): AppConfig {
         true,
         jsonConfig,
         ["project", "defaultSearchEnabled"]
+      ),
+      listMaxCount: readIntegerSetting(
+        "PROJECT_LIST_MAX_COUNT",
+        100,
+        jsonConfig,
+        ["project", "listMaxCount"],
+        { min: 1 }
       )
     },
     storePath: readTextSetting("STORE_PATH", ".data/bindings.json", jsonConfig, ["paths", "storePath"])
