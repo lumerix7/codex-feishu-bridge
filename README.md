@@ -194,6 +194,9 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - In `app-server`, `codex.sandboxMode = "danger-full-access"` maps to `sandbox=danger-full-access` plus `approvalPolicy=never`.
 - In `app-server`, only `default` and `full-access` are advertised in `/approvals`.
   `auto` is still accepted as a compatibility alias for `default`.
+- In `app-server`, the bridge completes the native `initialize` → `initialized` handshake on each subprocess connection.
+- In `app-server`, retryable overload replies (`code -32001`) are retried with jittered backoff in the bridge client.
+- In `app-server`, native `thread/list` calls now follow `nextCursor` pagination instead of reading only one page.
 - In `app-server`, `/model --list` now uses the native `model/list` RPC when available, follows `nextCursor`, and includes hidden models by default unless `--no-hidden` is passed.
 - In `app-server`, `/compact` uses the native `thread/compact/start` RPC and then reads the updated conversation summary.
 - In `app-server`, `/summary`, `/skills`, and `/config` use native `getConversationSummary`, `skills/list`, and `config/read` RPCs.

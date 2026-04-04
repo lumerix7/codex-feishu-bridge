@@ -15,6 +15,16 @@ interface PendingRequest {
   timeout?: NodeJS.Timeout;
 }
 
+class RpcError extends Error {
+  constructor(
+    message: string,
+    readonly code?: number
+  ) {
+    super(message);
+    this.name = "RpcError";
+  }
+}
+
 const ALL_THREAD_SOURCE_KINDS = [
   "cli",
   "vscode",
@@ -29,6 +39,10 @@ const ALL_THREAD_SOURCE_KINDS = [
 ] as const;
 
 const INTERACTIVE_THREAD_SOURCE_KINDS = ["cli", "vscode"] as const;
+const APP_SERVER_RETRYABLE_OVERLOAD_CODE = -32001;
+const APP_SERVER_REQUEST_MAX_ATTEMPTS = 4;
+const APP_SERVER_REQUEST_BASE_DELAY_MS = 250;
+const APP_SERVER_REQUEST_MAX_DELAY_MS = 2_000;
 
 export class AppServerSessionClient {
   private child?: ChildProcessWithoutNullStreams;
@@ -191,13 +205,40 @@ export class AppServerSessionClient {
           : options?.nonInteractiveOnly
             ? ALL_THREAD_SOURCE_KINDS.filter((kind) => !INTERACTIVE_THREAD_SOURCE_KINDS.includes(kind as typeof INTERACTIVE_THREAD_SOURCE_KINDS[number]))
             : undefined;
-    const result = await this.request("thread/list", {
-      ...(options?.limit ? { limit: options.limit } : {}),
-      ...(options?.cwd ? { cwd: options.cwd } : {}),
-      ...(options?.archived !== undefined ? { archived: options.archived } : {}),
-      ...(sourceKinds ? { sourceKinds } : {})
-    });
-    return isRecord(result) ? result : undefined;
+    const maxCount = Math.max(1, options?.limit || 20);
+    const data: Record<string, unknown>[] = [];
+    const seenIds = new Set<string>();
+    let cursor: string | undefined;
+
+    while (data.length < maxCount) {
+      const page = await this.request("thread/list", {
+        limit: Math.max(1, maxCount - data.length),
+        ...(options?.cwd ? { cwd: options.cwd } : {}),
+        ...(options?.archived !== undefined ? { archived: options.archived } : {}),
+        ...(sourceKinds ? { sourceKinds } : {}),
+        ...(cursor ? { cursor } : {})
+      });
+      if (!isRecord(page)) {
+        return data.length > 0 ? { data, nextCursor: null } : undefined;
+      }
+      const entries = Array.isArray(page.data)
+        ? page.data.filter((item): item is Record<string, unknown> => isRecord(item))
+        : [];
+      for (const entry of entries) {
+        const id = readThreadId({ thread: entry }) || String(entry.id || "").trim();
+        if (id && seenIds.has(id)) continue;
+        if (id) seenIds.add(id);
+        data.push(entry);
+        if (data.length >= maxCount) break;
+      }
+      const nextCursor = readStringValue(page.nextCursor);
+      if (!nextCursor || nextCursor === cursor || entries.length === 0) {
+        return { ...page, data, nextCursor: null };
+      }
+      cursor = nextCursor;
+    }
+
+    return { data, nextCursor: null };
   }
 
   async readConfig(options?: {
@@ -327,9 +368,24 @@ export class AppServerSessionClient {
       clientInfo: { name: "codex-feishu-bridge", version: "0.1.0" },
       capabilities: { experimentalApi: false }
     });
+    this.notify("initialized", {});
   }
 
   private async request(method: string, params: Record<string, unknown>): Promise<any> {
+    for (let attempt = 1; attempt <= APP_SERVER_REQUEST_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        return await this.requestOnce(method, params);
+      } catch (error) {
+        if (!isRetryableAppServerError(error) || attempt >= APP_SERVER_REQUEST_MAX_ATTEMPTS) {
+          throw error;
+        }
+        await sleep(withJitter(backoffDelay(attempt)));
+      }
+    }
+    throw new Error(`Codex app-server request failed unexpectedly: ${method}`);
+  }
+
+  private async requestOnce(method: string, params: Record<string, unknown>): Promise<any> {
     if (!this.child?.stdin) {
       throw this.startupError || new Error("Codex app-server is not running.");
     }
@@ -353,6 +409,11 @@ export class AppServerSessionClient {
     return promise;
   }
 
+  private notify(method: string, params: Record<string, unknown>): void {
+    if (!this.child?.stdin) return;
+    this.child.stdin.write(`${JSON.stringify({ method, params })}\n`);
+  }
+
   private async handleStdoutLine(line: string): Promise<void> {
     const message = parseJsonLine(line);
     if (!message) return;
@@ -364,7 +425,7 @@ export class AppServerSessionClient {
       this.pendingRequests.delete(id);
       if (pending.timeout) clearTimeout(pending.timeout);
       if (isRecord(message.error)) {
-        pending.reject(new Error(formatRpcError(message.error)));
+        pending.reject(toRpcError(message.error));
       } else {
         pending.resolve(message.result);
       }
@@ -496,10 +557,35 @@ function readThreadId(result: unknown): string {
   return String(thread.id || "").trim();
 }
 
-function formatRpcError(error: Record<string, unknown>): string {
+function readStringValue(value: unknown): string | undefined {
+  const trimmed = String(value || "").trim();
+  return trimmed || undefined;
+}
+
+function toRpcError(error: Record<string, unknown>): RpcError {
   const message = String(error.message || "Codex app-server request failed");
-  const code = typeof error.code === "number" ? ` (code ${error.code})` : "";
-  return `${message}${code}`;
+  const code = typeof error.code === "number" ? error.code : undefined;
+  return new RpcError(code !== undefined ? `${message} (code ${code})` : message, code);
+}
+
+function isRetryableAppServerError(error: unknown): boolean {
+  return error instanceof RpcError && error.code === APP_SERVER_RETRYABLE_OVERLOAD_CODE;
+}
+
+function backoffDelay(attempt: number): number {
+  return Math.min(APP_SERVER_REQUEST_BASE_DELAY_MS * (2 ** Math.max(0, attempt - 1)), APP_SERVER_REQUEST_MAX_DELAY_MS);
+}
+
+function withJitter(delayMs: number): number {
+  const jitter = Math.floor(Math.random() * Math.max(1, Math.floor(delayMs / 2)));
+  return delayMs + jitter;
+}
+
+function sleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, delayMs);
+    timer.unref();
+  });
 }
 
 function buildSessionConfig(options?: CodexTurnOptions): Record<string, unknown> | undefined {

@@ -54,6 +54,9 @@ This distinction is important for:
 - preferred backend
 - richer structured notifications and server requests
 - supports approvals, user-input requests, thread/account reads, rate limits, and model listing
+- completes the `initialize` → `initialized` connection handshake
+- retries retryable overload responses with jittered backoff
+- follows native `thread/list` cursor pagination
 - reference: <https://developers.openai.com/codex/app-server>
 - implementation reference: <https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md>
 
