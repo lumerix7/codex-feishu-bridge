@@ -917,7 +917,7 @@ export class App {
         return this.renderCommandError(
           "Resume",
           "missing value for `-C|--cd <dir>`",
-          "`/resume [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>] [-C|--cd <dir>]`"
+          "`/resume [<session-id>|--last|-n <index>|--list] [--all] [--project <path>] [-C|--cd <dir>]`"
         );
       }
       if (cdProjectArg) {
@@ -928,13 +928,13 @@ export class App {
         projectExplicitlySelected = true;
       }
 
-      const allProjects = resumeArgs.takeFlag("--all-projects");
+      const allProjects = resumeArgs.takeFlag("--all");
       const replayMessagesArg = resumeArgs.takeOption("--messages");
       if (replayMessagesArg === "") {
         return this.renderCommandError(
           "Resume",
           "missing value for `--messages <count>`",
-          "`/resume [<session-id>|--last|-n <index>|--list] [--messages <count>] [--all-projects] [--project <path>] [-C|--cd <dir>]`"
+          "`/resume [<session-id>|--last|-n <index>|--list] [--messages <count>] [--all] [--project <path>] [-C|--cd <dir>]`"
         );
       }
       let replayMessages = this.config.codex.resumeReplayCount;
@@ -954,7 +954,7 @@ export class App {
         return this.renderCommandError(
           "Resume",
           "missing value for `--project <path>`",
-          "`/resume --list [--all-projects] [--project <path>]`"
+          "`/resume --list [--all] [--project <path>]`"
         );
       }
       const wantsList = resumeArgs.peek() === "--list";
@@ -986,8 +986,8 @@ export class App {
       if (allProjects && resumeArgs.peek() !== "--list") {
         return this.renderCommandError(
           "Resume",
-          "use `--all-projects` with `/resume --list` to browse across projects, then resume by session id",
-          "`/resume --list --all-projects`"
+          "use `--all` with `/resume --list` to browse across projects, then resume by session id",
+          "`/resume --list --all`"
         );
       }
       if (resumeArgs.peek() === "--list") {
@@ -1003,11 +1003,11 @@ export class App {
           return this.renderCommandError(
             "Resume",
             `unsupported resume list argument \`${resumeArgs.peek()}\``,
-            "`/resume --list [--all-projects] [--project <path>]`"
+            "`/resume --list [--all] [--project <path>]`"
           );
         }
         const sessions = await this.listSessionsForCommand(
-          this.config.codex.sessionAllDefaultCount,
+          this.config.codex.sessionListMaxCount,
           resumeProject,
           {
             allProjects,
@@ -1032,7 +1032,7 @@ export class App {
         return this.renderCommandError(
           "Resume",
           `unsupported bridge option \`${resumeArgs.peek()}\``,
-          "`/resume [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>] [-C|--cd <dir>]`",
+          "`/resume [<session-id>|--last|-n <index>|--list] [--all] [--project <path>] [-C|--cd <dir>]`",
           ["- **Note**: Use a normal follow-up message after `/resume ...` if you want to continue the bound session."]
         );
       }
@@ -1068,7 +1068,7 @@ export class App {
         }
         const sessions = this.sortSessionEntries(
           await this.listSessionsForCommand(
-            Math.min(index, this.config.codex.sessionAllDefaultCount),
+            Math.min(index, this.config.codex.sessionListMaxCount),
             resumeProject,
             {
               allProjects,
@@ -1082,7 +1082,7 @@ export class App {
           return this.renderCommandError(
             "Resume",
             `session index out of range: ${index}`,
-            `\`/session list${allProjects ? " --all-projects" : ""}${projectExplicitlySelected ? ` --project ${resumeProject}` : ""} --all\``
+            `\`/session list${allProjects ? " --all" : ""}${projectExplicitlySelected ? ` --project ${resumeProject}` : ""}\``
           );
         }
         targetSessionId = selected.sessionId;
@@ -1189,7 +1189,7 @@ export class App {
         ].join("\n");
       }
       const forkArgs = new ArgCursor(command.args);
-      const allProjects = forkArgs.takeFlag("--all-projects");
+      const allProjects = forkArgs.takeFlag("--all");
       const currentProject = existing?.project || this.config.project.defaultProject;
       let forkProject = currentProject;
       let projectExplicitlySelected = false;
@@ -1198,7 +1198,7 @@ export class App {
         return this.renderCommandError(
           "Fork",
           "missing value for `--project <path>`",
-          "`/fork [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>]`"
+          "`/fork [<session-id>|--last|-n <index>|--list] [--all] [--project <path>]`"
         );
       }
       if (projectScopeArg) {
@@ -1217,11 +1217,11 @@ export class App {
           return this.renderCommandError(
             "Fork",
             `unsupported fork list argument \`${forkArgs.peek()}\``,
-            "`/fork --list [--all-projects] [--project <path>]`"
+            "`/fork --list [--all] [--project <path>]`"
           );
         }
         const sessions = await this.listSessionsForCommand(
-          this.config.codex.sessionAllDefaultCount,
+          this.config.codex.sessionListMaxCount,
           forkProject,
           {
             allProjects,
@@ -1246,7 +1246,7 @@ export class App {
         return this.renderCommandError(
           "Fork",
           `unsupported bridge option \`${forkArgs.peek()}\``,
-          "`/fork [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>]`"
+          "`/fork [<session-id>|--last|-n <index>|--list] [--all] [--project <path>]`"
         );
       }
 
@@ -1281,7 +1281,7 @@ export class App {
         }
         const sessions = this.sortSessionEntries(
           await this.listSessionsForCommand(
-            Math.min(index, this.config.codex.sessionAllDefaultCount),
+            Math.min(index, this.config.codex.sessionListMaxCount),
             forkProject,
             { allProjects, allSources: this.codex.mode === "app-server" }
           ),
@@ -1292,7 +1292,7 @@ export class App {
           return this.renderCommandError(
             "Fork",
             `session index out of range: ${index}`,
-            `\`/session list${allProjects ? " --all-projects" : ""}${projectExplicitlySelected ? ` --project ${forkProject}` : ""} --all\``
+            `\`/session list${allProjects ? " --all" : ""}${projectExplicitlySelected ? ` --project ${forkProject}` : ""}\``
           );
         }
         targetSessionId = selected.sessionId;
@@ -1343,7 +1343,7 @@ export class App {
 
     if (command?.name === "session") {
       const sessionArgs = new ArgCursor(command.args);
-      const allProjects = sessionArgs.takeFlag("--all-projects");
+      const allProjects = sessionArgs.takeFlag("--all");
       const currentProject = existing?.project || this.config.project.defaultProject;
       const projectScopeArg = sessionArgs.takeOption("--project");
       if (projectScopeArg === "") {
@@ -1369,7 +1369,7 @@ export class App {
           return this.renderCommandError(
             "Session",
             "missing value for `--source <source>`",
-            "`/session list [--all|-n <count>] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
+            "`/session list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
           );
         }
         const sourceFilters = [interactiveOnly, nonInteractiveOnly, allSources, Boolean(sourceKind)].filter(Boolean).length;
@@ -1377,7 +1377,7 @@ export class App {
           return this.renderCommandError(
             "Session",
             "use only one of `--interactive-only`, `--non-interactive-only`, `--all-sources`, or `--source <source>`",
-            "`/session list [--all|-n <count>] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
+            "`/session list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
           );
         }
         if (sourceKind && !SESSION_SOURCE_KINDS.includes(sourceKind as typeof SESSION_SOURCE_KINDS[number])) {
@@ -1393,7 +1393,7 @@ export class App {
           return this.renderCommandError(
             "Session",
             "invalid session list count",
-            "`/session list [--all|-n <count>] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
+            "`/session list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
           );
         }
         const leftoverListArgs = listArgs.remaining();
@@ -1402,12 +1402,12 @@ export class App {
             ? this.renderCommandError(
                 "Session",
                 "use `--project <path>` to filter sessions by project path",
-                "`/session list --project <path> [--all|-n <count>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
+                "`/session list --project <path> [-n <count>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
               )
             : this.renderCommandError(
                 "Session",
                 `unsupported session list argument \`${leftoverListArgs[0]}\``,
-                "`/session list [--all|-n <count>] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
+                "`/session list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
               );
         }
         const scopedProject = projectScopeArg
@@ -3767,7 +3767,7 @@ export class App {
     project: string,
     allProjects = false
   ): Promise<string | undefined> {
-    const sessions = await this.listSessionsForCommand(this.config.codex.sessionAllDefaultCount, project, {
+    const sessions = await this.listSessionsForCommand(this.config.codex.sessionListMaxCount, project, {
       allProjects,
       allSources: this.codex.mode === "app-server"
     });
@@ -3952,7 +3952,7 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/resume [<session-id>|--last|-n <index>|--list] [--messages <count>] [--all-projects] [--project <path>] [-C|--cd <dir>]`",
+      "- `/resume [<session-id>|--last|-n <index>|--list] [--messages <count>] [--all] [--project <path>] [-C|--cd <dir>]`",
       "- `/resume -h|--help`",
       "",
       "## Options",
@@ -3966,7 +3966,7 @@ export class App {
       "### List Scope",
       "",
       "- `--list` show the current resumable session list",
-      "- `--all-projects` expand browsing beyond the current project for `--list`",
+      "- `--all` expand browsing beyond the current project for `--list`",
       "- `--project <path>` scope `--list` browsing to one project path",
       "",
       "### Project",
@@ -3982,7 +3982,7 @@ export class App {
       "",
       "- `/resume` and `/resume --last` both bind the most recent session in the current scope.",
       "- `/resume --list` is the listing shortcut before selecting a session to resume.",
-      "- `/resume --list --all-projects` browses across projects.",
+      "- `/resume --list --all` browses across projects.",
       "- `/resume <session-id>` adopts that session's own project by default.",
       "- If `-C, --cd <dir>` points to a different project than the target session, `/resume` rejects it and suggests `/new -C <dir>` instead.",
       `- When the resumed session changes, the bridge appends the last \`${this.config.codex.resumeReplayCount}\` thread messages by default when app-server thread history is available.`,
@@ -4007,7 +4007,7 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/fork [<session-id>|--last|-n <index>|--list] [--all-projects] [--project <path>]`",
+      "- `/fork [<session-id>|--last|-n <index>|--list] [--all] [--project <path>]`",
       "- `/fork -h|--help`",
       "",
       "## Options",
@@ -4021,7 +4021,7 @@ export class App {
       "### List Scope",
       "",
       "- `--list` show the current forkable session list",
-      "- `--all-projects` expand browsing beyond the current project",
+      "- `--all` expand browsing beyond the current project",
       "- `--project <path>` scope browsing and latest-session lookup to one project path",
       "",
       "### General",
@@ -4051,7 +4051,7 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/session [list [-n <count>|--all] [--all-projects] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]]`",
+      "- `/session [list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]]`",
       "- `/session -h|--help`",
       "",
       "## Options",
@@ -4059,9 +4059,8 @@ export class App {
       "### List",
       "",
       "- `list` browse recent sessions",
-      `- ` + "`-n <count>`" + ` limit the list size; accepts values from ` + "`1`" + ` to ` + `\`${this.config.codex.sessionAllDefaultCount}\``,
-      `- ` + "`--all`" + ` use the larger default count ` + `\`${this.config.codex.sessionAllDefaultCount}\``,
-      "- `--all-projects` include sessions from other projects",
+      `- ` + "`-n <count>`" + ` limit the list size; accepts values from ` + "`1`" + ` to ` + `\`${this.config.codex.sessionListMaxCount}\``,
+      "- `--all` include sessions from other projects",
       "- `--project <path>` filter to one specific project path",
       "",
       "### Source Filters",
@@ -4078,7 +4077,7 @@ export class App {
       "## Behavior",
       "",
       "- `/session` shows the current bound session for this conversation.",
-      `- \`/session list\` defaults to \`${this.config.codex.sessionListDefaultCount}\` sessions for the current project.`,
+      `- \`/session list\` shows up to \`${this.config.codex.sessionListMaxCount}\` sessions for the current project.`,
       "- In `app-server` mode, `/session list` uses native `thread/list` and defaults to `--all-sources`.",
       "- Session tables are ordered current project first, then project asc, then time desc.",
       "- Use `/resume <session-id>` to bind one of the listed sessions.",
@@ -4087,21 +4086,17 @@ export class App {
       "",
       "- `/session`",
       "- `/session list --source exec`",
-      "- `/session list --all --all-projects`"
+      "- `/session list --all`"
     ].join("\n");
   }
 
   private parseSessionsListLimit(args: ArgCursor): number | undefined {
-    if (args.peek() === "--all") {
-      args.shift();
-      return this.config.codex.sessionAllDefaultCount;
-    }
     const remaining = args.remaining();
     if (remaining.length === 1 && /^\d+$/.test(remaining[0] || "")) {
       const raw = args.shift();
       return Math.min(
-        this.config.codex.sessionListDefaultCount,
-        Math.max(1, Number(raw) || this.config.codex.sessionListDefaultCount)
+        this.config.codex.sessionListMaxCount,
+        Math.max(1, Number(raw) || this.config.codex.sessionListMaxCount)
       );
     }
     const raw = args.takeOption("-n", "--count");
@@ -4110,13 +4105,13 @@ export class App {
         return undefined;
       }
       return Math.min(
-        this.config.codex.sessionListDefaultCount,
-        Math.max(1, Number(raw) || this.config.codex.sessionListDefaultCount)
+        this.config.codex.sessionListMaxCount,
+        Math.max(1, Number(raw) || this.config.codex.sessionListMaxCount)
       );
     }
     return Math.min(
-      this.config.codex.sessionListDefaultCount,
-      Math.max(1, this.config.codex.sessionListDefaultCount)
+      this.config.codex.sessionListMaxCount,
+      Math.max(1, this.config.codex.sessionListMaxCount)
     );
   }
 
@@ -4143,7 +4138,7 @@ export class App {
     const lines = [
       `# ${title}`,
       "",
-      "| # | Project | Time | Session | Source | About | Flags |",
+      "| # | Project | Updated | Session | Source | About | Flags |",
       "| --- | --- | --- | --- | --- | --- | --- |"
     ];
     for (const [index, session] of sortedSessions.entries()) {

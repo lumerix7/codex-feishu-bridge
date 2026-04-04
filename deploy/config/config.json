@@ -49,8 +49,7 @@
     }
   },
   "session": {
-    "listDefaultCount": 20,
-    "allDefaultCount": 100,
+    "listMaxCount": 100,
     "resumeReplayCount": 5
   },
   "project": {

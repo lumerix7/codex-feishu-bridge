@@ -52,8 +52,7 @@ export interface AppConfig {
     appServerSidebandCards: boolean;
     appServerInlineBlocks: "off" | "compact" | "full";
     sandboxMode: "default" | "workspace-write" | "danger-full-access";
-    sessionListDefaultCount: number;
-    sessionAllDefaultCount: number;
+    sessionListMaxCount: number;
     resumeReplayCount: number;
     runTimeoutMs: number;
     approvalTimeoutMs: number;
@@ -126,8 +125,7 @@ interface JsonConfigShape {
     };
   };
   session?: {
-    listDefaultCount?: unknown;
-    allDefaultCount?: unknown;
+    listMaxCount?: unknown;
     resumeReplayCount?: unknown;
   };
   project?: {
@@ -331,18 +329,11 @@ export function loadConfig(): AppConfig {
       sandboxMode: normalizeApprovalMode(
         readTextSetting("CODEX_SANDBOX_MODE", "workspace-write", jsonConfig, ["codex", "sandboxMode"])
       ),
-      sessionListDefaultCount: readIntegerSetting(
-        "CODEX_SESSION_LIST_DEFAULT_COUNT",
-        20,
-        jsonConfig,
-        ["session", "listDefaultCount"],
-        { min: 1 }
-      ),
-      sessionAllDefaultCount: readIntegerSetting(
-        "CODEX_SESSION_ALL_DEFAULT_COUNT",
+      sessionListMaxCount: readIntegerSetting(
+        "CODEX_SESSION_LIST_MAX_COUNT",
         100,
         jsonConfig,
-        ["session", "allDefaultCount"],
+        ["session", "listMaxCount"],
         { min: 1 }
       ),
       resumeReplayCount: readIntegerSetting(

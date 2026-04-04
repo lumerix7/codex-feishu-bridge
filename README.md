@@ -83,7 +83,7 @@ Working v1 bridge:
 - `/git` `/cat` `/find` `/head` `/ls` `/pwd` `/rg` `/sha256sum` `/tail` `/tree` `/wc`
 - `/new -C <path>` to switch/bind to another project and create a fresh session in one step
 - `/project bind <path>` to rebind a conversation to another directory under the allowed project roots
-- `/project bind -n <index>` to bind from `/project list`, which is ordered current project first and then by project name ascending
+- `/project bind -n <index>` to bind from `/project list`, which shows the merged bound-and-trusted project set
 - `/project unbind <path>` to remove stored bridge bindings for a specific project path; the current conversation project is rejected
 - `/approvals` to switch the Codex approval mode used for future runs
 - `/model --list [--no-hidden]` to query available models from Codex app-server when supported, with a bridge-side fallback list otherwise
@@ -219,6 +219,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - `feishu.titleMaxLength` controls how long Feishu card titles may grow before the bridge shortens them as `begin...end`. The checked-in default is `120`.
 - `codex.outputSoftLimit` controls when local bridge command output such as `/git`, `/rg`, `/find`, `/log`, and similar results will be cut off with `[output truncated]`. The checked-in default is `100000`.
 - `codex.modelListMaxCount` controls how many entries `/model --list` will fetch at most while following app-server `model/list` pagination. The checked-in default is `100`.
+- `session.listMaxCount` controls the maximum number of entries `/session list`, `/resume --list`, and `/fork --list` will return. The checked-in default is `100`.
 - `project.listMaxCount` controls how many entries `/project list` will return at most from the merged bound-and-trusted project set. The checked-in default is `100`.
 - `/feishu ws` and `/feishu doctor` include reconnect counters so you can tell the difference between an occasional reconnect and a flapping long-connection session.
 - Outbound Feishu replies currently use interactive cards with a schema `2.0` markdown body, card title, chat-list summary, and per-reply header template color.
