@@ -33,7 +33,7 @@
 - Prefer `app-server` backend; it is the main path now.
 - Keep output/rendering decisions centralized. Message-level body modes such as raw markdown or raw text should be marked in the app layer and rendered once in the Feishu gateway.
 - For fenced output, use the shared dynamic-fence rule: fence length is `max(3, longest backtick run + 1)`.
-- Local command output is usually normal rendered markdown containing fenced `text` blocks, not raw-body mode.
+- Local commands use a two-card pattern: first a short runner card with `Running \`command\`...` plus the leading-trimmed command input in a fenced `text` block, then a raw output card without extra project/command meta in the body.
 - Reserve `--raw-markdown` for source-shaped replies; keep short state/mutation commands rendered normally.
 - Keep `/rename` native in `app-server`.
 - Useful runtime checks:
