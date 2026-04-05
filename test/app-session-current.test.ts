@@ -106,7 +106,7 @@ test("session groups thread details last and renders last message and thread pre
   assert.equal(typeof result, "string");
   assert.match(
     String(result),
-    /- \*\*Source\*\*: `chat:lark`\n.*- \*\*Last message\*\*:\n\n```text\n\(no preview\)\n```\n- \*\*Flags\*\*: `current`, bound\n- \*\*Thread name\*\*: \\# Review \\`changes\\`\n- \*\*Thread status\*\*: `idle`\n- \*\*Thread source\*\*: `chat:lark`\n- \*\*Thread preview\*\*:\n\n```text\nthread preview\n```$/s
+    /- \*\*Source\*\*: `chat:lark`\n.*- \*\*Last message\*\*:\n\n```text\nthread preview\n```\n- \*\*Flags\*\*: `current`, bound\n- \*\*Thread name\*\*: \\# Review \\`changes\\`\n- \*\*Thread status\*\*: `idle`\n- \*\*Thread source\*\*: `chat:lark`\n- \*\*Thread preview\*\*:\n\n```text\nthread preview\n```$/s
   );
 });
 
@@ -145,8 +145,55 @@ test("resume reuses the session detail layout with a resume title", async () => 
 
   assert.equal(typeof result, "string");
   assert.match(String(result), /^# Resume Session\n\n- \*\*Source\*\*: `explicit`\n\n- \*\*Session\*\*: `session-1`/);
-  assert.match(String(result), /- \*\*Last message\*\*:\n\n```text\n\(no preview\)\n```/);
+  assert.match(String(result), /- \*\*Last message\*\*:\n\n```text\nthread preview\n```/);
   assert.match(String(result), /- \*\*Thread preview\*\*:\n\n```text\nthread preview\n```$/);
+});
+
+test("fork reuses the session detail layout and prefixes from", async () => {
+  const app = new App(makeConfig());
+  const store = (app as any).store;
+  await store.put({
+    conversationKey: "p2p:chat_test",
+    codexSessionId: "session-1",
+    project: "/tmp/project-a",
+    createdAt: "2026-04-09T00:00:00.000Z",
+    updatedAt: "2026-04-09T00:00:00.000Z"
+  });
+
+  (app as any).codex = {
+    mode: "app-server",
+    createSession: async () => "unused",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true,
+    forkSession: async () => ({
+      thread: {
+        id: "session-2",
+        name: "Forked thread",
+        preview: "forked preview",
+        cwd: "/tmp/project-a",
+        createdAt: 1_775_689_600,
+        updatedAt: 1_775_689_900,
+        status: "idle",
+        source: { chat: "lark" }
+      },
+      source: { chat: "lark" }
+    })
+  };
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/fork"
+  });
+
+  assert.equal(typeof result, "string");
+  assert.match(String(result), /^# Fork Session\n\n- \*\*Source\*\*: `current`\n- \*\*From\*\*: `session-1`\n\n- \*\*Session\*\*: `session-2`/);
+  assert.match(String(result), /- \*\*Last message\*\*:\n\n```text\nforked preview\n```/);
+  assert.match(String(result), /- \*\*Thread preview\*\*:\n\n```text\nforked preview\n```$/);
 });
 
 test("resume help works regardless of -h position", async () => {
@@ -184,7 +231,7 @@ test("resume without a selector warns and points to explicit latest aliases", as
   assert.equal((result as any).severity, "warning");
   assert.match(
     String((result as any).text),
-    /^# Resume\n\n- \*\*Error\*\*: pick a session explicitly, or use `--last` \/ `-` to resume the most recent session\n- \*\*Usage\*\*: `\/resume \[<session-id>\|-\|--last\|-n <index>\|list\]`\n- \*\*Examples\*\*: `\/resume --last`, `\/resume -`, `\/resume <session-id>`, `\/resume list`\n- \*\*Tip\*\*: Use `\/resume -h` to show help\.$/
+    /^# Resume\n\n- \*\*Error\*\*: pick a session explicitly, or use `-` to resume the most recent session\n- \*\*Usage\*\*: `\/resume \[<session-id>\|-\|--last\|-n <index>\|list\|-h\]`$/
   );
 });
 

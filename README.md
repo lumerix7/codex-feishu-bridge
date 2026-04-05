@@ -109,6 +109,7 @@ Working v1 bridge:
 - Outbound bridge replies use Feishu HTTPS OpenAPI calls. Streaming replies use CardKit streaming update APIs over HTTPS.
 - The bridge now uses keep-alive HTTP/HTTPS agents for Feishu SDK transport and detaches inbound event processing from the websocket callback so the handler returns quickly.
 - `/feishu` is the quickest way to inspect recent websocket readiness, reconnect state, inbound message timing, and outbound retry/failure counters.
+- Warning: Feishu client rendering for large fenced output is not fully consistent across desktop/mobile or all content shapes; see [`docs/feishu-rendering-caveats.md`](./docs/feishu-rendering-caveats.md).
 
 Useful official references:
 

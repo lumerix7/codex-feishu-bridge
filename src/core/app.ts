@@ -311,7 +311,7 @@ export class App {
               bodyFormat: responseBodyFormat,
               replyToMessageId: message.messageId,
               threadId: message.threadId,
-              streaming: true,
+              streaming: !commandName,
               ...(commandName ? {} : { streamKey, finalizeStreaming: true, suppressChunkFooter: true, preserveStreamingPages: true })
             });
           }
@@ -1177,12 +1177,8 @@ export class App {
       if (resumeArgs.isEmpty() && !wantsLast) {
         return this.renderCommandError(
           "Resume",
-          "pick a session explicitly, or use `--last` / `-` to resume the most recent session",
-          "`/resume [<session-id>|-|--last|-n <index>|list]`",
-          [
-            "- **Examples**: `/resume --last`, `/resume -`, `/resume <session-id>`, `/resume list`",
-            "- **Tip**: Use `/resume -h` to show help."
-          ]
+          "pick a session explicitly, or use `-` to resume the most recent session",
+          "`/resume [<session-id>|-|--last|-n <index>|list|-h]`"
         );
       }
 
@@ -1484,17 +1480,21 @@ export class App {
       }
       const binding = this.makeBinding(key, forkedSessionId, forkProject, existing);
       await this.store.put(binding);
-      return [
-        "# Fork Session",
-        "",
-        `- **Source**: \`${forkSource}\``,
-        ...(forkIndex ? [`- **Index**: \`${forkIndex}\``] : []),
-        `- **From**: \`${targetSessionId}\``,
-        `- **Session**: \`${forkedSessionId}\``,
-        `- **Project**: \`${binding.project}\``,
-        ...(this.readString(forkedThread?.preview) ? [`- **Last message**: ${this.readString(forkedThread?.preview)}`] : []),
-        ...(forkWarning ? [`- **Warning**: ${forkWarning}`] : [])
-      ].join("\n");
+      const session = await getSessionSummary(this.config.codex.sessionsDir, forkedSessionId).catch(() => undefined);
+      const threadInfo = { ...forkResult, thread: forkedThread };
+      return this.renderSessionDetailText({
+        title: "Fork Session",
+        sessionId: forkedSessionId,
+        project: binding.project,
+        session,
+        threadInfo,
+        leadingLines: [
+          `- **Source**: \`${forkSource}\``,
+          ...(forkIndex ? [`- **Index**: \`${forkIndex}\``] : []),
+          `- **From**: \`${targetSessionId}\``,
+          ...(forkWarning ? [`- **Warning**: ${forkWarning}`] : [])
+        ]
+      });
     }
 
     if (command?.name === "session") {
@@ -4484,7 +4484,10 @@ export class App {
     const updatedAt =
       this.formatUnixTimestamp(thread?.updatedAt) ||
       this.formatAnyTimestamp(session?.createdAt);
-    const lastMessage = this.readString(session?.preview) || "(no preview)";
+    const lastMessage =
+      this.readString(thread?.preview) ||
+      this.readString(session?.preview) ||
+      "(no preview)";
     const threadPreview = this.readString(thread?.preview) || "(none)";
     return [
       `# ${title}`,

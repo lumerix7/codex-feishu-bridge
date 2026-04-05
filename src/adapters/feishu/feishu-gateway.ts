@@ -15,11 +15,11 @@ type LarkLogger = {
 };
 const FEISHU_POST_SOFT_LIMIT = 3500;
 const FEISHU_CODEX_STREAM_PAGE_LIMIT = 3000;
+const STREAMING_LONG_LINE_STEP = FEISHU_CODEX_STREAM_PAGE_LIMIT - 200;
 const STREAMING_MARKDOWN_ELEMENT_ID = "markdown_stream";
 const STREAMING_FOOTER_ELEMENT_ID = "footer_meta";
 const STREAMING_LINE_DELAY_MS = 40;
 const STREAMING_MAX_LINE_UPDATES = 64;
-const STREAMING_LONG_LINE_STEP = 120;
 
 export class FeishuGateway {
   private client: Lark.Client;
@@ -1090,14 +1090,14 @@ function buildStreamingLineFrames(text: string, maxFrames: number): string[] {
 
   for (const line of lines) {
     const prefix = current ? `${current}\n` : "";
-    if (line.length <= STREAMING_LONG_LINE_STEP) {
-      current = `${prefix}${line}`;
-      pushFrame(current);
-      continue;
-    }
-
-    for (let index = STREAMING_LONG_LINE_STEP; index < line.length; index += STREAMING_LONG_LINE_STEP) {
-      pushFrame(`${prefix}${line.slice(0, index)}`);
+    if (line.length > STREAMING_LONG_LINE_STEP) {
+      for (
+        let index = STREAMING_LONG_LINE_STEP;
+        index < line.length;
+        index += STREAMING_LONG_LINE_STEP
+      ) {
+        pushFrame(`${prefix}${line.slice(0, index)}`);
+      }
     }
     current = `${prefix}${line}`;
     pushFrame(current);
@@ -1279,6 +1279,9 @@ function splitOversizedMarkdownBlock(block: string, maxChars: number): string[] 
 
 function splitPlainTextBlock(text: string, maxChars: number, preserveWhitespace = false): string[] {
   if (text.length <= maxChars) return [text];
+  if (preserveWhitespace) {
+    return splitExactTextBlock(text, maxChars);
+  }
 
   const chunks: string[] = [];
   let remaining = text;
@@ -1289,6 +1292,44 @@ function splitPlainTextBlock(text: string, maxChars: number, preserveWhitespace 
     remaining = preserveWhitespace ? remaining.slice(splitAt) : remaining.slice(splitAt).trimStart();
   }
   if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+function splitExactTextBlock(text: string, maxChars: number): string[] {
+  const chunks: string[] = [];
+  const parts = text.split("\n").map((line, index, lines) => (
+    index < lines.length - 1 ? `${line}\n` : line
+  ));
+  let current = "";
+
+  for (let part of parts) {
+    while (part.length > 0) {
+      if (!current) {
+        if (part.length <= maxChars) {
+          current = part;
+          part = "";
+          continue;
+        }
+        chunks.push(part.slice(0, maxChars));
+        part = part.slice(maxChars);
+        continue;
+      }
+
+      const available = maxChars - current.length;
+      if (part.length <= available) {
+        current += part;
+        part = "";
+        continue;
+      }
+
+      chunks.push(current);
+      current = "";
+    }
+  }
+
+  if (current) {
+    chunks.push(current);
+  }
   return chunks;
 }
 

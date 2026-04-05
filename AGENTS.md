@@ -35,6 +35,7 @@
 - Keep wrapped command handling centralized: usage/validation issues stay warning/orange, and executed wrapped commands return one raw output shape with merged stdout/stderr plus a leading `Code: ...` line; non-zero exits render red.
 - For fenced output, use the shared dynamic-fence rule: fence length is `max(3, longest backtick run + 1)`.
 - Local commands use a two-card pattern: first a short runner card with `Running \`command\`...` plus the leading-trimmed command input in a fenced `text` block, then a raw output card without extra project/command meta in the body.
+- Warning: Feishu clients can still render some large fenced outputs differently across desktop/mobile even when outbound chunking is correct; keep the canonical note in `docs/feishu-rendering-caveats.md`.
 - Reserve `--raw-markdown` for source-shaped replies; keep short state/mutation commands rendered normally.
 - Keep `/rename` native in `app-server`.
 - Useful runtime checks:
