@@ -1042,6 +1042,9 @@ export class App {
         return `Cannot resume while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
       }
       const resumeArgs = new ArgCursor(command.args);
+      if (resumeArgs.takeFlag("-h", "--help")) {
+        return this.resumeHelpText();
+      }
       let resumeProject = existing?.project || this.config.project.defaultProject;
       let projectExplicitlySelected = false;
       const cdProjectArg = resumeArgs.takeOption("-C", "--cd");
@@ -1108,9 +1111,6 @@ export class App {
         }
         resumeProject = scopedProject;
         projectExplicitlySelected = true;
-      }
-      if (resumeArgs.peek() === "-h" || resumeArgs.peek() === "--help") {
-        return this.resumeHelpText();
       }
       if (resumeArgs.peek() === "--last") {
         resumeArgs.shift();
@@ -4481,6 +4481,7 @@ export class App {
     const updatedAt =
       this.formatUnixTimestamp(thread?.updatedAt) ||
       this.formatAnyTimestamp(session?.createdAt);
+    const lastMessage = this.readString(session?.preview) || "(no preview)";
     const threadPreview = this.readString(thread?.preview) || "(none)";
     return [
       `# ${title}`,
@@ -4495,7 +4496,9 @@ export class App {
       `- **Created**: ${createdAt}`,
       `- **Updated**: ${updatedAt}`,
       `- **Cwd**: \`${session?.cwd || this.readString(thread?.cwd) || "(unknown)"}\``,
-      `- **Last message**: ${session?.preview || "(no preview)"}`,
+      "- **Last message**:",
+      "",
+      this.renderFencedBlock("text", lastMessage),
       ...(this.readString(gitInfo.branch) ? [`- **Branch**: \`${this.readString(gitInfo.branch)}\``] : []),
       `- **Flags**: ${this.formatListFlag("current")}, bound`,
       `- **Thread name**: ${escapeMarkdownInline(this.readString(thread?.name) || "(none)")}`,

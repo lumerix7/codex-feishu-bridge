@@ -62,7 +62,7 @@ function makeConfig() {
   } as const;
 }
 
-test("session groups thread details last and renders thread preview as fenced text", async () => {
+test("session groups thread details last and renders last message and thread preview as fenced text", async () => {
   const app = new App(makeConfig());
   const store = (app as any).store;
   await store.put({
@@ -106,7 +106,7 @@ test("session groups thread details last and renders thread preview as fenced te
   assert.equal(typeof result, "string");
   assert.match(
     String(result),
-    /- \*\*Source\*\*: `chat:lark`\n.*- \*\*Last message\*\*: \(no preview\)\n- \*\*Flags\*\*: `current`, bound\n- \*\*Thread name\*\*: \\# Review \\`changes\\`\n- \*\*Thread status\*\*: `idle`\n- \*\*Thread source\*\*: `chat:lark`\n- \*\*Thread preview\*\*:\n\n```text\nthread preview\n```$/s
+    /- \*\*Source\*\*: `chat:lark`\n.*- \*\*Last message\*\*:\n\n```text\n\(no preview\)\n```\n- \*\*Flags\*\*: `current`, bound\n- \*\*Thread name\*\*: \\# Review \\`changes\\`\n- \*\*Thread status\*\*: `idle`\n- \*\*Thread source\*\*: `chat:lark`\n- \*\*Thread preview\*\*:\n\n```text\nthread preview\n```$/s
   );
 });
 
@@ -145,7 +145,29 @@ test("resume reuses the session detail layout with a resume title", async () => 
 
   assert.equal(typeof result, "string");
   assert.match(String(result), /^# Resume Session\n\n- \*\*Source\*\*: `explicit`\n\n- \*\*Session\*\*: `session-1`/);
+  assert.match(String(result), /- \*\*Last message\*\*:\n\n```text\n\(no preview\)\n```/);
   assert.match(String(result), /- \*\*Thread preview\*\*:\n\n```text\nthread preview\n```$/);
+});
+
+test("resume help works regardless of -h position", async () => {
+  const app = new App(makeConfig());
+
+  for (const text of [
+    "/resume -h",
+    "/resume session-1 -h",
+    "/resume -h session-1",
+    "/resume --messages 8 -h"
+  ]) {
+    const result = await app.handleIncoming({
+      chatId: "chat_test",
+      messageId: "msg_test",
+      chatType: "p2p",
+      text
+    });
+
+    assert.equal(typeof result, "string");
+    assert.match(String(result), /^# Resume\n\nResume a session\./);
+  }
 });
 
 test("recent replay messages render as Codex/User headings with dynamic fenced text", () => {
