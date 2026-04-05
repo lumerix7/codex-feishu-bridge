@@ -5404,9 +5404,7 @@ export class App {
         ...(query.since ? [`- **Since**: \`${query.since}\``] : []),
         ...(query.grep ? [`- **Grep**: \`${query.grep}\``] : []),
         "",
-        "```text",
-        this.truncateOutput(filtered || "(no output)"),
-        "```"
+        this.renderFencedBlock("text", this.truncateOutput(filtered || "(no output)"))
       ].join("\n");
     } catch (error) {
       const maybe = error as Error & { stdout?: string; stderr?: string; code?: number | string };
@@ -5418,9 +5416,7 @@ export class App {
         `- **Status**: \`failed\``,
         `- **Code**: \`${String(maybe.code ?? "(unknown)")}\``,
         "",
-        "```text",
-        this.truncateOutput(output || maybe.message || "journalctl failed"),
-        "```"
+        this.renderFencedBlock("text", this.truncateOutput(output || maybe.message || "journalctl failed"))
       ].join("\n");
     }
   }
@@ -5441,9 +5437,7 @@ export class App {
         `- **Project**: \`${project}\``,
         `- **Command**: \`${commandText}\``,
         "",
-        "```text",
-        this.truncateOutput(combined || "(no output)"),
-        "```"
+        this.renderFencedBlock("text", this.truncateOutput(combined || "(no output)"))
       ].join("\n");
     } catch (error) {
       const maybe = error as Error & {
@@ -5464,9 +5458,7 @@ export class App {
           `- **Code**: \`${String(maybe.code ?? "(unknown)")}\``,
           ...(maybe.signal ? [`- **Signal**: \`${maybe.signal}\``] : []),
           "",
-          "```text",
-          this.truncateOutput(output || maybe.message || "git command failed"),
-          "```"
+          this.renderFencedBlock("text", this.truncateOutput(output || maybe.message || "git command failed"))
         ].join("\n")
       };
     }
@@ -5494,9 +5486,7 @@ export class App {
         `- **Project**: \`${project}\``,
         `- **Command**: \`${commandText || command}\``,
         "",
-        "```text",
-        this.truncateOutput(combined || "(no output)"),
-        "```"
+        this.renderFencedBlock("text", this.truncateOutput(combined || "(no output)"))
       ].join("\n");
     } catch (error) {
       const maybe = error as Error & {
@@ -5517,12 +5507,19 @@ export class App {
           `- **Code**: \`${String(maybe.code ?? "(unknown)")}\``,
           ...(maybe.signal ? [`- **Signal**: \`${maybe.signal}\``] : []),
           "",
-          "```text",
-          this.truncateOutput(output || maybe.message || `${command} command failed`),
-          "```"
+          this.renderFencedBlock("text", this.truncateOutput(output || maybe.message || `${command} command failed`))
         ].join("\n")
       };
     }
+  }
+
+  private renderFencedBlock(language: string, value: string): string {
+    const longestBacktickRun = Math.max(
+      0,
+      ...Array.from(value.matchAll(/`+/g), (match) => match[0].length)
+    );
+    const fence = "`".repeat(longestBacktickRun > 0 ? longestBacktickRun + 1 : 3);
+    return `${fence}${language ? language : ""}\n${value}\n${fence}`;
   }
 
   private truncateOutput(value: string): string {

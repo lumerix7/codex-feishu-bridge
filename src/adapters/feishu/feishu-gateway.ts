@@ -933,11 +933,20 @@ function splitMessageText(text: string, maxChars: number): string[] {
 function buildRenderPlan(message: OutgoingMessage, maxChars: number): RenderPlan {
   const text = message.text || "";
   const pages = splitMessageText(text, maxChars);
+  const skipFirstChunkFooter = hasStandalonePreamblePage(pages);
+  const contentPageCount = skipFirstChunkFooter ? pages.length - 1 : pages.length;
   return {
     containsTable: containsMarkdownTable(text),
     pages: pages.map((pageText, index) => ({
       text: pageText,
-      footer: formatChunkFooter(message.footer, index, pages.length, message.suppressChunkFooter)
+      footer: skipFirstChunkFooter && index === 0
+        ? message.footer
+        : formatChunkFooter(
+            message.footer,
+            skipFirstChunkFooter ? index - 1 : index,
+            contentPageCount,
+            message.suppressChunkFooter
+          )
     }))
   };
 }
@@ -945,23 +954,13 @@ function buildRenderPlan(message: OutgoingMessage, maxChars: number): RenderPlan
 function containsMarkdownTable(text: string): boolean {
   const normalized = text.replace(/\r\n/g, "\n");
   const lines = normalized.split("\n");
-  for (let index = 0; index < lines.length - 1; index += 1) {
-    if (!lines[index].trim().startsWith("|")) continue;
-    if (/^\|\s*[:\-| ]+\|\s*$/.test(lines[index + 1].trim())) {
-      return true;
-    }
-  }
-  return false;
+  return findTopLevelMarkdownTableStart(lines) >= 0;
 }
 
 function splitMarkdownTableText(text: string, maxChars: number): string[] | undefined {
   const normalized = text.replace(/\r\n/g, "\n");
   const lines = normalized.split("\n");
-  const tableStart = lines.findIndex((line, index) => {
-    if (!line.trim().startsWith("|")) return false;
-    const next = lines[index + 1] || "";
-    return /^\|\s*[:\-| ]+\|\s*$/.test(next.trim());
-  });
+  const tableStart = findTopLevelMarkdownTableStart(lines);
   if (tableStart < 0) return undefined;
 
   const tableHeader = lines[tableStart];
@@ -1213,6 +1212,47 @@ function formatChunkFooter(
   return footer || chunk || undefined;
 }
 
+function hasStandalonePreamblePage(pages: string[]): boolean {
+  if (pages.length < 2) return false;
+  const first = pages[0]?.trimStart() || "";
+  const second = pages[1]?.trimStart() || "";
+  return !isFencedBlockStart(first) && isFencedBlockStart(second);
+}
+
+function isFencedBlockStart(text: string): boolean {
+  return /^(`{3,}|~{3,})/.test(text);
+}
+
+function findTopLevelMarkdownTableStart(lines: string[]): number {
+  let inFence = false;
+  let openFence: FenceInfo | undefined;
+
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const line = lines[index] || "";
+    if (!inFence) {
+      const openingFence = parseOpeningFenceLine(line);
+      if (openingFence) {
+        inFence = true;
+        openFence = openingFence;
+        continue;
+      }
+      if (!line.trim().startsWith("|")) continue;
+      const next = lines[index + 1] || "";
+      if (/^\|\s*[:\-| ]+\|\s*$/.test(next.trim())) {
+        return index;
+      }
+      continue;
+    }
+
+    if (openFence && isClosingFenceLine(line, openFence)) {
+      inFence = false;
+      openFence = undefined;
+    }
+  }
+
+  return -1;
+}
+
 function formatIsoTimestamp(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -1245,7 +1285,7 @@ function splitMarkdownBlocks(text: string): string[] {
   const lines = normalized.split("\n");
   let current: string[] = [];
   let inFence = false;
-  let fenceMarker = "";
+  let openFence: FenceInfo | undefined;
 
   const flush = (): void => {
     const block = current.join("\n").trim();
@@ -1254,20 +1294,20 @@ function splitMarkdownBlocks(text: string): string[] {
   };
 
   for (const line of lines) {
-    const fenceInfo = parseFenceLine(line);
-    if (fenceInfo && !inFence) {
+    const openingFence = parseOpeningFenceLine(line);
+    if (openingFence && !inFence) {
       flush();
       inFence = true;
-      fenceMarker = fenceInfo.marker;
+      openFence = openingFence;
       current.push(line);
       continue;
     }
     if (inFence) {
       current.push(line);
-      if (fenceInfo && fenceInfo.marker === fenceMarker) {
+      if (openFence && isClosingFenceLine(line, openFence)) {
         flush();
         inFence = false;
-        fenceMarker = "";
+        openFence = undefined;
       }
       continue;
     }
@@ -1283,24 +1323,31 @@ function splitMarkdownBlocks(text: string): string[] {
 }
 
 function splitOversizedMarkdownBlock(block: string, maxChars: number): string[] {
-  const fenceInfo = parseFenceLine(block.split("\n", 1)[0] || "");
+  const fenceInfo = parseOpeningFenceLine(block.split("\n", 1)[0] || "");
   if (!fenceInfo) {
     return splitPlainTextBlock(block, maxChars);
   }
 
   const lines = block.split("\n");
-  const closingIndex = findClosingFenceIndex(lines, fenceInfo.marker);
+  const closingIndex = findClosingFenceIndex(lines, fenceInfo);
   if (closingIndex <= 0) {
     return splitPlainTextBlock(block, maxChars);
   }
 
   const opening = lines[0];
-  const closing = lines[closingIndex];
+  const openingSuffix = opening.slice(fenceInfo.length);
   const body = lines.slice(1, closingIndex).join("\n");
-  const wrapperCost = opening.length + closing.length + 2;
+  const wrapperFenceLength = Math.max(
+    fenceInfo.length,
+    longestFenceRun(body, fenceInfo.char) > 0 ? longestFenceRun(body, fenceInfo.char) + 1 : 3
+  );
+  const wrapperFence = fenceInfo.char.repeat(wrapperFenceLength);
+  const wrappedOpening = `${wrapperFence}${openingSuffix}`;
+  const wrappedClosing = wrapperFence;
+  const wrapperCost = wrappedOpening.length + wrappedClosing.length + 2;
   const innerMax = Math.max(1, maxChars - wrapperCost);
   const innerChunks = splitPlainTextBlock(body, innerMax, true);
-  return innerChunks.map((chunk) => `${opening}\n${chunk}\n${closing}`);
+  return innerChunks.map((chunk) => `${wrappedOpening}\n${chunk}\n${wrappedClosing}`);
 }
 
 function splitPlainTextBlock(text: string, maxChars: number, preserveWhitespace = false): string[] {
@@ -1318,20 +1365,44 @@ function splitPlainTextBlock(text: string, maxChars: number, preserveWhitespace 
   return chunks;
 }
 
-function parseFenceLine(line: string): { marker: string } | undefined {
-  const match = line.match(/^(`{3,}|~{3,})/);
+type FenceInfo = {
+  char: "`" | "~";
+  length: number;
+};
+
+function parseOpeningFenceLine(line: string): FenceInfo | undefined {
+  const match = line.match(/^(`{3,}|~{3,})([^`]*)?$/);
   if (!match) return undefined;
-  return { marker: match[1] };
+  return {
+    char: match[1][0] as "`" | "~",
+    length: match[1].length
+  };
 }
 
-function findClosingFenceIndex(lines: string[], marker: string): number {
+function isClosingFenceLine(line: string, openingFence: FenceInfo): boolean {
+  const match = line.match(/^(`{3,}|~{3,})\s*$/);
+  if (!match) return false;
+  return match[1][0] === openingFence.char && match[1].length >= openingFence.length;
+}
+
+function findClosingFenceIndex(lines: string[], openingFence: FenceInfo): number {
   for (let index = 1; index < lines.length; index += 1) {
-    if (lines[index].startsWith(marker)) {
+    if (isClosingFenceLine(lines[index], openingFence)) {
       return index;
     }
   }
   return -1;
 }
+
+function longestFenceRun(text: string, char: "`" | "~"): number {
+  const pattern = char === "`" ? /`+/g : /~+/g;
+  return Math.max(0, ...Array.from(text.matchAll(pattern), (match) => match[0].length));
+}
+
+export const __testOnly = {
+  splitMessageText,
+  buildRenderPlan
+};
 
 function pickSplitPoint(text: string, maxChars: number): number {
   const slice = text.slice(0, maxChars);
