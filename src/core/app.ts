@@ -4357,15 +4357,20 @@ export class App {
       "| --- | --- | --- | --- | --- | --- | --- | --- |"
     ];
     for (const [index, session] of sortedSessions.entries()) {
+      const isCurrentSession = session.sessionId === boundSessionId;
       const flags = [
-        currentProject && session.cwd === currentProject ? "current" : "",
-        session.sessionId === boundSessionId ? "bound" : ""
+        isCurrentSession ? "current" : "",
+        isCurrentSession ? "bound" : ""
       ].filter(Boolean);
       lines.push(
-        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.source || "-")} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(session.threadPreview || "-")} | ${escapeMarkdownCell(flags.join(", ") || "-")} |`
+        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.source || "-")} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(session.threadPreview || "-")} | ${escapeMarkdownCell(flags.length > 0 ? flags.map((flag) => this.formatListFlag(flag)).join(", ") : "-")} |`
       );
     }
     return lines.join("\n");
+  }
+
+  private formatListFlag(flag: string): string {
+    return flag === "current" ? `\`${flag}\`` : flag;
   }
 
   private sortSessionEntries(
@@ -4454,7 +4459,7 @@ export class App {
         item.trusted ? "trusted" : ""
       ].filter(Boolean);
       lines.push(
-        `| ${index + 1} | ${escapeMarkdownCell(item.name)} | ${escapeMarkdownCell(flags.join(", ") || "-")} | ${escapeMarkdownCell(item.updatedAt ? this.formatAnyTimestamp(item.updatedAt) : "-")} | ${escapeMarkdownCell(item.project)} |`
+        `| ${index + 1} | ${escapeMarkdownCell(item.name)} | ${escapeMarkdownCell(flags.length > 0 ? flags.map((flag) => this.formatListFlag(flag)).join(", ") : "-")} | ${escapeMarkdownCell(item.updatedAt ? this.formatAnyTimestamp(item.updatedAt) : "-")} | ${escapeMarkdownCell(item.project)} |`
       );
     }
     return lines.join("\n");
