@@ -23,6 +23,7 @@ type SessionListEntry = {
   createdAt?: string;
   cwd?: string;
   preview?: string;
+  threadName?: string;
   threadPreview?: string;
   source?: string;
 };
@@ -391,6 +392,7 @@ export class App {
         "## Codex",
         "",
         "- `/compact [-h|--help]` compact the current bound Codex session",
+        "- `/rename [name|-- name] [-h|--help]` show or change the current bound Codex thread name",
         "- `/summary [-h|--help]` show the current bound Codex conversation summary",
         "- `/diff [-h|--help]` show the latest app-server turn diff for the current bound session",
         "- `/skills [list|reload] [-h|--help]` show Codex skills visible for the current project",
@@ -548,7 +550,7 @@ export class App {
         ...(rateLimits ? this.formatRateLimitStatusLines(rateLimits) : []),
         ...(thread
           ? [
-              `- **Thread name**: ${this.readString(thread.name) || "(none)"}`,
+              `- **Thread name**: ${escapeMarkdownInline(this.readString(thread.name) || "(none)")}`,
               `- **Thread status**: \`${this.readString(thread.status) || "(unknown)"}\``,
               `- **Thread source**: \`${this.readString(thread.source) || "(unknown)"}\``
             ]
@@ -610,7 +612,7 @@ export class App {
         "",
         `- **Session**: \`${sessionId}\``,
         `- **Thread id**: \`${this.readString(thread.id) || sessionId}\``,
-        `- **Name**: ${this.readString(thread.name) || "(none)"}`,
+        `- **Name**: ${escapeMarkdownInline(this.readString(thread.name) || "(none)")}`,
         `- **Status**: \`${this.formatThreadStatus(thread.status)}\``,
         `- **Source**: \`${this.formatSessionSource(thread.source)}\``,
         `- **Model**: \`${this.readThreadModel(threadInfo, thread) || this.readString(codexConfig.model) || "(default)"}\``,
@@ -699,6 +701,88 @@ export class App {
           && this.readString(summary.cwd) !== project
           ? [`- **Cwd**: \`${this.readString(summary.cwd)}\``]
           : [])
+      ].join("\n");
+    }
+
+    if (command?.name === "rename") {
+      const renameArgs = new ArgCursor(command.args);
+      if (renameArgs.peek() === "-h" || renameArgs.peek() === "--help") {
+        return this.renameHelpText();
+      }
+      if (!existing?.codexSessionId) {
+        return "No session is currently bound. Use `/new`, `/resume`, or `/session list` first.";
+      }
+      const project = existing.project || this.config.project.defaultProject;
+      if (renameArgs.isEmpty()) {
+        const threadInfo =
+          this.codex.readThread
+            ? await this.codex.readThread(existing.codexSessionId, project, false).catch(() => undefined)
+            : undefined;
+        const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+        return [
+          "# Rename",
+          "",
+          `- **Session**: \`${existing.codexSessionId}\``,
+          `- **Name**: ${escapeMarkdownInline(this.readString(thread?.name) || "(none)")}`
+        ].join("\n");
+      }
+      if (activeRun) {
+        return `Cannot rename while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
+      }
+      if (!this.codex.setSessionName) {
+        return [
+          "# Rename",
+          "",
+          `- **Backend**: \`${this.codex.mode}\``,
+          "- **Status**: `unsupported`",
+          "- Native thread renaming is currently available only in `app-server` mode."
+        ].join("\n");
+      }
+      let nextName = "";
+      if (renameArgs.peek() === "--") {
+        renameArgs.shift();
+        nextName = renameArgs.remainingText();
+        if (!nextName) {
+          return this.renderCommandError(
+            "Rename",
+            "missing rename text after `--`",
+            "Usage: `/rename [name|-- name] [-h|--help]`"
+          );
+        }
+      } else {
+        const positionalArgs = renameArgs.remaining();
+        if (positionalArgs.length === 1 && !(positionalArgs[0] || "").startsWith("-")) {
+          nextName = positionalArgs[0] || "";
+        } else {
+          const detail =
+            positionalArgs.length > 1
+              ? "multiple bare rename arguments require `--`"
+              : "missing `--` before rename text";
+          return this.renderCommandError(
+            "Rename",
+            detail,
+            "Usage: `/rename [name|-- name] [-h|--help]`",
+            ["- Use `/rename 'New title'` for one parsed argument, or `/rename -- New title` for literal remaining text."]
+          );
+        }
+      }
+      if (!nextName) {
+        return this.renderCommandError(
+          "Rename",
+          "missing rename text",
+          "Usage: `/rename [name|-- name] [-h|--help]`"
+        );
+      }
+      await sendEarlyUpdate(`Renaming Codex session \`${existing.codexSessionId}\`...`);
+      const threadInfo = await this.codex.setSessionName(existing.codexSessionId, project, nextName);
+      const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+      const nextBinding = { ...existing, updatedAt: new Date().toISOString() };
+      await this.store.put(nextBinding);
+      return [
+        "# Rename",
+        "",
+        `- **Session**: \`${existing.codexSessionId}\``,
+        `- **Name**: ${escapeMarkdownInline(this.readString(thread?.name) || nextName)}`
       ].join("\n");
     }
 
@@ -1537,12 +1621,12 @@ export class App {
         `- **Updated**: ${updatedAt}`,
         `- **Cwd**: \`${session?.cwd || this.readString(thread?.cwd) || "(unknown)"}\``,
         `- **Last message**: ${lastMessage}`,
+        `- **Thread name**: ${escapeMarkdownInline(this.readString(thread?.name) || "(none)")}`,
         `- **Thread preview**: ${threadPreview}`,
         ...(this.readString(gitInfo.branch) ? [`- **Branch**: \`${this.readString(gitInfo.branch)}\``] : []),
         `- **Flags**: ${this.formatListFlag("current")}, bound`,
         ...(thread
           ? [
-              `- **Thread name**: ${this.readString(thread.name) || "(none)"}`,
               `- **Thread status**: \`${this.readString(thread.status) || "(unknown)"}\``,
               `- **Thread source**: \`${this.readString(thread.source) || "(unknown)"}\``
             ]
@@ -2233,6 +2317,8 @@ export class App {
         return "Thread";
       case "compact":
         return "Compact";
+      case "rename":
+        return "Rename";
       case "summary":
         return "Summary";
       case "diff":
@@ -2287,6 +2373,8 @@ export class App {
         return "🧵";
       case "compact":
         return "🗜️";
+      case "rename":
+        return "✏️";
       case "summary":
         return "📝";
       case "diff":
@@ -2346,6 +2434,7 @@ export class App {
       case "status":
       case "thread":
       case "compact":
+      case "rename":
       case "summary":
       case "diff":
       case "skills":
@@ -4339,7 +4428,7 @@ export class App {
       "- `/session` shows the current bound session for this conversation.",
       `- \`/session list\` shows up to \`${this.config.codex.sessionListMaxCount}\` sessions for the current project.`,
       "- In `app-server` mode, `/session list` uses native `thread/list` and defaults to `--all-sources`.",
-      "- Session tables are ordered current project first, then project asc, then time desc.",
+      "- Session tables pin the current bound session first, then sort current project first, project asc, and time desc.",
       "- Use `/resume <session-id>` to bind one of the listed sessions.",
       "",
       "## Examples",
@@ -4394,12 +4483,12 @@ export class App {
     boundSessionId?: string,
     currentProject?: string
   ): string {
-    const sortedSessions = this.sortSessionEntries(sessions, currentProject);
+    const sortedSessions = this.sortSessionEntries(sessions, currentProject, boundSessionId);
     const lines = [
       `# ${title}`,
       "",
-      "| # | Project | Updated | Session | Source | Last message | Thread preview | Flags |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- |"
+      "| # | Project | Updated | Session | Source | Last message | Thread name | Thread preview | Flags |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"
     ];
     for (const [index, session] of sortedSessions.entries()) {
       const isCurrentSession = session.sessionId === boundSessionId;
@@ -4408,7 +4497,7 @@ export class App {
         isCurrentSession ? "bound" : ""
       ].filter(Boolean);
       lines.push(
-        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.source || "-")} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(session.threadPreview || "-")} | ${escapeMarkdownCell(flags.length > 0 ? flags.map((flag) => this.formatListFlag(flag)).join(", ") : "-")} |`
+        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.source || "-")} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(session.threadName || "-")} | ${escapeMarkdownCell(session.threadPreview || "-")} | ${escapeMarkdownCell(flags.length > 0 ? flags.map((flag) => this.formatListFlag(flag)).join(", ") : "-")} |`
       );
     }
     return lines.join("\n");
@@ -4420,9 +4509,14 @@ export class App {
 
   private sortSessionEntries(
     sessions: SessionListEntry[],
-    currentProject?: string
+    currentProject?: string,
+    boundSessionId?: string
   ): SessionListEntry[] {
     return [...sessions].sort((a, b) => {
+      const aBound = boundSessionId && a.sessionId === boundSessionId;
+      const bBound = boundSessionId && b.sessionId === boundSessionId;
+      if (aBound && !bBound) return -1;
+      if (bBound && !aBound) return 1;
       const aCurrent = currentProject && a.cwd === currentProject;
       const bCurrent = currentProject && b.cwd === currentProject;
       if (aCurrent && !bCurrent) return -1;
@@ -4445,6 +4539,7 @@ export class App {
       sessionId,
       createdAt: this.formatThreadTimestamp(this.readNumber(thread.createdAt)),
       cwd: this.readString(thread.cwd),
+      threadName: this.readString(thread.name),
       threadPreview: this.readString(thread.preview),
       source: this.formatThreadSource(thread.source)
     };
@@ -5081,6 +5176,39 @@ export class App {
     ].join("\n");
   }
 
+  private renameHelpText(): string {
+    return [
+      "# Rename",
+      "",
+      "Show or change the current bound Codex thread name.",
+      "",
+      "## Usage",
+      "",
+      "- `/rename`",
+      "- `/rename 'name'`",
+      "- `/rename -- [name]`",
+      "- `/rename -h|--help`",
+      "",
+      "## Options",
+      "",
+      "- `'name'` is the recommended form for normal rename text",
+      "- `name` set the native thread name when shell-style parsing leaves one positional argument",
+      "- `--` stop option parsing; everything after it becomes the new thread name",
+      "- `-h, --help` show rename help",
+      "",
+      "## Behavior",
+      "",
+      "- Requires a currently bound session.",
+      "- Uses native Codex `thread/name/set` in `app-server` mode.",
+      "- `/rename` without a name shows the current thread name.",
+      "",
+      "## Examples",
+      "",
+      "- `/rename`",
+      "- `/rename 'Review changes'`"
+    ].join("\n");
+  }
+
   private newHelpText(): string {
     return [
       "# New",
@@ -5631,6 +5759,14 @@ interface LogQuery {
 
 function escapeMarkdownCell(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\n/g, " ").trim();
+}
+
+function escapeMarkdownInline(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/([`*_#[\]()<>])/g, "\\$1")
+    .replace(/\r?\n/g, " ")
+    .trim();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

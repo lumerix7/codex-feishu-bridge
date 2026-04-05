@@ -50,6 +50,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 ### Codex
 
 - `/compact [-h|--help]` compact the current bound Codex session
+- `/rename ['name'|-- name] [-h|--help]` show or change the current bound Codex thread name
 - `/summary [-h|--help]` show the current bound Codex conversation summary
 - `/diff [-h|--help]` show the latest app-server turn diff for the current bound session
 - `/skills [list|reload] [-h|--help]` show Codex skills visible for the current project
@@ -79,7 +80,7 @@ Working v1 bridge:
 - Feishu long-connection receive/send
 - DM receive plus interactive-card replies
 - conversation to native Codex session binding
-- `/help` `/status` `/thread` `/compact` `/summary` `/diff` `/skills` `/config` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/feishu` `/log`
+- `/help` `/status` `/thread` `/compact` `/rename` `/summary` `/diff` `/skills` `/config` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/feishu` `/log`
 - `/search` `/model` `/profile`
 - `/git` `/cat` `/cp` `/find` `/head` `/ln` `/ls` `/mkdir` `/pwd` `/readlink` `/rg` `/rmdir` `/sha256sum` `/tail` `/tar` `/touch` `/tree` `/trash` `/trash-list` `/trash-restore` `/wc`
 - extra local slash commands can be configured with `commands.map` in `config.json`
@@ -91,6 +92,7 @@ Working v1 bridge:
 - `/model list [--no-hidden]` to query available models from Codex app-server when supported, with a bridge-side fallback list otherwise
 - `/thread` to show richer app-server thread metadata for the current bound session
 - `/compact` to trigger native Codex thread compaction in `app-server` mode for the current bound session
+- `/rename` to show the native Codex thread name for the current bound session; prefer `/rename 'name'` for normal titles and `/rename -- <name>` for literal remaining text
 - `/summary` to read the native Codex conversation summary for the current bound session
 - `/diff` to show the latest `turn/diff/updated` payload cached by the bridge
 - `/skills` to query native Codex `skills/list` for the current project
@@ -215,6 +217,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - In `app-server`, native `thread/list` calls now follow `nextCursor` pagination instead of reading only one page.
 - In `app-server`, `/model list` now uses the native `model/list` RPC when available, follows `nextCursor`, and includes hidden models by default unless `--no-hidden` is passed.
 - In `app-server`, `/compact` uses the native `thread/compact/start` RPC and then reads the updated conversation summary.
+- In `app-server`, `/rename` uses the native `thread/name/set` RPC and then reads the updated thread metadata.
 - In `app-server`, `/summary`, `/skills`, and `/config` use native `getConversationSummary`, `skills/list`, and `config/read` RPCs.
 - In `app-server`, `/diff` reads the latest cached `turn/diff/updated` notification for the bound session.
 - `codex.approvalTimeoutMs` controls how long the bridge waits for a Feishu approval or user-input reply before sending a timeout-safe response back to Codex.
@@ -279,7 +282,8 @@ but new config should use the structured schema.
 - The checked-in defaults are:
   - `codex.appServer.sidebandCards = false`
   - `codex.appServer.inlineBlocks = "full"`
-- `/help` keeps the raw fenced markdown appendix for debugging and exact markdown inspection.
+- `/help` and `/session --raw-markdown` keep the raw fenced markdown appendix for debugging and exact markdown inspection.
+- `--raw-markdown` is for source-shaped replies where exact markdown structure matters; short state or mutation commands such as `/rename` should render normally instead.
 - Other bridge replies and Codex streams render without the raw markdown appendix and keep only the rendered markdown plus footer/meta block.
 - Large replies now use paged streaming cards first instead of dropping straight to normal chunked cards.
 - If CardKit create or update fails, the bridge falls back to the normal interactive-card send path.

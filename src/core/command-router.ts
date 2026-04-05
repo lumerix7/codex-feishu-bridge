@@ -5,6 +5,7 @@ export const BUILTIN_COMMAND_NAMES = [
   "status",
   "thread",
   "compact",
+  "rename",
   "summary",
   "diff",
   "skills",
@@ -54,6 +55,7 @@ export type CommandName =
   | "status"
   | "thread"
   | "compact"
+  | "rename"
   | "summary"
   | "diff"
   | "skills"

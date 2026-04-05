@@ -180,6 +180,15 @@ export class AppServerSessionClient {
     }
   }
 
+  async setThreadName(sessionId: string, name: string): Promise<Record<string, unknown> | undefined> {
+    await this.ensureStarted();
+    const result = await this.request("thread/name/set", {
+      threadId: sessionId,
+      name
+    });
+    return isRecord(result) ? result : undefined;
+  }
+
   async getConversationSummary(sessionId: string): Promise<Record<string, unknown> | undefined> {
     await this.ensureStarted();
     const result = await this.request("getConversationSummary", {

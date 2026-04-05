@@ -730,6 +730,23 @@ class AppServerCodexBackend implements CodexBackend {
     }
   }
 
+  async setSessionName(
+    sessionId: string,
+    project: string,
+    name: string
+  ): Promise<Record<string, unknown> | undefined> {
+    const clientInfo = await this.getOrCreateClient(project, sessionId);
+    if (this.hasActiveRunForClient(clientInfo.client)) {
+      throw new Error(`Codex session ${sessionId} already has an active run.`);
+    }
+    try {
+      await clientInfo.client.setThreadName(sessionId, name);
+      return await clientInfo.client.readThread(sessionId, false).catch(() => undefined);
+    } finally {
+      this.scheduleClientShutdown(project, sessionId, clientInfo.client);
+    }
+  }
+
   async getConversationSummary(
     sessionId: string,
     project: string

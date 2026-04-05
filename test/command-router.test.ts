@@ -90,3 +90,19 @@ test("parseCommand recognizes configured extra slash command names", () => {
     args: ["today"]
   });
 });
+
+test("parseCommand recognizes rename slash commands", () => {
+  const parsed = parseCommand(makeMessage('/rename "Bridge session title"'));
+  assert.deepEqual(parsed, {
+    name: "rename",
+    args: ["Bridge session title"]
+  });
+});
+
+test("parseCommand preserves rename end-of-options marker", () => {
+  const parsed = parseCommand(makeMessage('/rename -- "-h"'));
+  assert.deepEqual(parsed, {
+    name: "rename",
+    args: ["--", "-h"]
+  });
+});

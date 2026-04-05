@@ -62,6 +62,11 @@ export interface CodexBackend {
     project: string,
     hooks?: Pick<CodexRunHooks, "onNotification">
   ): Promise<Record<string, unknown> | undefined>;
+  setSessionName?(
+    sessionId: string,
+    project: string,
+    name: string
+  ): Promise<Record<string, unknown> | undefined>;
   getConversationSummary?(
     sessionId: string,
     project: string

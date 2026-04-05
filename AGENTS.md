@@ -13,11 +13,9 @@
 
 ## Development / Install
 
-- Install deps: `npm install`
+- Build + Install + Start: `./install.sh --yes`
+- Deps: `npm install`
 - Local dev: `npm run dev`
-- Local CLI mode: `npm run cli -- --chat-id test-terminal`
-- Full local install/update: `./install.sh`
-- Non-interactive install: `./install.sh --yes`
 - Service template: [`deploy/systemd/codex-feishu-bridge.service.in`](./deploy/systemd/codex-feishu-bridge.service.in)
 - Main config template: [`deploy/config/config.json`](./deploy/config/config.json)
 
@@ -30,11 +28,14 @@
 
 ## Tips
 
-- Proactive maintenance rule: when a repeated implementation rule, rendering rule, or operational convention changes, update this `## Tips` section or other section(s) so the next session sees the current rule immediately.
+- Be proactive: when a durable rule changes, update this file briefly; keep details in `README.md` or `docs/`.
+- Prefer simple first, then one step more.
 - Prefer `app-server` backend; it is the main path now.
 - Keep output/rendering decisions centralized. Message-level body modes such as raw markdown or raw text should be marked in the app layer and rendered once in the Feishu gateway.
 - For fenced output, use the shared dynamic-fence rule: fence length is `max(3, longest backtick run + 1)`.
 - Local command output is usually normal rendered markdown containing fenced `text` blocks, not raw-body mode.
+- Reserve `--raw-markdown` for source-shaped replies; keep short state/mutation commands rendered normally.
+- Keep `/rename` native in `app-server`.
 - Useful runtime checks:
   - `systemctl --user status codex-feishu-bridge.service`
   - `systemctl --user cat codex-feishu-bridge.service`
