@@ -2042,7 +2042,7 @@ export class App {
           ? { ...binding, updatedAt: new Date().toISOString() }
           : this.makeBinding(key, result.sessionId, project, binding);
       await this.store.put(nextBinding);
-      return this.codex.mode === "terminal" && onUpdate ? "" : result.output;
+      return result.output;
     } finally {
       this.cancelPendingApproval(key, "run finished");
       this.activeRuns.delete(key);

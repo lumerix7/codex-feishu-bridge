@@ -41,7 +41,7 @@ export interface CodexNotification {
 }
 
 export interface CodexBackend {
-  readonly mode: "spawn" | "terminal" | "app-server";
+  readonly mode: "spawn" | "app-server";
   createSession(project: string, options?: CodexTurnOptions): Promise<string>;
   runTurn(
     input: IncomingMessage,

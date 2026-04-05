@@ -46,7 +46,7 @@ export interface AppConfig {
     home: string;
     sessionsDir: string;
     profileMode: "isolated" | "personal";
-    backendMode: "spawn" | "terminal" | "app-server";
+    backendMode: "spawn" | "app-server";
     outputSoftLimit: number;
     modelListMaxCount: number;
     appServerSidebandCards: boolean;
@@ -59,10 +59,6 @@ export interface AppConfig {
     compactTimeoutMs: number;
     spawnStatusIntervalMs: number;
     statusIncludeProject: boolean;
-    terminalRenderMode: "markdown" | "plain";
-    terminalFlushIdleMs: number;
-    terminalFlushMaxChars: number;
-    terminalStartupTimeoutMs: number;
   };
   project: {
     allowedRoots: string[];
@@ -119,12 +115,6 @@ interface JsonConfigShape {
     compactTimeoutMs?: unknown;
     spawn?: {
       statusIntervalMs?: unknown;
-    };
-    terminal?: {
-      renderMode?: unknown;
-      flushIdleMs?: unknown;
-      flushMaxChars?: unknown;
-      startupTimeoutMs?: unknown;
     };
   };
   session?: {
@@ -298,12 +288,7 @@ export function loadConfig(): AppConfig {
         ["codex", "sessionsDir"]
       ),
       profileMode: codexProfileMode,
-      backendMode:
-        codexBackendMode === "terminal"
-          ? "terminal"
-          : codexBackendMode === "app-server"
-            ? "app-server"
-            : "spawn",
+      backendMode: codexBackendMode === "app-server" ? "app-server" : "spawn",
       outputSoftLimit: readIntegerSetting(
         "CODEX_OUTPUT_SOFT_LIMIT",
         100000,
@@ -382,35 +367,6 @@ export function loadConfig(): AppConfig {
         true,
         jsonConfig,
         ["status", "includeProject"]
-      ),
-      terminalRenderMode:
-        readTextSetting("TERMINAL_RENDER_MODE", "markdown", jsonConfig, [
-          "codex",
-          "terminal",
-          "renderMode"
-        ]) === "plain"
-          ? "plain"
-          : "markdown",
-      terminalFlushIdleMs: readIntegerSetting(
-        "TERMINAL_FLUSH_IDLE_MS",
-        3000,
-        jsonConfig,
-        ["codex", "terminal", "flushIdleMs"],
-        { min: 0 }
-      ),
-      terminalFlushMaxChars: readIntegerSetting(
-        "TERMINAL_FLUSH_MAX_CHARS",
-        4000,
-        jsonConfig,
-        ["codex", "terminal", "flushMaxChars"],
-        { min: 0 }
-      ),
-      terminalStartupTimeoutMs: readIntegerSetting(
-        "TERMINAL_STARTUP_TIMEOUT_MS",
-        30000,
-        jsonConfig,
-        ["codex", "terminal", "startupTimeoutMs"],
-        { min: 1 }
       )
     },
     project: {

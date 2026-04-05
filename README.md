@@ -99,7 +99,7 @@ Working v1 bridge:
 - `/log [-n N] [--since <expr>] [--grep <text>]` to tail recent bridge service logs from systemd journal
 - `/feishu`, `/feishu ws`, `/feishu send`, and `/feishu doctor` to inspect Feishu websocket readiness, outbound retry/failure counters, and a quick transport health verdict
 - `/status check-update` to show a minimal Codex/Feishu update view with current vs latest published npm versions
-- backend modes: `app-server`, `spawn`, and experimental `terminal`
+- backend modes: `app-server` and `spawn`
 
 ## Feishu Transport Notes
 
@@ -185,10 +185,6 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
   process per turn while the bridge persists the native session id.
 - `spawn` is still useful as a simpler fallback backend when you want fewer moving parts and do not need the richer `app-server` features.
 - `spawn` now emits lightweight progress updates such as session start, thinking, long-run heartbeat, and upstream websocket retry notices when Codex exposes them.
-- `codex.backendMode = "terminal"` is experimental. It is intended for a
-  terminal-derived Codex experience projected into Feishu, but the current
-  Codex interactive CLI is still a full-screen TUI and not yet reliable enough
-  to use as the default backend.
 - In `spawn`, `codex.sandboxMode = "workspace-write"` maps to Codex `--full-auto`.
 - In `spawn`, `codex.sandboxMode = "danger-full-access"` maps to Codex `--dangerously-bypass-approvals-and-sandbox`.
 - In `app-server`, `codex.sandboxMode = "default"` maps to `sandbox=workspace-write` plus `approvalPolicy=on-request`.
@@ -225,10 +221,6 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - `project.listMaxCount` controls how many entries `/project list` will return at most from the merged bound-and-trusted project set. The checked-in default is `100`.
 - `/feishu ws` and `/feishu doctor` include reconnect counters so you can tell the difference between an occasional reconnect and a flapping long-connection session.
 - Outbound Feishu replies currently use interactive cards with a schema `2.0` markdown body, card title, chat-list summary, and per-reply header template color.
-- `codex.terminal.flushIdleMs` controls the quiet window before terminal output
-  is projected back to Feishu as one reply.
-- `codex.terminal.flushMaxChars` caps one terminal-mode Feishu reply so noisy
-  screens do not flood the chat.
 - Numeric config values must be integers. Invalid values now fail fast during startup.
 
 The bridge still accepts the old env-style JSON keys as a compatibility fallback,

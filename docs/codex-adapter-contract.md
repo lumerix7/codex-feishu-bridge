@@ -8,7 +8,6 @@ Current backends:
 
 - `app-server`
 - `spawn`
-- experimental `terminal`
 
 ## Required capabilities
 
@@ -65,11 +64,6 @@ This distinction is important for:
 - simpler fallback backend
 - uses `codex exec` / `codex exec resume`
 - fewer structured capabilities, but lower coordination complexity
-
-### `terminal`
-
-- experimental
-- not the default path
 
 ## Current code reference
 
