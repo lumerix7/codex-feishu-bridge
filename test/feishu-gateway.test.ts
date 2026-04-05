@@ -142,3 +142,33 @@ test("buildRenderPlan still recognizes a real top-level table after a fenced blo
     plan.pages.some((page) => page.text.includes("| Name | Value |\n|---|---|"))
   );
 });
+
+test("renderOutgoingBody wraps raw markdown once in the gateway", () => {
+  const rendered = __testOnly.renderOutgoingBody("# Help\n\n- `code`", "raw-markdown");
+
+  assert.match(rendered, /^```markdown\n/);
+  assert.match(rendered, /\n```$/);
+  assert.ok(rendered.includes("# Help"));
+});
+
+test("renderOutgoingBody wraps raw text once in the gateway", () => {
+  const rendered = __testOnly.renderOutgoingBody("plain output", "raw-text");
+
+  assert.equal(rendered, "```text\nplain output\n```");
+});
+
+test("buildRenderPlan applies raw markdown body formatting before pagination", () => {
+  const plan = __testOnly.buildRenderPlan(
+    {
+      chatId: "chat_test",
+      text: "# Help\n\n- `code`",
+      bodyFormat: "raw-markdown",
+      footer: "footer"
+    },
+    400
+  );
+
+  assert.equal(plan.pages.length, 1);
+  assert.match(plan.pages[0]!.text, /^```markdown\n/);
+  assert.match(plan.pages[0]!.text, /\n```$/);
+});

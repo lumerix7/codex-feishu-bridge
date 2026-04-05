@@ -10,7 +10,7 @@ import { AppConfig } from "../config/env.js";
 import { conversationKeyFor } from "./conversation-key.js";
 import { BUILTIN_COMMAND_NAMES, parseCommand } from "./command-router.js";
 import { BindingStore } from "../store/binding-store.js";
-import { ActiveRun, IncomingMessage, OutgoingMessage, SessionBinding } from "../types/domain.js";
+import { ActiveRun, IncomingMessage, OutgoingBodyFormat, OutgoingMessage, SessionBinding } from "../types/domain.js";
 import { getRecentSessionMessages, getSessionSummary, listRecentSessions } from "../adapters/codex/session-files.js";
 import { listTrustedProjects } from "../adapters/codex/project-files.js";
 import { getCodexRuntimeMeta } from "../adapters/codex/runtime-meta.js";
@@ -29,6 +29,7 @@ type SessionListEntry = {
 
 type AppResponse = {
   text: string;
+  bodyFormat?: OutgoingBodyFormat;
   severity?: "warning" | "error";
 };
 
@@ -139,7 +140,6 @@ export class App {
         const messageTitle = this.titleForCommand(commandName, titleInput);
         const messageTemplate = this.templateForCommand(commandName);
         const messageFooter = this.footerForMessage(commandName, currentBinding);
-        const includeRawMarkdown = this.shouldIncludeRawMarkdownForMessage(commandName);
         const formatForFeishu = (text: string): string =>
           commandName ? this.stripLeadingMarkdownHeading(text) : text;
         try {
@@ -185,8 +185,7 @@ export class App {
                   text: statusText,
                   replyToMessageId: message.messageId,
                   threadId: message.threadId,
-                  streaming: false,
-                  includeRawMarkdown
+                  streaming: false
                 });
               } catch (error) {
                 console.error("failed to send Feishu update", {
@@ -219,7 +218,6 @@ export class App {
                 template: messageTemplate,
                 footer: this.footerForCodexReply(latestBinding),
                 text: snapshot,
-                includeRawMarkdown,
                 replyToMessageId: message.messageId,
                 threadId: message.threadId,
                 streaming: true,
@@ -274,6 +272,7 @@ export class App {
 
           const result = await this.handleIncoming(message, sendUpdateSafely, sendStatusSafely);
           const text = typeof result === "string" ? result : result.text;
+          const responseBodyFormat = typeof result === "string" ? undefined : result.bodyFormat;
           const responseSeverity = typeof result === "string" ? undefined : result.severity;
           await statusChain;
           await streamDrain;
@@ -308,10 +307,10 @@ export class App {
               template: finalTemplate,
               footer: finalFooter,
               text: formattedText,
+              bodyFormat: responseBodyFormat,
               replyToMessageId: message.messageId,
               threadId: message.threadId,
               streaming: true,
-              includeRawMarkdown,
               ...(commandName ? {} : { streamKey, finalizeStreaming: true, suppressChunkFooter: true, preserveStreamingPages: true })
             });
           }
@@ -331,7 +330,6 @@ export class App {
               template: "red",
               footer: this.buildIsoFooter(),
               text: `bridge error: ${text}`,
-              includeRawMarkdown: false,
               replyToMessageId: message.messageId,
               threadId: message.threadId
             });
@@ -367,7 +365,17 @@ export class App {
     }
     const command = parsedCommand;
     if (command?.name === "help") {
-      return [
+      const helpArgs = new ArgCursor(command.args);
+      helpArgs.takeFlag("-h", "--help");
+      const rawMarkdownOnly = helpArgs.takeFlag("--raw-markdown");
+      if (!helpArgs.isEmpty()) {
+        return this.renderCommandError(
+          "Help",
+          `unsupported help argument \`${helpArgs.peek()}\``,
+          "`/help [--raw-markdown]`"
+        );
+      }
+      const helpText = [
         "# Bridge Help",
         "",
         "## Core",
@@ -403,8 +411,16 @@ export class App {
         "",
         "- `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session",
         "- `/feishu [ws|send|doctor] [-h|--help]` show Feishu websocket and outbound send diagnostics",
-        "- `/log [-n <count>] [--since <expr>] [--grep <text>] [-h|--help]` show recent bridge service logs from systemd journal"
+        "- `/log [-n <count>] [--since <expr>] [--grep <text>] [-h|--help]` show recent bridge service logs from systemd journal",
+        "",
+        "## Notes",
+        "",
+        "- Add `--raw-markdown` to `/help` or `/session` to return fenced source markdown instead of rendered markdown."
       ].join("\n");
+      return this.withBodyFormat(
+        helpText,
+        rawMarkdownOnly ? "raw-markdown" : undefined
+      );
     }
 
     const key = conversationKeyFor(message);
@@ -1376,18 +1392,20 @@ export class App {
 
     if (command?.name === "session") {
       const sessionArgs = new ArgCursor(command.args);
+      const rawMarkdownOnly = sessionArgs.takeFlag("--raw-markdown");
+      const sessionBodyFormat: OutgoingBodyFormat | undefined = rawMarkdownOnly ? "raw-markdown" : undefined;
       const allProjects = sessionArgs.takeFlag("--all");
       const currentProject = existing?.project || this.config.project.defaultProject;
       const projectScopeArg = sessionArgs.takeOption("--project");
       if (projectScopeArg === "") {
-        return this.renderCommandError(
+        return this.withBodyFormat(this.renderCommandError(
           "Session",
           "missing value for `--project <path>`",
           "`/session [list [options]] [-h|--help]`"
-        );
+        ), sessionBodyFormat);
       }
       if (sessionArgs.peek() === "-h" || sessionArgs.peek() === "--help") {
-        return this.sessionsHelpText();
+        return this.withBodyFormat(this.sessionsHelpText(), sessionBodyFormat);
       }
       const remainingSessionArgs = sessionArgs.remaining();
       const isLegacyNumericList = remainingSessionArgs.length === 1 && /^\d+$/.test(remainingSessionArgs[0] || "");
@@ -1399,39 +1417,39 @@ export class App {
         const allSources = listArgs.takeFlag("--all-sources");
         const sourceKind = listArgs.takeOption("--source");
         if (sourceKind === "") {
-          return this.renderCommandError(
+          return this.withBodyFormat(this.renderCommandError(
             "Session",
             "missing value for `--source <source>`",
             "`/session list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
-          );
+          ), sessionBodyFormat);
         }
         const sourceFilters = [interactiveOnly, nonInteractiveOnly, allSources, Boolean(sourceKind)].filter(Boolean).length;
         if (sourceFilters > 1) {
-          return this.renderCommandError(
+          return this.withBodyFormat(this.renderCommandError(
             "Session",
             "use only one of `--interactive-only`, `--non-interactive-only`, `--all-sources`, or `--source <source>`",
             "`/session list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
-          );
+          ), sessionBodyFormat);
         }
         if (sourceKind && !SESSION_SOURCE_KINDS.includes(sourceKind as typeof SESSION_SOURCE_KINDS[number])) {
-          return this.renderCommandError(
+          return this.withBodyFormat(this.renderCommandError(
             "Session",
             `unknown source \`${sourceKind}\``,
             "`/session list [--source <source>]`",
             [`- **Available**: ${SESSION_SOURCE_KINDS.map((item) => `\`${item}\``).join(", ")}`]
-          );
+          ), sessionBodyFormat);
         }
         const limit = this.parseSessionsListLimit(listArgs);
         if (limit === undefined) {
-          return this.renderCommandError(
+          return this.withBodyFormat(this.renderCommandError(
             "Session",
             "invalid session list count",
             "`/session list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
-          );
+          ), sessionBodyFormat);
         }
         const leftoverListArgs = listArgs.remaining();
         if (leftoverListArgs.length > 0) {
-          return leftoverListArgs[0].startsWith("/")
+          return this.withBodyFormat(leftoverListArgs[0].startsWith("/")
             ? this.renderCommandError(
                 "Session",
                 "use `--project <path>` to filter sessions by project path",
@@ -1441,7 +1459,7 @@ export class App {
                 "Session",
                 `unsupported session list argument \`${leftoverListArgs[0]}\``,
                 "`/session list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]`"
-              );
+              ), sessionBodyFormat);
         }
         const scopedProject = projectScopeArg
           ? await this.resolveProject(projectScopeArg, currentProject)
@@ -1453,9 +1471,12 @@ export class App {
           sourceKinds: sourceKind ? [sourceKind] : undefined
         });
         if (sessions.length === 0) {
-          return this.noSessionsText(scopedProject, allProjects, Boolean(projectScopeArg));
+          return this.withBodyFormat(
+            this.noSessionsText(scopedProject, allProjects, Boolean(projectScopeArg)),
+            sessionBodyFormat
+          );
         }
-        return this.renderSessionList(
+        const rendered = this.renderSessionList(
           projectScopeArg
             ? "Project Sessions"
             : allProjects
@@ -1465,18 +1486,22 @@ export class App {
           existing?.codexSessionId,
           scopedProject
         );
+        return this.withBodyFormat(rendered, sessionBodyFormat);
       }
 
       if (!sessionArgs.isEmpty()) {
-        return this.renderCommandError(
+        return this.withBodyFormat(this.renderCommandError(
           "Session",
           `unsupported session subcommand \`${sessionArgs.peek()}\``,
           "`/session [list [options]] [-h|--help]`"
-        );
+        ), sessionBodyFormat);
       }
 
       if (!existing?.codexSessionId) {
-        return "No session is currently bound. Use `/new`, `/resume`, or `/session list`.";
+        return this.withBodyFormat(
+          "No session is currently bound. Use `/new`, `/resume`, or `/session list`.",
+          sessionBodyFormat
+        );
       }
       const session = await getSessionSummary(this.config.codex.sessionsDir, existing.codexSessionId);
       const project = existing.project || this.config.project.defaultProject;
@@ -1500,7 +1525,7 @@ export class App {
         this.formatAnyTimestamp(session?.createdAt);
       const lastMessage = session?.preview || "(no preview)";
       const threadPreview = this.readString(thread?.preview) || "(none)";
-      return [
+      const sessionText = [
         "# Current Session",
         "",
         `- **Session**: \`${existing.codexSessionId}\``,
@@ -1523,6 +1548,7 @@ export class App {
             ]
           : [])
       ].join("\n");
+      return this.withBodyFormat(sessionText, sessionBodyFormat);
     }
 
     const binding = existing;
@@ -2083,8 +2109,7 @@ export class App {
       await this.feishu?.sendStartupReady(
         text,
         footer,
-        title,
-        false
+        title
       );
       console.log(logLabel, {
         chatId: this.config.feishu.startupNotifyChatId,
@@ -2449,8 +2474,7 @@ export class App {
       text,
       replyToMessageId: message.messageId,
       threadId: message.threadId,
-      streaming: false,
-      includeRawMarkdown: false
+      streaming: false
     });
   }
 
@@ -2507,10 +2531,6 @@ export class App {
       binding?.codexSessionId,
       binding?.codexSessionId
     )}`;
-  }
-
-  private shouldIncludeRawMarkdownForMessage(commandName?: string): boolean {
-    return commandName === "help";
   }
 
   private buildIsoFooter(): string {
@@ -2761,7 +2781,6 @@ export class App {
         template,
         footer: this.buildIsoFooter(),
         text,
-        includeRawMarkdown: false,
         replyToMessageId: message.messageId,
         threadId: message.threadId
       });
@@ -4291,8 +4310,8 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/session [list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]]`",
-      "- `/session -h|--help`",
+      "- `/session [list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]] [--raw-markdown]`",
+      "- `/session -h|--help [--raw-markdown]`",
       "",
       "## Options",
       "",
@@ -4313,6 +4332,7 @@ export class App {
       "### General",
       "",
       "- `-h, --help` show session help",
+      "- `--raw-markdown` return fenced source markdown instead of rendered markdown",
       "",
       "## Behavior",
       "",
@@ -5542,8 +5562,25 @@ export class App {
       0,
       ...Array.from(value.matchAll(/`+/g), (match) => match[0].length)
     );
-    const fence = "`".repeat(longestBacktickRun > 0 ? longestBacktickRun + 1 : 3);
+    const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
     return `${fence}${language ? language : ""}\n${value}\n${fence}`;
+  }
+
+  private withBodyFormat(
+    result: string | AppResponse,
+    bodyFormat?: OutgoingBodyFormat
+  ): string | AppResponse {
+    if (!bodyFormat) return result;
+    if (typeof result === "string") {
+      return {
+        text: result,
+        bodyFormat
+      };
+    }
+    return {
+      ...result,
+      bodyFormat
+    };
   }
 
   private truncateOutput(value: string): string {
