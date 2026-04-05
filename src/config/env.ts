@@ -70,6 +70,9 @@ export interface AppConfig {
     defaultSearchEnabled: boolean;
     listMaxCount: number;
   };
+  commands: {
+    map: Record<string, string>;
+  };
   storePath: string;
 }
 
@@ -133,6 +136,9 @@ interface JsonConfigShape {
     defaultPath?: unknown;
     defaultSearchEnabled?: unknown;
     listMaxCount?: unknown;
+  };
+  commands?: {
+    map?: unknown;
   };
   status?: {
     includeProject?: unknown;
@@ -424,6 +430,9 @@ export function loadConfig(): AppConfig {
         { min: 1 }
       )
     },
+    commands: {
+      map: readStringMapSetting(jsonConfig, ["commands", "map"])
+    },
     storePath: readTextSetting("STORE_PATH", ".data/bindings.json", jsonConfig, ["paths", "storePath"])
   };
 }
@@ -580,6 +589,24 @@ function readRootsSetting(
     return parseRootsSetting(expandEnvPlaceholders(jsonValue), primaryRoot);
   }
   return normalizeRoots([], primaryRoot);
+}
+
+function readStringMapSetting(
+  jsonConfig: JsonConfigShape | undefined,
+  jsonPath: string[]
+): Record<string, string> {
+  const jsonValue = readJsonValue(jsonConfig, jsonPath);
+  if (!jsonValue || typeof jsonValue !== "object" || Array.isArray(jsonValue)) {
+    return {};
+  }
+  const entries = Object.entries(jsonValue as Record<string, unknown>)
+    .map(([rawKey, rawValue]) => {
+      const key = rawKey.trim().replace(/^\/+/, "");
+      const value = typeof rawValue === "string" ? rawValue.trim() : "";
+      return [key, value] as const;
+    })
+    .filter(([key, value]) => key.length > 0 && value.length > 0);
+  return Object.fromEntries(entries);
 }
 
 function readJsonValue(

@@ -8,7 +8,7 @@ import { createCodexBackend } from "../adapters/codex/codex-runtime.js";
 import { FeishuGateway } from "../adapters/feishu/feishu-gateway.js";
 import { AppConfig } from "../config/env.js";
 import { conversationKeyFor } from "./conversation-key.js";
-import { parseCommand } from "./command-router.js";
+import { BUILTIN_COMMAND_NAMES, parseCommand } from "./command-router.js";
 import { BindingStore } from "../store/binding-store.js";
 import { ActiveRun, IncomingMessage, OutgoingMessage, SessionBinding } from "../types/domain.js";
 import { getRecentSessionMessages, getSessionSummary, listRecentSessions } from "../adapters/codex/session-files.js";
@@ -130,7 +130,7 @@ export class App {
     this.feishu = new FeishuGateway(this.config.feishu);
     await this.feishu.start(
       async (message) => {
-        const parsedCommand = parseCommand(message);
+        const parsedCommand = parseCommand(message, this.configuredLocalCommandNames());
         const command = parsedCommand && "args" in parsedCommand ? parsedCommand : undefined;
         const currentBinding = await this.store.get(conversationKeyFor(message));
         const commandName = command?.name || ("name" in (parsedCommand || {}) ? parsedCommand?.name : undefined);
@@ -355,7 +355,7 @@ export class App {
       return "Only direct messages are supported right now.";
     }
 
-    const parsedCommand = parseCommand(message);
+    const parsedCommand = parseCommand(message, this.configuredLocalCommandNames());
     if (parsedCommand && "parseError" in parsedCommand) {
       const title = parsedCommand.name ? this.commandBaseTitle(parsedCommand.name) : "Command";
       return this.renderCommandError(
@@ -396,7 +396,7 @@ export class App {
         "",
         "- `/project [list|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings",
         "- `/git [args...]` run `git` directly in the current bound project",
-      "- `/cat`, `/cp`, `/find`, `/head`, `/ln`, `/ls`, `/mkdir`, `/mv`, `/pwd`, `/readlink`, `/rg`, `/rmdir`, `/sha256sum`, `/tail`, `/tar`, `/touch`, `/tree`, `/trash`, `/trash-list`, `/trash-restore`, `/wc` run local project commands",
+        `- ${this.localProjectCommandHelpText()} run local project commands`,
         "",
         "## Diagnostics",
         "",
@@ -1709,33 +1709,12 @@ export class App {
       return this.runGitCommand(project, command.args);
     }
 
-    if (
-      command?.name === "cat" ||
-      command?.name === "cp" ||
-      command?.name === "find" ||
-      command?.name === "head" ||
-      command?.name === "ln" ||
-      command?.name === "ls" ||
-      command?.name === "mkdir" ||
-      command?.name === "mv" ||
-      command?.name === "pwd" ||
-      command?.name === "readlink" ||
-      command?.name === "rg" ||
-      command?.name === "rmdir" ||
-      command?.name === "sha256sum" ||
-      command?.name === "tail" ||
-      command?.name === "tar" ||
-      command?.name === "trash" ||
-      command?.name === "trash-list" ||
-      command?.name === "trash-restore" ||
-      command?.name === "touch" ||
-      command?.name === "tree" ||
-      command?.name === "wc"
-    ) {
-      const localCommandName = command.name;
+    const localCommandName = command ? this.resolveLocalProjectCommand(command.name) : undefined;
+    if (command && localCommandName) {
+      const localSlashName = command.name;
       const project = binding?.project || this.config.project.defaultProject;
       await sendEarlyUpdate(`Running ${localCommandName} in project \`${project}\`...`);
-      return this.runLocalCommand(localCommandName, project, command.args);
+      return this.runLocalCommand(localCommandName, project, command.args, localSlashName);
     }
 
     if (command?.name === "approvals") {
@@ -2132,7 +2111,63 @@ export class App {
     return /\s/.test(arg) ? JSON.stringify(arg) : arg;
   }
 
+  private configuredLocalCommandNames(): string[] {
+    return Object.keys(this.config.commands.map);
+  }
+
+  private builtinLocalProjectCommandNames(): string[] {
+    return [
+      "cat",
+      "cp",
+      "find",
+      "head",
+      "ln",
+      "ls",
+      "mkdir",
+      "mv",
+      "pwd",
+      "readlink",
+      "rg",
+      "rmdir",
+      "sha256sum",
+      "tail",
+      "tar",
+      "touch",
+      "trash",
+      "trash-list",
+      "trash-restore",
+      "tree",
+      "wc"
+    ];
+  }
+
+  private isLocalProjectCommand(commandName: string): boolean {
+    return Boolean(this.resolveLocalProjectCommand(commandName));
+  }
+
+  private resolveLocalProjectCommand(commandName: string): string | undefined {
+    if (this.builtinLocalProjectCommandNames().includes(commandName)) {
+      return commandName;
+    }
+    return this.config.commands.map[commandName];
+  }
+
+  private localProjectCommandNames(): string[] {
+    const names = new Set([
+      ...this.builtinLocalProjectCommandNames(),
+      ...this.configuredLocalCommandNames()
+    ]);
+    return Array.from(names).sort((left, right) => left.localeCompare(right));
+  }
+
+  private localProjectCommandHelpText(): string {
+    return this.localProjectCommandNames().map((name) => `\`/${name}\``).join(", ");
+  }
+
   private commandBaseTitle(commandName: string): string {
+    if (this.isLocalProjectCommand(commandName)) {
+      return commandName;
+    }
     switch (commandName) {
       case "help":
         return "Help";
@@ -2168,48 +2203,6 @@ export class App {
         return "Git";
       case "feishu":
         return "Feishu";
-      case "pwd":
-        return "pwd";
-      case "ls":
-        return "ls";
-      case "cp":
-        return "cp";
-      case "ln":
-        return "ln";
-      case "mkdir":
-        return "mkdir";
-      case "mv":
-        return "mv";
-      case "readlink":
-        return "readlink";
-      case "rmdir":
-        return "rmdir";
-      case "sha256sum":
-        return "sha256sum";
-      case "head":
-        return "head";
-      case "tail":
-        return "tail";
-      case "tar":
-        return "tar";
-      case "wc":
-        return "wc";
-      case "touch":
-        return "touch";
-      case "trash":
-        return "trash";
-      case "trash-list":
-        return "trash-list";
-      case "trash-restore":
-        return "trash-restore";
-      case "cat":
-        return "cat";
-      case "tree":
-        return "tree";
-      case "find":
-        return "find";
-      case "rg":
-        return "rg";
       case "approvals":
         return "Approvals";
       case "search":
@@ -2226,6 +2219,9 @@ export class App {
   }
 
   private commandTitleEmoji(commandName: string): string | undefined {
+    if (this.isLocalProjectCommand(commandName)) {
+      return "📂";
+    }
     switch (commandName) {
       case "help":
         return "❓";
@@ -2261,28 +2257,6 @@ export class App {
         return "🌿";
       case "feishu":
         return "🪶";
-      case "pwd":
-      case "ls":
-      case "cp":
-      case "ln":
-      case "mkdir":
-      case "mv":
-      case "readlink":
-      case "rmdir":
-      case "sha256sum":
-      case "head":
-      case "tail":
-      case "tar":
-      case "wc":
-      case "touch":
-      case "trash":
-      case "trash-list":
-      case "trash-restore":
-      case "cat":
-      case "tree":
-      case "find":
-      case "rg":
-        return "📂";
       case "approvals":
         return "🔐";
       case "search":
@@ -5471,33 +5445,14 @@ export class App {
   }
 
   private async runLocalCommand(
-    command:
-      | "cat"
-      | "cp"
-      | "find"
-      | "head"
-      | "ln"
-      | "ls"
-      | "mkdir"
-      | "mv"
-      | "pwd"
-      | "readlink"
-      | "rg"
-      | "rmdir"
-      | "sha256sum"
-      | "tail"
-      | "tar"
-      | "trash"
-      | "trash-list"
-      | "trash-restore"
-      | "touch"
-      | "tree"
-      | "wc",
+    command: string,
     project: string,
-    args: string[]
+    args: string[],
+    displayName = command
   ): Promise<string | AppResponse> {
     const commandText = [command, ...args].join(" ");
     const execArgs = [...args];
+    const heading = `# ${displayName.toUpperCase()}`;
     try {
       const { stdout, stderr } = await execFileAsync(command, execArgs, {
         cwd: project,
@@ -5506,7 +5461,7 @@ export class App {
       });
       const combined = [stdout, stderr].filter(Boolean).join(stderr && stdout ? "\n" : "");
       return [
-        `# ${command.toUpperCase()}`,
+        heading,
         "",
         `- **Project**: \`${project}\``,
         `- **Command**: \`${commandText || command}\``,
@@ -5526,7 +5481,7 @@ export class App {
       return {
         severity: "warning",
         text: [
-          `# ${command.toUpperCase()}`,
+          heading,
           "",
           `- **Project**: \`${project}\``,
           `- **Command**: \`${commandText || command}\``,

@@ -1,5 +1,54 @@
 import { IncomingMessage } from "../types/domain.js";
 
+export const BUILTIN_COMMAND_NAMES = [
+  "help",
+  "status",
+  "thread",
+  "compact",
+  "summary",
+  "diff",
+  "skills",
+  "config",
+  "new",
+  "fork",
+  "resume",
+  "session",
+  "stop",
+  "project",
+  "git",
+  "pwd",
+  "ls",
+  "cp",
+  "ln",
+  "mkdir",
+  "mv",
+  "readlink",
+  "rmdir",
+  "touch",
+  "trash",
+  "trash-list",
+  "trash-restore",
+  "cat",
+  "head",
+  "tail",
+  "wc",
+  "sha256sum",
+  "tar",
+  "tree",
+  "find",
+  "rg",
+  "approvals",
+  "feishu",
+  "log",
+  "search",
+  "model",
+  "profile",
+  "plan"
+] as const;
+
+export type BuiltinCommandName =
+  typeof BUILTIN_COMMAND_NAMES[number];
+
 export type CommandName =
   | "help"
   | "status"
@@ -124,58 +173,16 @@ function tokenizeCommandText(text: string): { tokens: string[]; parseError?: str
   return { tokens };
 }
 
-export function parseCommand(message: IncomingMessage): ParsedCommand | ParsedCommandError | undefined {
+export function parseCommand(
+  message: IncomingMessage,
+  extraNames: string[] = []
+): ParsedCommand | ParsedCommandError | undefined {
   const text = message.text.trim();
   if (!text.startsWith("/")) return undefined;
   const { tokens, parseError } = tokenizeCommandText(text.slice(1));
   const [head, ...args] = tokens;
-  if (
-    [
-      "help",
-      "status",
-      "thread",
-      "compact",
-      "summary",
-      "diff",
-      "skills",
-      "config",
-      "new",
-      "fork",
-      "resume",
-      "session",
-      "stop",
-      "project",
-      "git",
-      "pwd",
-      "ls",
-      "cp",
-      "ln",
-      "mkdir",
-      "mv",
-      "readlink",
-      "rmdir",
-      "touch",
-      "trash",
-      "trash-list",
-      "trash-restore",
-      "cat",
-      "head",
-      "tail",
-      "wc",
-      "sha256sum",
-      "tar",
-      "tree",
-      "find",
-      "rg",
-      "approvals",
-      "feishu",
-      "log",
-      "search",
-      "model",
-      "profile",
-      "plan"
-    ].includes(head)
-  ) {
+  const knownNames = new Set<string>([...BUILTIN_COMMAND_NAMES, ...extraNames]);
+  if (knownNames.has(head)) {
     if (parseError) {
       return { name: head as CommandName, parseError };
     }

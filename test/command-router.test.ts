@@ -82,3 +82,11 @@ test("parseCommand strips Feishu markdown links in arguments back to plain text"
     args: ["-n", "3", "README.md"]
   });
 });
+
+test("parseCommand recognizes configured extra slash command names", () => {
+  const parsed = parseCommand(makeMessage("/todo today"), ["todo"]);
+  assert.deepEqual(parsed, {
+    name: "todo",
+    args: ["today"]
+  });
+});

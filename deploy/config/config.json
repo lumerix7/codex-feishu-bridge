@@ -60,6 +60,9 @@
     "defaultSearchEnabled": true,
     "listMaxCount": 100
   },
+  "commands": {
+    "map": {}
+  },
   "status": {
     "includeProject": true
   },

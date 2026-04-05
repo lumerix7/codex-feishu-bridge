@@ -65,6 +65,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/project [list|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings
 - `/git [args...]` run `git` directly in the current bound project
 - `/cat`, `/cp`, `/find`, `/head`, `/ln`, `/ls`, `/mkdir`, `/mv`, `/pwd`, `/readlink`, `/rg`, `/rmdir`, `/sha256sum`, `/tail`, `/tar`, `/touch`, `/tree`, `/trash`, `/trash-list`, `/trash-restore`, `/wc` run local project commands
+- `commands.map` can expose extra local slash commands such as `/todo` -> `todoist-cli`
 
 ### Diagnostics
 - `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session
@@ -81,6 +82,7 @@ Working v1 bridge:
 - `/help` `/status` `/thread` `/compact` `/summary` `/diff` `/skills` `/config` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/feishu` `/log`
 - `/search` `/model` `/profile`
 - `/git` `/cat` `/cp` `/find` `/head` `/ln` `/ls` `/mkdir` `/pwd` `/readlink` `/rg` `/rmdir` `/sha256sum` `/tail` `/tar` `/touch` `/tree` `/trash` `/trash-list` `/trash-restore` `/wc`
+- extra local slash commands can be configured with `commands.map` in `config.json`
 - `/new -C <path>` to switch/bind to another project and create a fresh session in one step
 - `/project bind <path>` to rebind a conversation to another directory under the allowed project roots
 - `/project bind -n <index>` to bind from `/project list`, which shows the merged bound-and-trusted project set
