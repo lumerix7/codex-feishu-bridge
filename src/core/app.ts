@@ -23,6 +23,7 @@ type SessionListEntry = {
   createdAt?: string;
   cwd?: string;
   preview?: string;
+  threadPreview?: string;
   source?: string;
 };
 
@@ -523,17 +524,17 @@ export class App {
         ...(accountSummary ? [`- **Account**: ${accountSummary}`] : []),
         `- **Auth**: \`${runtimeMeta.authMode || "(unknown)"}\``,
         `- **Session**: \`${sessionId}\``,
-        `- **Session Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
-        `- **Session Cwd**: \`${session?.cwd || "(unknown)"}\``,
-        `- **Session About**: ${session?.preview || "(no preview)"}`,
+        `- **Session time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
+        `- **Session cwd**: \`${session?.cwd || "(unknown)"}\``,
+        `- **Session last message**: ${session?.preview || "(no preview)"}`,
         `- **Plan**: \`${existing?.planMode || "default"}\``,
         ...(usage ? [this.formatContextWindowStatusLine(usage)] : []),
         ...(rateLimits ? this.formatRateLimitStatusLines(rateLimits) : []),
         ...(thread
           ? [
-              `- **Thread Name**: ${this.readString(thread.name) || "(none)"}`,
-              `- **Thread Status**: \`${this.readString(thread.status) || "(unknown)"}\``,
-              `- **Thread Source**: \`${this.readString(thread.source) || "(unknown)"}\``
+              `- **Thread name**: ${this.readString(thread.name) || "(none)"}`,
+              `- **Thread status**: \`${this.readString(thread.status) || "(unknown)"}\``,
+              `- **Thread source**: \`${this.readString(thread.source) || "(unknown)"}\``
             ]
           : []),
         "",
@@ -541,12 +542,12 @@ export class App {
         "",
         `- **Conversation**: \`${key}\``,
         `- **Backend**: \`${this.codex.mode}\``,
-        `- **Project Trusted**: \`${trustedProjects.includes(project) ? "yes" : "no"}\``,
+        `- **Project trusted**: \`${trustedProjects.includes(project) ? "yes" : "no"}\``,
         `- **Search**: \`${existing?.searchEnabled ? "on" : "off"}\``,
         `- **Profile**: \`${existing?.profile || "(default)"}\``,
         `- **Run**: \`${activeRun ? `${activeRun.status}:${activeRun.runId}` : "idle"}\``,
         ...(reroute
-          ? [`- **Model Reroute**: \`${reroute.fromModel}\` -> \`${reroute.toModel}\`${reroute.reason ? ` (${reroute.reason})` : ""}`]
+          ? [`- **Model reroute**: \`${reroute.fromModel}\` -> \`${reroute.toModel}\`${reroute.reason ? ` (${reroute.reason})` : ""}`]
           : []),
         ...(plan?.plan.length
           ? [`- **Plan**: ${plan.plan.map((step) => `${this.readString(step.status) || "pending"}:${this.readString(step.step) || "(step)"}`).join(" | ")}`]
@@ -592,7 +593,7 @@ export class App {
         "# Thread",
         "",
         `- **Session**: \`${sessionId}\``,
-        `- **Thread Id**: \`${this.readString(thread.id) || sessionId}\``,
+        `- **Thread id**: \`${this.readString(thread.id) || sessionId}\``,
         `- **Name**: ${this.readString(thread.name) || "(none)"}`,
         `- **Status**: \`${this.formatThreadStatus(thread.status)}\``,
         `- **Source**: \`${this.formatSessionSource(thread.source)}\``,
@@ -603,7 +604,7 @@ export class App {
         `- **Preview**: ${this.readString(thread.preview) || "(none)"}`,
         `- **Created**: ${this.formatUnixTimestamp(thread.createdAt)}`,
         `- **Updated**: ${this.formatUnixTimestamp(thread.updatedAt)}`,
-        `- **Model Provider**: \`${this.readString(thread.modelProvider) || "(unknown)"}\``,
+        `- **Model provider**: \`${this.readString(thread.modelProvider) || "(unknown)"}\``,
         `- **Ephemeral**: \`${thread.ephemeral ? "yes" : "no"}\``,
         ...(gitInfo.branch || gitInfo.sha || gitInfo.originUrl
           ? [
@@ -612,12 +613,12 @@ export class App {
           : []),
         ...(includeTurns
           ? [
-              `- **Turn Count**: \`${turns.length}\``,
+              `- **Turn count**: \`${turns.length}\``,
               ...turns.slice(0, 10).map((turn, index) => {
                 const items = Array.isArray(turn.items) ? turn.items.length : 0;
                 return `- **Turn ${index + 1}**: \`${this.readString(turn.id) || "(unknown)"}\` status=\`${this.formatThreadStatus(turn.status)}\` items=\`${items}\``;
               }),
-              ...(turns.length > 10 ? [`- **More Turns**: \`${turns.length - 10}\` not shown`] : [])
+              ...(turns.length > 10 ? [`- **More turns**: \`${turns.length - 10}\` not shown`] : [])
             ]
           : [`- **Turns**: \`${turns.length || 0}\`${turns.length === 0 ? " (use `--turns` to fetch them)" : ""}`])
       ].join("\n");
@@ -841,12 +842,12 @@ export class App {
         `- **Project**: \`${project}\``,
         `- **Model**: \`${this.readString(codexConfig.model) || "(default)"}\``,
         `- **Profile**: \`${this.readString(codexConfig.profile) || "(default)"}\``,
-        `- **Model Provider**: \`${this.readString(codexConfig.model_provider) || "(unknown)"}\``,
+        `- **Model provider**: \`${this.readString(codexConfig.model_provider) || "(unknown)"}\``,
         `- **Sandbox**: \`${this.readString(codexConfig.sandbox_mode) || "(unknown)"}\``,
-        `- **Approval Policy**: \`${this.readString(codexConfig.approval_policy) || "(unknown)"}\``,
-        `- **Web Search**: \`${this.readString(codexConfig.web_search) || "(unknown)"}\``,
-        `- **Reasoning Effort**: \`${this.readString(codexConfig.model_reasoning_effort) || "(default)"}\``,
-        `- **Reasoning Summary**: \`${this.readString(codexConfig.model_reasoning_summary) || "(default)"}\``,
+        `- **Approval policy**: \`${this.readString(codexConfig.approval_policy) || "(unknown)"}\``,
+        `- **Web search**: \`${this.readString(codexConfig.web_search) || "(unknown)"}\``,
+        `- **Reasoning effort**: \`${this.readString(codexConfig.model_reasoning_effort) || "(default)"}\``,
+        `- **Reasoning summary**: \`${this.readString(codexConfig.model_reasoning_summary) || "(default)"}\``,
         `- **Verbosity**: \`${this.readString(codexConfig.model_verbosity) || "(default)"}\``,
         ...(includeLayers ? [
           "",
@@ -1038,10 +1039,10 @@ export class App {
         }
         return this.renderSessionList(
           projectExplicitlySelected
-            ? "Resume Project Sessions"
+            ? "Resume project sessions"
             : allProjects
-              ? "Resume All Projects"
-              : "Resume Current Project",
+              ? "Resume all projects"
+              : "Resume current project",
           sessions,
           existing?.codexSessionId,
           resumeProject
@@ -1118,7 +1119,7 @@ export class App {
             `no native Codex sessions found for project \`${resumeProject}\``,
             `\`/new -C ${resumeProject}\``,
             [
-              `- **Sessions Dir**: \`${this.config.codex.sessionsDir}\``,
+              `- **Sessions dir**: \`${this.config.codex.sessionsDir}\``,
               "- **Note**: Use `/new -C <dir>` to start a fresh session there."
             ]
           );
@@ -1151,8 +1152,8 @@ export class App {
           `session \`${targetSessionId}\` is bound to a different project`,
           `\`/new -C ${resolvedProject}\``,
           [
-            `- **Session Project**: \`${sessionProject}\``,
-            `- **Requested Project**: \`${resolvedProject}\``,
+            `- **Session project**: \`${sessionProject}\``,
+            `- **Requested project**: \`${resolvedProject}\``,
             "- **Note**: Use `/new -C <dir>` to start a fresh session in a different project."
           ]
         );
@@ -1182,7 +1183,7 @@ export class App {
         `- **Project**: \`${binding.project}\``,
         `- **Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
         `- **Cwd**: \`${session?.cwd || "(unknown)"}\``,
-        `- **About**: ${session?.preview || "(no preview)"}`,
+        `- **Last message**: ${session?.preview || "(no preview)"}`,
         ...(resumeWarning ? [`- **Warning**: ${resumeWarning}`] : [])
       ];
       const sessionChanged = existing?.codexSessionId !== binding.codexSessionId;
@@ -1256,7 +1257,7 @@ export class App {
             ? "Fork Project Sessions"
             : allProjects
               ? "Fork All Projects"
-              : "Fork Current Project",
+              : "Fork current project",
           sessions,
           existing?.codexSessionId,
           forkProject
@@ -1356,7 +1357,7 @@ export class App {
         `- **From**: \`${targetSessionId}\``,
         `- **Session**: \`${forkedSessionId}\``,
         `- **Project**: \`${binding.project}\``,
-        ...(this.readString(forkedThread?.preview) ? [`- **About**: ${this.readString(forkedThread?.preview)}`] : []),
+        ...(this.readString(forkedThread?.preview) ? [`- **Last message**: ${this.readString(forkedThread?.preview)}`] : []),
         ...(forkWarning ? [`- **Warning**: ${forkWarning}`] : [])
       ].join("\n");
     }
@@ -1447,7 +1448,7 @@ export class App {
             ? "Project Sessions"
             : allProjects
               ? "All Project Sessions"
-              : "Current Project Sessions",
+              : "Current project Sessions",
           sessions,
           existing?.codexSessionId,
           scopedProject
@@ -1486,14 +1487,14 @@ export class App {
         ...(effectiveSource ? [`- **Source**: \`${effectiveSource}\``] : []),
         ...(effectiveModel ? [`- **Model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`] : []),
         ...(effectiveReasoning ? [`- **Reasoning**: \`${effectiveReasoning}\``] : []),
-        `- **Session Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
-        `- **Session Cwd**: \`${session?.cwd || "(unknown)"}\``,
-        `- **Session About**: ${session?.preview || "(no preview)"}`,
+        `- **Session time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
+        `- **Session cwd**: \`${session?.cwd || "(unknown)"}\``,
+        `- **Session last message**: ${session?.preview || "(no preview)"}`,
         ...(thread
           ? [
-              `- **Thread Name**: ${this.readString(thread.name) || "(none)"}`,
-              `- **Thread Status**: \`${this.readString(thread.status) || "(unknown)"}\``,
-              `- **Thread Source**: \`${this.readString(thread.source) || "(unknown)"}\``
+              `- **Thread name**: ${this.readString(thread.name) || "(none)"}`,
+              `- **Thread status**: \`${this.readString(thread.status) || "(unknown)"}\``,
+              `- **Thread source**: \`${this.readString(thread.source) || "(unknown)"}\``
             ]
           : [])
       ].join("\n");
@@ -1564,7 +1565,7 @@ export class App {
           "",
           `- **Project**: \`${currentProject}\``,
           `- **Trusted**: \`${trustedProjects.includes(currentProject) ? "yes" : "no"}\``,
-          `- **Allowed Roots**: ${this.config.project.allowedRoots.map((root) => `\`${root}\``).join(", ")}`
+          `- **Allowed roots**: ${this.config.project.allowedRoots.map((root) => `\`${root}\``).join(", ")}`
         ].join("\n");
       }
 
@@ -1613,7 +1614,7 @@ export class App {
           "# Project",
           "",
           `- **Project**: \`${project}\``,
-          `- **Removed Bindings**: \`${removed}\``
+          `- **Removed bindings**: \`${removed}\``
         ].join("\n");
       }
 
@@ -2076,10 +2077,10 @@ export class App {
     return [
       `- **Backend**: \`${this.codex.mode}\``,
       `- **Profile**: \`${this.config.codex.profileMode}\``,
-      `- **Default Project**: \`${this.config.project.defaultProject}\``,
-      ...(currentProject ? [`- **Current Project**: \`${currentProject}\``] : []),
+      `- **Default project**: \`${this.config.project.defaultProject}\``,
+      ...(currentProject ? [`- **Current project**: \`${currentProject}\``] : []),
       `- **Sandbox**: \`${this.config.codex.sandboxMode}\``,
-      `- **Search Default**: \`${this.config.project.defaultSearchEnabled ? "on" : "off"}\``,
+      `- **Search default**: \`${this.config.project.defaultSearchEnabled ? "on" : "off"}\``,
       ...(feishuStatus ? [`- **Feishu**: ${feishuStatus}`] : [])
     ].join("\n");
   }
@@ -2887,11 +2888,11 @@ export class App {
         "# 📍 Codex Event",
         "",
         "- **Type**: `thread/tokenUsage/updated`",
-        ...(contextWindow !== undefined ? [`- **Context Window**: \`${contextWindow}\``] : []),
-        ...(total.totalTokens !== undefined ? [`- **Total Tokens**: \`${String(total.totalTokens)}\``] : []),
-        ...(total.inputTokens !== undefined ? [`- **Total Input**: \`${String(total.inputTokens)}\``] : []),
-        ...(total.outputTokens !== undefined ? [`- **Total Output**: \`${String(total.outputTokens)}\``] : []),
-        ...(last.totalTokens !== undefined ? [`- **Last Turn Tokens**: \`${String(last.totalTokens)}\``] : [])
+        ...(contextWindow !== undefined ? [`- **Context window**: \`${contextWindow}\``] : []),
+        ...(total.totalTokens !== undefined ? [`- **Total tokens**: \`${String(total.totalTokens)}\``] : []),
+        ...(total.inputTokens !== undefined ? [`- **Total input**: \`${String(total.inputTokens)}\``] : []),
+        ...(total.outputTokens !== undefined ? [`- **Total output**: \`${String(total.outputTokens)}\``] : []),
+        ...(last.totalTokens !== undefined ? [`- **Last turn tokens**: \`${String(last.totalTokens)}\``] : [])
       ].join("\n");
     }
     if (notification.method === "account/rateLimits/updated") {
@@ -3117,7 +3118,7 @@ export class App {
     if (status) lines.push(`- **Status**: \`${status}\``);
     if (source) lines.push(`- **Source**: \`${source}\``);
     if (processId) lines.push(`- **Process**: \`${processId}\``);
-    if (exitCode !== undefined) lines.push(`- **Exit Code**: \`${exitCode}\``);
+    if (exitCode !== undefined) lines.push(`- **Exit code**: \`${exitCode}\``);
     if (durationMs !== undefined) lines.push(`- **Duration**: \`${durationMs}ms\``);
 
     if (type === "userMessage") {
@@ -3189,11 +3190,11 @@ export class App {
       if (reason) lines.push(`- **Reason**: ${reason}`);
       if (trigger) lines.push(`- **Trigger**: \`${trigger}\``);
       if (summary) lines.push(`- **Summary**: ${summary}`);
-      if (contextWindow !== undefined) lines.push(`- **Context Window**: \`${contextWindow}\``);
-      if (totalTokens !== undefined) lines.push(`- **Total Tokens**: \`${String(totalTokens)}\``);
-      if (inputTokens !== undefined) lines.push(`- **Input Tokens**: \`${String(inputTokens)}\``);
-      if (outputTokens !== undefined) lines.push(`- **Output Tokens**: \`${String(outputTokens)}\``);
-      if (lastTurnTokens !== undefined) lines.push(`- **Last Turn Tokens**: \`${String(lastTurnTokens)}\``);
+      if (contextWindow !== undefined) lines.push(`- **Context window**: \`${contextWindow}\``);
+      if (totalTokens !== undefined) lines.push(`- **Total tokens**: \`${String(totalTokens)}\``);
+      if (inputTokens !== undefined) lines.push(`- **Input tokens**: \`${String(inputTokens)}\``);
+      if (outputTokens !== undefined) lines.push(`- **Output tokens**: \`${String(outputTokens)}\``);
+      if (lastTurnTokens !== undefined) lines.push(`- **Last turn tokens**: \`${String(lastTurnTokens)}\``);
       return lines;
     }
 
@@ -3204,13 +3205,13 @@ export class App {
         .map((change) => this.readString(change.path) || this.readString(change.filePath))
         .filter((path): path is string => Boolean(path));
       if (changes.length > 0) {
-        lines.push(`- **Files Changed**: \`${changes.length}\``);
+        lines.push(`- **Files changed**: \`${changes.length}\``);
         lines.push(`- **Files**: ${changes.map((path) => `\`${path}\``).join(", ")}`);
       } else if (rawChanges.length > 0) {
-        lines.push(`- **Files Changed**: \`${rawChanges.length}\``);
+        lines.push(`- **Files changed**: \`${rawChanges.length}\``);
         lines.push("- **Files**: details unavailable");
       } else {
-        lines.push("- **Files Changed**: `yes`");
+        lines.push("- **Files changed**: `yes`");
         lines.push("- **Files**: details unavailable");
       }
       return lines;
@@ -3262,7 +3263,7 @@ export class App {
       const error = item.error;
       if (server) lines.push(`- **Server**: \`${server}\``);
       if (model) lines.push(`- **Model**: \`${model}\``);
-      if (reasoningEffort) lines.push(`- **Reasoning Effort**: \`${reasoningEffort}\``);
+      if (reasoningEffort) lines.push(`- **Reasoning effort**: \`${reasoningEffort}\``);
       if (prompt) {
         lines.push("- **Prompt**:");
         lines.push("```text");
@@ -3315,7 +3316,7 @@ export class App {
       }
       if (type === "localImage") {
         const path = this.readString(item.path);
-        otherParts.push(`- **Local Image**: \`${path || "(unknown)"}\``);
+        otherParts.push(`- **Local image**: \`${path || "(unknown)"}\``);
         continue;
       }
       if (type === "skill" || type === "mention") {
@@ -3354,13 +3355,13 @@ export class App {
     const usedTokens = Number(total.totalTokens || 0);
     const contextWindow = Number(tokenUsage.modelContextWindow || 0);
     if (!Number.isFinite(contextWindow) || contextWindow <= 0 || !Number.isFinite(usedTokens) || usedTokens < 0) {
-      return `- **Context Window**: ${this.formatTokenUsageSummary(tokenUsage)}`;
+      return `- **Context window**: ${this.formatTokenUsageSummary(tokenUsage)}`;
     }
     if (usedTokens > contextWindow) {
-      return `- **Context Window**: ${this.formatTokenUsageSummary(tokenUsage)}`;
+      return `- **Context window**: ${this.formatTokenUsageSummary(tokenUsage)}`;
     }
     const leftPercent = Math.max(0, ((contextWindow - usedTokens) / contextWindow) * 100);
-    return `- **Context Window**: \`${leftPercent.toFixed(0)}%\` left (${this.formatCompactTokenCount(usedTokens)} used / ${this.formatCompactTokenCount(contextWindow)})`;
+    return `- **Context window**: \`${leftPercent.toFixed(0)}%\` left (${this.formatCompactTokenCount(usedTokens)} used / ${this.formatCompactTokenCount(contextWindow)})`;
   }
 
   private formatRateLimitLines(rateLimitPayload: Record<string, unknown>): string[] {
@@ -3368,7 +3369,7 @@ export class App {
     const entries = Object.entries(buckets);
     if (entries.length === 0) {
       const snapshot = asObjectRecord(rateLimitPayload.rateLimits);
-      return [`- **Rate Limits**: ${this.formatRateLimitSnapshot(snapshot)}`];
+      return [`- **Rate limits**: ${this.formatRateLimitSnapshot(snapshot)}`];
     }
     return entries.map(([key, value]) => `- **Rate ${key}**: ${this.formatRateLimitSnapshot(asObjectRecord(value))}`);
   }
@@ -3664,7 +3665,7 @@ export class App {
         `- **Kind**: \`file change\``,
         `- **Project**: \`${project}\``,
         ...(reason ? [`- **Reason**: ${reason}`] : []),
-        ...(grantRoot ? [`- **Grant Root**: \`${grantRoot}\``] : []),
+        ...(grantRoot ? [`- **Grant root**: \`${grantRoot}\``] : []),
         ...(fileList.length > 0 ? [`- **Files**: ${fileList.map((item) => `\`${item}\``).join(", ")}`] : []),
         "",
         "## Reply",
@@ -4002,9 +4003,24 @@ export class App {
       }).catch(() => undefined);
       if (native !== undefined) {
         const data = this.readArray(asObjectRecord(native).data);
-        return data
+        const sessions = data
           .map((item) => this.normalizeThreadListEntry(isRecord(item) ? item : undefined))
           .filter((item): item is SessionListEntry => Boolean(item));
+        const enriched = await Promise.all(
+          sessions.map(async (session) => {
+            const summary = await getSessionSummary(this.config.codex.sessionsDir, session.sessionId).catch(
+              () => undefined
+            );
+            if (!summary) return session;
+            return {
+              ...session,
+              createdAt: session.createdAt || summary.createdAt,
+              cwd: session.cwd || summary.cwd,
+              preview: summary.preview || session.preview
+            };
+          })
+        );
+        return enriched;
       }
     }
     return this.listScopedSessions(limit, project, options?.allProjects);
@@ -4328,8 +4344,8 @@ export class App {
     const lines = [
       `# ${title}`,
       "",
-      "| # | Project | Updated | Session | Source | About | Flags |",
-      "| --- | --- | --- | --- | --- | --- | --- |"
+      "| # | Project | Updated | Session | Source | Last message | Thread preview | Flags |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- |"
     ];
     for (const [index, session] of sortedSessions.entries()) {
       const flags = [
@@ -4337,7 +4353,7 @@ export class App {
         session.sessionId === boundSessionId ? "bound" : ""
       ].filter(Boolean);
       lines.push(
-        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.source || "-")} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(flags.join(", ") || "-")} |`
+        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.source || "-")} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(session.threadPreview || "-")} | ${escapeMarkdownCell(flags.join(", ") || "-")} |`
       );
     }
     return lines.join("\n");
@@ -4370,7 +4386,7 @@ export class App {
       sessionId,
       createdAt: this.formatThreadTimestamp(this.readNumber(thread.createdAt)),
       cwd: this.readString(thread.cwd),
-      preview: this.readString(thread.preview),
+      threadPreview: this.readString(thread.preview),
       source: this.formatThreadSource(thread.source)
     };
   }
@@ -4593,22 +4609,22 @@ export class App {
     return [
       "# Feishu WS",
       "",
-      `- **Connected Once**: \`${diagnostics.wsConnectedOnce ? "yes" : "no"}\``,
+      `- **Connected once**: \`${diagnostics.wsConnectedOnce ? "yes" : "no"}\``,
       `- **Reconnecting**: \`${diagnostics.wsReconnecting ? "yes" : "no"}\``,
-      `- **Reconnect Count**: \`${diagnostics.reconnectCount}\``,
-      `- **Auto Reconnect**: \`${this.config.feishu.wsAutoReconnect ? "yes" : "no"}\``,
-      `- **Logger Level**: \`${this.config.feishu.wsLoggerLevel}\``,
-      `- **Agent Keepalive Ms**: \`${this.config.feishu.wsAgentKeepAliveMsecs}\``,
-      `- **Agent Max Sockets**: \`${this.config.feishu.wsAgentMaxSockets}\``,
-      `- **Agent Max Free Sockets**: \`${this.config.feishu.wsAgentMaxFreeSockets}\``,
-      `- **Connect Warn After Ms**: \`${this.config.feishu.wsConnectWarnAfterMs}\``,
-      `- **Reconnect Warn Threshold**: \`${this.config.feishu.wsReconnectWarnThreshold}\``,
-      `- **Reconnect Debounce Ms**: \`${this.config.feishu.reconnectReadyDebounceMs}\``,
-      `- **Last Reconnect Started**: ${this.formatAnyTimestamp(diagnostics.lastReconnectStartedAt, "(never)")}`,
-      `- **Last Ws Ready**: ${this.formatAnyTimestamp(diagnostics.lastWsReadyAt)}`,
-      `- **Last Reconnect Ready**: ${this.formatAnyTimestamp(diagnostics.lastReconnectReadyAt, "(never)")}`,
-      `- **Last Inbound Message**: ${this.formatAnyTimestamp(diagnostics.lastInboundMessageAt)}`,
-      `- **Last Inbound Message Id**: \`${diagnostics.lastInboundMessageId || "(unknown)"}\``
+      `- **Reconnect count**: \`${diagnostics.reconnectCount}\``,
+      `- **Auto reconnect**: \`${this.config.feishu.wsAutoReconnect ? "yes" : "no"}\``,
+      `- **Logger level**: \`${this.config.feishu.wsLoggerLevel}\``,
+      `- **Agent keepalive ms**: \`${this.config.feishu.wsAgentKeepAliveMsecs}\``,
+      `- **Agent max sockets**: \`${this.config.feishu.wsAgentMaxSockets}\``,
+      `- **Agent max free sockets**: \`${this.config.feishu.wsAgentMaxFreeSockets}\``,
+      `- **Connect warn after ms**: \`${this.config.feishu.wsConnectWarnAfterMs}\``,
+      `- **Reconnect warn threshold**: \`${this.config.feishu.wsReconnectWarnThreshold}\``,
+      `- **Reconnect debounce ms**: \`${this.config.feishu.reconnectReadyDebounceMs}\``,
+      `- **Last reconnect started**: ${this.formatAnyTimestamp(diagnostics.lastReconnectStartedAt, "(never)")}`,
+      `- **Last ws ready**: ${this.formatAnyTimestamp(diagnostics.lastWsReadyAt)}`,
+      `- **Last reconnect ready**: ${this.formatAnyTimestamp(diagnostics.lastReconnectReadyAt, "(never)")}`,
+      `- **Last inbound message**: ${this.formatAnyTimestamp(diagnostics.lastInboundMessageAt)}`,
+      `- **Last inbound message Id**: \`${diagnostics.lastInboundMessageId || "(unknown)"}\``
     ].join("\n");
   }
 
@@ -4616,16 +4632,16 @@ export class App {
     return [
       "# Feishu Send",
       "",
-      `- **Retry Max Attempts**: \`${this.config.feishu.sendRetryMaxAttempts}\``,
-      `- **Retry Base Delay Ms**: \`${this.config.feishu.sendRetryBaseDelayMs}\``,
-      `- **Retry Multiplier**: \`${this.config.feishu.sendRetryMultiplier}\``,
-      `- **Retry Max Delay Ms**: \`${this.config.feishu.sendRetryMaxDelayMs}\``,
-      `- **Outbound Retries**: \`${diagnostics.outboundRetryCount}\``,
-      `- **Outbound Failures**: \`${diagnostics.outboundFailureCount}\``,
-      `- **Active Chat Send Queues**: \`${diagnostics.activeChatSendQueues}\``,
-      `- **Queued Chats**: ${diagnostics.queuedChatIds.length > 0 ? diagnostics.queuedChatIds.map((chatId) => `\`${chatId}\``).join(", ") : "(none)"}`,
-      `- **Active Streaming Cards**: \`${diagnostics.activeStreamingCards}\``,
-      `- **Last Send Error**: ${diagnostics.lastSendError || "(none)"}`
+      `- **Retry max attempts**: \`${this.config.feishu.sendRetryMaxAttempts}\``,
+      `- **Retry base delay ms**: \`${this.config.feishu.sendRetryBaseDelayMs}\``,
+      `- **Retry multiplier**: \`${this.config.feishu.sendRetryMultiplier}\``,
+      `- **Retry max delay ms**: \`${this.config.feishu.sendRetryMaxDelayMs}\``,
+      `- **Outbound retries**: \`${diagnostics.outboundRetryCount}\``,
+      `- **Outbound failures**: \`${diagnostics.outboundFailureCount}\``,
+      `- **Active chat send queues**: \`${diagnostics.activeChatSendQueues}\``,
+      `- **Queued chats**: ${diagnostics.queuedChatIds.length > 0 ? diagnostics.queuedChatIds.map((chatId) => `\`${chatId}\``).join(", ") : "(none)"}`,
+      `- **Active streaming cards**: \`${diagnostics.activeStreamingCards}\``,
+      `- **Last send error**: ${diagnostics.lastSendError || "(none)"}`
     ].join("\n");
   }
 
@@ -4668,8 +4684,8 @@ export class App {
       "# Feishu Doctor",
       "",
       `- **Verdict**: ${this.formatFeishuDoctorVerdict(diagnostics)}`,
-      `- **Ws Summary**: ${this.formatFeishuWsSummary(diagnostics)}`,
-      `- **Send Summary**: ${this.formatFeishuSendSummary(diagnostics)}`,
+      `- **Ws summary**: ${this.formatFeishuWsSummary(diagnostics)}`,
+      `- **Send summary**: ${this.formatFeishuSendSummary(diagnostics)}`,
       "",
       "## Findings",
       "",

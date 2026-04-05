@@ -1519,7 +1519,7 @@ function parseJsonLine(line: string): Record<string, any> | undefined {
 
 function formatTerminalOutput(text: string, mode: "markdown" | "plain"): string {
   if (mode === "plain") return text || "(no clean terminal output)";
-  return ["**Codex Terminal**", "```text", text || "(no clean terminal output)", "```"].join("\n");
+  return ["**Codex terminal**", "```text", text || "(no clean terminal output)", "```"].join("\n");
 }
 
 function limitTerminalOutput(text: string, maxChars: number): string {

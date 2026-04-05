@@ -222,8 +222,8 @@ function compactPreview(text: string | undefined): string | undefined {
   if (!text) return undefined;
   const compact = text.replace(/\s+/g, " ").trim();
   if (!compact) return undefined;
-  if (compact.length <= 72) return compact;
-  return `${compact.slice(0, 69).trimEnd()}...`;
+  if (compact.length <= 120) return compact;
+  return `${compact.slice(0, 117).trimEnd()}...`;
 }
 
 function normalizeMessageText(text: string | undefined): string | undefined {

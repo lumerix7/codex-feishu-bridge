@@ -66,7 +66,7 @@ export function renderTerminalForFeishu(
   if (mode === "plain") {
     return body || "(no clean terminal output)";
   }
-  return ["**Codex Terminal**", "```text", body || "(no clean terminal output)", "```"].join("\n");
+  return ["**Codex terminal**", "```text", body || "(no clean terminal output)", "```"].join("\n");
 }
 
 export function hasPrompt(text: string): boolean {
