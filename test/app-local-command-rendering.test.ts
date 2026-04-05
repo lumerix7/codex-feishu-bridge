@@ -118,3 +118,106 @@ test("local commands use a running preamble card and raw-text final output", asy
   assert.equal(gitResult?.severity, undefined);
   assert.equal(gitResult?.text, "?? README.md\n");
 });
+
+test("severity templates normalize warning to orange and error to red", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const app = new App(makeConfig(projectDir, storePath));
+
+  assert.equal((app as any).templateForSeverity("wathet", "warning"), "orange");
+  assert.equal((app as any).templateForSeverity("wathet", "error"), "red");
+  assert.equal((app as any).templateForSeverity("wathet", undefined), "wathet");
+});
+
+test("local command execution failures are errors while usage issues remain warnings", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const app = new App(makeConfig(projectDir, storePath));
+
+  const runtimeFailure = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_cat_missing",
+    chatType: "p2p",
+    text: "/cat missing-file.txt"
+  });
+
+  assert.equal(typeof runtimeFailure, "object");
+  assert.equal(runtimeFailure?.severity, "error");
+  assert.equal(runtimeFailure?.bodyFormat, "raw-text");
+  assert.match(runtimeFailure?.text || "", /^Code: /);
+  assert.match(runtimeFailure?.text || "", /No such file or directory|cannot open/i);
+
+  const usageFailure = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_log_invalid",
+    chatType: "p2p",
+    text: "/log --limit nope"
+  });
+
+  assert.equal(typeof usageFailure, "object");
+  assert.equal(usageFailure?.severity, "warning");
+  assert.equal(usageFailure?.bodyFormat, undefined);
+});
+
+test("wrapped commands prepend code for non-zero exits and mark them as errors", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+  await fs.writeFile(path.join(projectDir, "README.md"), "# hello\n");
+  execFileSync("git", ["init", "-b", "main"], { cwd: projectDir });
+  execFileSync("git", ["config", "user.name", "Test User"], { cwd: projectDir });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: projectDir });
+  execFileSync("git", ["add", "README.md"], { cwd: projectDir });
+  execFileSync("git", ["commit", "-m", "init"], { cwd: projectDir });
+
+  const app = new App(makeConfig(projectDir, storePath));
+
+  assert.equal((app as any).renderWrappedCommandOutput("(no output)", 1), "Code: 1\n\n(no output)");
+
+  await fs.writeFile(path.join(projectDir, "README.md"), "# changed\n");
+  const gitDiffResult = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_git_diff_exit",
+    chatType: "p2p",
+    text: "/git diff --exit-code"
+  });
+
+  assert.equal(typeof gitDiffResult, "object");
+  assert.equal(gitDiffResult?.severity, "error");
+  assert.equal(gitDiffResult?.bodyFormat, "raw-text");
+  assert.match(gitDiffResult?.text || "", /^Code: 1\n\n/);
+  assert.match(gitDiffResult?.text || "", /diff --git /);
+});
+
+test("log runtime failures are errors", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const app = new App(makeConfig(projectDir, storePath));
+  const originalPath = process.env.PATH;
+
+  try {
+    process.env.PATH = "";
+    const result = await app.handleIncoming({
+      chatId: "chat_test",
+      messageId: "msg_log_missing_journalctl",
+      chatType: "p2p",
+      text: "/log -n 5"
+    });
+
+    assert.equal(typeof result, "object");
+    assert.equal(result?.severity, "error");
+    assert.match(result?.text || "", /journalctl|ENOENT|not found/i);
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});

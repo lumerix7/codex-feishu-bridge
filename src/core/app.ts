@@ -1839,22 +1839,24 @@ export class App {
       return this.readBridgeLogs(query);
     }
 
-    if (command?.name === "git") {
+    const wrappedProjectCommand = command?.name === "git"
+      ? { displayName: "git", command: "git" }
+      : command
+        ? {
+            displayName: command.name,
+            command: this.resolveLocalProjectCommand(command.name)
+          }
+        : undefined;
+    if (command && wrappedProjectCommand?.command) {
       const project = binding?.project || this.config.project.defaultProject;
-      await sendEarlyUpdate(
-        this.renderLocalCommandPreamble("git", command.args, message.text)
+      return this.runWrappedProjectCommand(
+        sendEarlyUpdate,
+        wrappedProjectCommand.displayName,
+        wrappedProjectCommand.command,
+        command.args,
+        message.text,
+        project
       );
-      return this.runGitCommand(project, command.args);
-    }
-
-    const localCommandName = command ? this.resolveLocalProjectCommand(command.name) : undefined;
-    if (command && localCommandName) {
-      const localSlashName = command.name;
-      const project = binding?.project || this.config.project.defaultProject;
-      await sendEarlyUpdate(
-        this.renderLocalCommandPreamble(localCommandName, command.args, message.text)
-      );
-      return this.runLocalCommand(localCommandName, project, command.args, localSlashName);
     }
 
     if (command?.name === "approvals") {
@@ -5553,7 +5555,7 @@ export class App {
     return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
   }
 
-  private async readBridgeLogs(query: LogQuery): Promise<string> {
+  private async readBridgeLogs(query: LogQuery): Promise<string | AppResponse> {
     try {
       const journalArgs = [
         "--user",
@@ -5590,29 +5592,37 @@ export class App {
     } catch (error) {
       const maybe = error as Error & { stdout?: string; stderr?: string; code?: number | string };
       const output = [maybe.stdout, maybe.stderr].filter(Boolean).join(maybe.stdout && maybe.stderr ? "\n" : "");
-      return [
-        "# Log",
-        "",
-        `- **Unit**: \`codex-feishu-bridge.service\``,
-        `- **Status**: \`failed\``,
-        `- **Code**: \`${String(maybe.code ?? "(unknown)")}\``,
-        "",
-        this.renderFencedBlock("text", this.truncateOutput(output || maybe.message || "journalctl failed"))
-      ].join("\n");
+      return {
+        severity: "error",
+        text: [
+          "# Log",
+          "",
+          `- **Unit**: \`codex-feishu-bridge.service\``,
+          `- **Status**: \`failed\``,
+          `- **Code**: \`${String(maybe.code ?? "(unknown)")}\``,
+          "",
+          this.renderFencedBlock("text", this.truncateOutput(output || maybe.message || "journalctl failed"))
+        ].join("\n")
+      };
     }
   }
 
-  private async runGitCommand(project: string, args: string[]): Promise<string | AppResponse> {
-    const gitArgs = [...args];
+  private async runWrappedCommand(options: {
+    command: string;
+    args: string[];
+    project: string;
+    failureMessage: string;
+  }): Promise<string | AppResponse> {
+    const execArgs = [...options.args];
     try {
-      const { stdout, stderr } = await execFileAsync("git", gitArgs, {
-        cwd: project,
+      const { stdout, stderr } = await execFileAsync(options.command, execArgs, {
+        cwd: options.project,
         timeout: GIT_COMMAND_TIMEOUT_MS,
         maxBuffer: 8 * 1024 * 1024
       });
-      const combined = [stdout, stderr].filter(Boolean).join(stderr && stdout ? "\n" : "");
+      const combined = this.combineCommandOutput(stdout, stderr);
       return {
-        text: this.truncateOutput(combined || "(no output)"),
+        text: this.renderWrappedCommandOutput(combined),
         bodyFormat: "raw-text"
       };
     } catch (error) {
@@ -5622,47 +5632,46 @@ export class App {
         stderr?: string;
         signal?: NodeJS.Signals;
       };
-      const output = [maybe.stdout, maybe.stderr].filter(Boolean).join(maybe.stdout && maybe.stderr ? "\n" : "");
+      const output = this.combineCommandOutput(maybe.stdout, maybe.stderr);
+      const formatted = this.renderWrappedCommandOutput(
+        output || maybe.message || options.failureMessage,
+        maybe.code
+      );
       return {
-        severity: "warning",
-        text: this.truncateOutput(output || maybe.message || "git command failed"),
+        severity: maybe.code === undefined || maybe.code === 0 || maybe.code === "0" ? undefined : "error",
+        text: formatted,
         bodyFormat: "raw-text"
       };
     }
   }
 
-  private async runLocalCommand(
+  private async runWrappedProjectCommand(
+    sendEarlyUpdate: (text: string) => Promise<void>,
+    displayCommandName: string,
     command: string,
-    project: string,
     args: string[],
-    displayName = command
+    rawInput: string,
+    project: string
   ): Promise<string | AppResponse> {
-    const execArgs = [...args];
-    try {
-      const { stdout, stderr } = await execFileAsync(command, execArgs, {
-        cwd: project,
-        timeout: GIT_COMMAND_TIMEOUT_MS,
-        maxBuffer: 8 * 1024 * 1024
-      });
-      const combined = [stdout, stderr].filter(Boolean).join(stderr && stdout ? "\n" : "");
-      return {
-        text: this.truncateOutput(combined || "(no output)"),
-        bodyFormat: "raw-text"
-      };
-    } catch (error) {
-      const maybe = error as Error & {
-        code?: number | string;
-        stdout?: string;
-        stderr?: string;
-        signal?: NodeJS.Signals;
-      };
-      const output = [maybe.stdout, maybe.stderr].filter(Boolean).join(maybe.stdout && maybe.stderr ? "\n" : "");
-      return {
-        severity: "warning",
-        text: this.truncateOutput(output || maybe.message || `${displayName} command failed`),
-        bodyFormat: "raw-text"
-      };
+    await sendEarlyUpdate(this.renderLocalCommandPreamble(command, args, rawInput));
+    return this.runWrappedCommand({
+      command,
+      args,
+      project,
+      failureMessage: `${displayCommandName} command failed`
+    });
+  }
+
+  private combineCommandOutput(stdout?: string, stderr?: string): string {
+    return [stdout, stderr].filter(Boolean).join(stderr && stdout ? "\n" : "");
+  }
+
+  private renderWrappedCommandOutput(value: string, code?: number | string): string {
+    const body = this.truncateOutput(value || "(no output)");
+    if (code === undefined || code === 0 || code === "0") {
+      return body;
     }
+    return this.truncateOutput(`Code: ${String(code)}\n\n${value || "(no output)"}`);
   }
 
   private renderFencedBlock(language: string, value: string): string {
