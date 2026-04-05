@@ -2455,7 +2455,6 @@ export class App {
       sessionState?.model ||
       projectState?.model;
     const reasoning = sessionState?.reasoning || projectState?.reasoning;
-    const approval = this.codexFooterModeLabel();
     const modelAndReasoning =
       model && reasoning
         ? `${model} ${reasoning}`
@@ -2464,7 +2463,8 @@ export class App {
           : reasoning
             ? reasoning
             : undefined;
-    return [modelAndReasoning, project, displayedSessionId, approval]
+    const formattedProject = `\`${project}\``;
+    return [modelAndReasoning, formattedProject, displayedSessionId]
       .filter((item): item is string => Boolean(item))
       .join(" · ");
   }
@@ -2481,14 +2481,6 @@ export class App {
 
   private shouldIncludeRawMarkdownForMessage(commandName?: string): boolean {
     return commandName === "help";
-  }
-
-  private codexFooterModeLabel(): string | undefined {
-    return this.config.codex.sandboxMode === "danger-full-access"
-      ? "full-access"
-      : this.config.codex.sandboxMode === "default"
-        ? "default"
-        : undefined;
   }
 
   private buildIsoFooter(): string {
