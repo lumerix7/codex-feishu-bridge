@@ -385,7 +385,7 @@ export class App {
         "- `/compact [-h|--help]` compact the current bound Codex session",
         "- `/summary [-h|--help]` show the current bound Codex conversation summary",
         "- `/diff [-h|--help]` show the latest app-server turn diff for the current bound session",
-        "- `/skills [--reload] [-h|--help]` show Codex skills visible for the current project",
+        "- `/skills [list|reload] [-h|--help]` show Codex skills visible for the current project",
         "- `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project",
         "- `/approvals [mode] [-h|--help]` show or change Codex approvals for future runs",
         "- `/search [on|off] [-h|--help]` show or change live web search for this conversation",
@@ -749,9 +749,16 @@ export class App {
       if (skillArgs.peek() === "-h" || skillArgs.peek() === "--help") {
         return this.skillsHelpText();
       }
-      const forceReload = skillArgs.takeFlag("--reload");
+      let forceReload = false;
+      const mode = skillArgs.peek();
+      if (mode === "list") {
+        skillArgs.shift();
+      } else if (mode === "reload") {
+        skillArgs.shift();
+        forceReload = true;
+      }
       if (!skillArgs.isEmpty()) {
-        return "Usage: `/skills [--reload] [-h|--help]`";
+        return "Usage: `/skills [list|reload] [-h|--help]`";
       }
       if (!this.codex.listSkills) {
         return "# Skills\n\n- **Status**: `unsupported`\n- Native skills listing is currently available only in `app-server` mode.";
@@ -768,15 +775,20 @@ export class App {
           ? entry.skills.filter((item): item is Record<string, unknown> => isRecord(item))
           : [];
         return list.map((skill) => ({ cwd, skill }));
+      }).sort((left, right) => {
+        const leftName = (this.readString(left.skill.name) || "").toLowerCase();
+        const rightName = (this.readString(right.skill.name) || "").toLowerCase();
+        return (
+          leftName.localeCompare(rightName) ||
+          left.cwd.localeCompare(right.cwd) ||
+          (this.readString(left.skill.path) || "").localeCompare(this.readString(right.skill.path) || "")
+        );
       });
       if (skills.length === 0) {
         return "# Skills\n\n- **Status**: `(no skills found)`";
       }
       const lines = [
         "# Skills",
-        "",
-        `- **Project**: \`${project}\``,
-        `- **Count**: \`${skills.length}\``,
         "",
         "| # | Name | Scope | Enabled | Cwd | Path | Description |",
         "| --- | --- | --- | --- | --- | --- | --- |"
@@ -1479,6 +1491,15 @@ export class App {
         this.readThreadModel(threadInfo, thread);
       const effectiveReasoning = this.readThreadReasoningEffort(threadInfo, thread);
       const effectiveSource = this.formatThreadSource(threadInfo?.source ?? thread?.source);
+      const gitInfo = asObjectRecord(thread?.gitInfo);
+      const createdAt =
+        this.formatUnixTimestamp(thread?.createdAt) ||
+        this.formatAnyTimestamp(session?.createdAt);
+      const updatedAt =
+        this.formatUnixTimestamp(thread?.updatedAt) ||
+        this.formatAnyTimestamp(session?.createdAt);
+      const lastMessage = session?.preview || "(no preview)";
+      const threadPreview = this.readString(thread?.preview) || "(none)";
       return [
         "# Current Session",
         "",
@@ -1487,9 +1508,13 @@ export class App {
         ...(effectiveSource ? [`- **Source**: \`${effectiveSource}\``] : []),
         ...(effectiveModel ? [`- **Model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`] : []),
         ...(effectiveReasoning ? [`- **Reasoning**: \`${effectiveReasoning}\``] : []),
-        `- **Session time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
-        `- **Session cwd**: \`${session?.cwd || "(unknown)"}\``,
-        `- **Session last message**: ${session?.preview || "(no preview)"}`,
+        `- **Created**: ${createdAt}`,
+        `- **Updated**: ${updatedAt}`,
+        `- **Cwd**: \`${session?.cwd || this.readString(thread?.cwd) || "(unknown)"}\``,
+        `- **Last message**: ${lastMessage}`,
+        `- **Thread preview**: ${threadPreview}`,
+        ...(this.readString(gitInfo.branch) ? [`- **Branch**: \`${this.readString(gitInfo.branch)}\``] : []),
+        `- **Flags**: ${this.formatListFlag("current")}, bound`,
         ...(thread
           ? [
               `- **Thread name**: ${this.readString(thread.name) || "(none)"}`,
@@ -4936,12 +4961,13 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/skills [--reload]`",
+      "- `/skills [list|reload]`",
       "- `/skills -h|--help`",
       "",
       "## Options",
       "",
-      "- `--reload` bypass the skills cache and rescan from disk",
+      "- `list` show visible skills from the current project scope",
+      "- `reload` bypass the skills cache and rescan from disk",
       "- `-h, --help` show skills help",
       "",
       "## Behavior",
@@ -4951,7 +4977,8 @@ export class App {
       "## Examples",
       "",
       "- `/skills`",
-      "- `/skills --reload`"
+      "- `/skills list`",
+      "- `/skills reload`"
     ].join("\n");
   }
 

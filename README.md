@@ -52,7 +52,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/compact [-h|--help]` compact the current bound Codex session
 - `/summary [-h|--help]` show the current bound Codex conversation summary
 - `/diff [-h|--help]` show the latest app-server turn diff for the current bound session
-- `/skills [--reload] [-h|--help]` show Codex skills visible for the current project
+- `/skills [list|reload] [-h|--help]` show Codex skills visible for the current project
 - `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project
 - `/approvals [mode] [-h|--help]` show or change Codex approvals for future runs
 - `/search [on|off] [-h|--help]` show or change live web search for this conversation
