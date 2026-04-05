@@ -14,6 +14,38 @@ ENV_PATH="${CONFIG_DIR}/bridge.env"
 JSON_PATH="${CONFIG_DIR}/config.json"
 USER_HOME="${HOME}"
 PATH_VALUE="${PATH}"
+ASSUME_YES=0
+
+usage() {
+  cat <<'EOF'
+Usage: ./install.sh [-y|--yes] [-h|--help]
+
+Install or update the local codex-feishu-bridge package payload and user systemd service.
+
+Options:
+  -y, --yes   skip the interactive confirmation prompt
+  -h, --help  show this help and exit
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -y|--yes)
+      ASSUME_YES=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $1" >&2
+      echo >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
 
 echo "This will clean, install packages, build, install the package globally, install/update the user service, kill old bridge processes, and restart the service."
 echo "repo: ${ROOT_DIR}"
@@ -24,10 +56,12 @@ echo "note: config.json is the primary bridge config; bridge.env is only for sec
 if [[ -f "${JSON_PATH}" ]]; then
   echo "note: existing config.json will be preserved; checked-in defaults like backendMode/app-server are only applied on first install."
 fi
-read -r -p "Continue? [y/N] " CONFIRM
-if [[ ! "${CONFIRM}" =~ ^[Yy]$ ]]; then
-  echo "aborted"
-  exit 1
+if [[ "${ASSUME_YES}" -ne 1 ]]; then
+  read -r -p "Continue? [y/N] " CONFIRM
+  if [[ ! "${CONFIRM}" =~ ^[Yy]$ ]]; then
+    echo "aborted"
+    exit 1
+  fi
 fi
 
 cd "${ROOT_DIR}"

@@ -1714,7 +1714,7 @@ export class App {
     if (command && localCommandName) {
       const localSlashName = command.name;
       const project = binding?.project || this.config.project.defaultProject;
-      await sendEarlyUpdate(`Running ${localCommandName} in project \`${project}\`...`);
+      await sendEarlyUpdate(`Running \`${localCommandName}\` in project \`${project}\`...`);
       return this.runLocalCommand(localCommandName, project, command.args, localSlashName);
     }
 
@@ -2054,8 +2054,9 @@ export class App {
     try {
       const binding = await this.store.get(`p2p:${this.config.feishu.startupNotifyChatId}`);
       const footer = await this.buildStartupReadyFooter(binding);
+      const text = await this.buildStartupReadyMessage(title, binding?.project);
       await this.feishu?.sendStartupReady(
-        this.buildStartupReadyMessage(title, binding?.project),
+        text,
         footer,
         title,
         false
@@ -2069,12 +2070,16 @@ export class App {
     }
   }
 
-  private buildStartupReadyMessage(title = "Bridge Ready", currentProject?: string): string {
+  private async buildStartupReadyMessage(title = "Bridge Ready", currentProject?: string): Promise<string> {
+    const runtimeMeta = await getCodexRuntimeMeta(this.config.codex.home).catch(
+      (): { version?: string; authMode?: string } => ({})
+    );
     const feishuDiagnostics = this.feishu?.diagnostics();
     const feishuStatus = feishuDiagnostics
       ? this.formatFeishuStartupStatusSummary(feishuDiagnostics)
       : undefined;
     return [
+      ...(runtimeMeta.version ? [`- **Codex**: \`${runtimeMeta.version}\``] : []),
       `- **Backend**: \`${this.codex.mode}\``,
       `- **Profile**: \`${this.config.codex.profileMode}\``,
       `- **Default project**: \`${this.config.project.defaultProject}\``,
@@ -5475,9 +5480,6 @@ export class App {
       return [
         heading,
         "",
-        `- **Project**: \`${project}\``,
-        `- **Command**: \`${commandText || command}\``,
-        "",
         this.renderFencedBlock("text", this.truncateOutput(combined || "(no output)"))
       ].join("\n");
     } catch (error) {
@@ -5493,8 +5495,6 @@ export class App {
         text: [
           heading,
           "",
-          `- **Project**: \`${project}\``,
-          `- **Command**: \`${commandText || command}\``,
           `- **Status**: ⚠️ \`failed\``,
           `- **Code**: \`${String(maybe.code ?? "(unknown)")}\``,
           ...(maybe.signal ? [`- **Signal**: \`${maybe.signal}\``] : []),

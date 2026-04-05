@@ -129,6 +129,10 @@ For a full local install from the current checkout, including package install, b
 ./install.sh
 ```
 
+Useful flags:
+- `./install.sh --yes`
+- `./install.sh --help`
+
 Or:
 
 ```bash
@@ -154,6 +158,21 @@ npm run install:local
   `~/.config/systemd/user/codex-feishu-bridge.service`
 - `install.sh` builds a detached package payload, installs the global `codex-feishu-bridge`
   binary under your npm prefix, and points the user service at that binary.
+- `codex-feishu-bridge` is also a normal CLI entrypoint exposed by the package `bin` field.
+  After install, it may appear on your shell `PATH` at your npm global prefix, such as
+  `/path/to/node/bin/codex-feishu-bridge`, `/usr/local/bin/codex-feishu-bridge`, or a user-local
+  npm bin directory.
+- The current user service also uses that npm-global binary path for `ExecStart`. This is normal,
+  but it means the same command name may exist both as a service target and as an interactive
+  shell command on hosts where the npm global bin directory is on `PATH`.
+- If you want to inspect which one your shell resolves, use:
+
+```bash
+which -a codex-feishu-bridge
+readlink -f "$(command -v codex-feishu-bridge)"
+systemctl --user cat codex-feishu-bridge.service
+```
+
 - It preserves existing `~/.config/codex-feishu-bridge/bridge.env` and `config.json` if they
   already exist.
 - Machine-specific proxy or custom CA settings should live in
