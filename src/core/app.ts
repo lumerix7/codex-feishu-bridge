@@ -1052,7 +1052,7 @@ export class App {
         return this.renderCommandError(
           "Resume",
           "missing value for `-C|--cd <dir>`",
-          "`/resume [list|<session-id>|--last|-n <index>] [--all] [--project <path>] [-C|--cd <dir>]`"
+          "`/resume [<session-id>|-|--last|-n <index>] [--messages <count>] [-C|--cd <dir>]`"
         );
       }
       if (cdProjectArg) {
@@ -1069,7 +1069,7 @@ export class App {
         return this.renderCommandError(
           "Resume",
           "missing value for `--messages <count>`",
-          "`/resume [list|<session-id>|--last|-n <index>] [--messages <count>] [--all] [--project <path>] [-C|--cd <dir>]`"
+          "`/resume [<session-id>|-|--last|-n <index>] [--messages <count>] [-C|--cd <dir>]`"
         );
       }
       let replayMessages = this.config.codex.resumeReplayCount;
@@ -1079,7 +1079,7 @@ export class App {
           return this.renderCommandError(
             "Resume",
             "invalid message replay count",
-            "`/resume [<session-id>|--last|-n <index>] [--messages <count>]`"
+            "`/resume [<session-id>|-|--last|-n <index>] [--messages <count>]`"
           );
         }
         replayMessages = parsed;
@@ -1112,8 +1112,10 @@ export class App {
         resumeProject = scopedProject;
         projectExplicitlySelected = true;
       }
+      let wantsLast = false;
       if (resumeArgs.peek() === "--last") {
         resumeArgs.shift();
+        wantsLast = true;
       }
       if (allProjects && resumeArgs.peek() !== "list") {
         return this.renderCommandError(
@@ -1128,7 +1130,7 @@ export class App {
           return this.renderCommandError(
             "Resume",
             "use `--messages <count>` only when actually resuming a session, not with `list`",
-            "`/resume [<session-id>|--last|-n <index>] [--messages <count>]`"
+            "`/resume [<session-id>|-|--last|-n <index>] [--messages <count>]`"
           );
         }
         if (!resumeArgs.isEmpty()) {
@@ -1160,23 +1162,40 @@ export class App {
           resumeProject
         );
       }
+      if (resumeArgs.peek() === "-") {
+        resumeArgs.shift();
+        wantsLast = true;
+      }
       if ((resumeArgs.peek() || "").startsWith("-") && resumeArgs.peek() !== "-n") {
         return this.renderCommandError(
           "Resume",
           `unsupported bridge option \`${resumeArgs.peek()}\``,
-          "`/resume [list|<session-id>|--last|-n <index>] [--all] [--project <path>] [-C|--cd <dir>]`",
+          "`/resume [<session-id>|-|--last|-n <index>|list]`",
           ["- **Note**: Use a normal follow-up message after `/resume ...` if you want to continue the bound session."]
+        );
+      }
+      if (resumeArgs.isEmpty() && !wantsLast) {
+        return this.renderCommandError(
+          "Resume",
+          "pick a session explicitly, or use `--last` / `-` to resume the most recent session",
+          "`/resume [<session-id>|-|--last|-n <index>|list]`",
+          [
+            "- **Examples**: `/resume --last`, `/resume -`, `/resume <session-id>`, `/resume list`",
+            "- **Tip**: Use `/resume -h` to show help."
+          ]
         );
       }
 
       let targetSessionId =
         resumeArgs.peek() ||
-        (await this.findMostRecentSessionId(
-          resumeProject,
-          projectExplicitlySelected ? false : allProjects
-        )) ||
+        (wantsLast
+          ? await this.findMostRecentSessionId(
+              resumeProject,
+              projectExplicitlySelected ? false : allProjects
+            )
+          : undefined) ||
         (projectExplicitlySelected ? undefined : existing?.codexSessionId);
-      let resumeSource = resumeArgs.peek() ? "explicit" : "latest";
+      let resumeSource = resumeArgs.peek() ? "explicit" : "last";
       let resumeWarning: string | undefined;
       let resumeIndex: number | undefined;
 
@@ -4279,50 +4298,34 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/resume [list|<session-id>|--last|-n <index>] [--messages <count>] [--all] [--project <path>] [-C|--cd <dir>]`",
-      "- `/resume -h|--help`",
+      "### `/resume <session-id>|[options]` - Resume a session.",
       "",
-      "## Options",
+      "- `<session-id>` Resume one specific session id.",
       "",
-      "### Select Session",
+      "#### Options",
       "",
-      "- `<session-id>` bind one specific session id",
-      "- `--last` bind the most recent session in the current scope",
-      "- `-n <index>` bind the Nth session from the current `/session list` ordering",
+      "- `-, --last` Resume the most recent session in the current scope.",
+      "- `-n <index>` Resume the Nth session from the current `/session list` ordering.",
+      `- \`--messages <count>\` Append the last \`${this.config.codex.resumeReplayCount}\` thread messages by default after a successful session change.`,
+      "- `-C, --cd <dir>` Require the resumed session to stay in that project.",
       "",
-      "### List Scope",
+      "### `/resume list [options]` - List resumable sessions.",
       "",
-      "- `list` show the current resumable session list",
-      "- `--all` expand browsing beyond the current project for `list`",
-      "- `--project <path>` scope `list` browsing to one project path",
+      "- `/resume list` Show resumable sessions instead of rebinding.",
       "",
-      "### Project",
+      "#### Options",
       "",
-      "- `-C, --cd <dir>` keep the resumed session in that project only when it matches the session project",
-      "- `--messages <count>` append the last N thread messages after a successful session change",
+      "- `--all` Expand list beyond the current project.",
+      "- `--project <path>` Scope list to one project path.",
       "",
       "### General",
       "",
-      "- `-h, --help` show resume help",
-      "",
-      "## Behavior",
-      "",
-      "- `/resume` and `/resume --last` both bind the most recent session in the current scope.",
-      "- `/resume list` is the listing shortcut before selecting a session to resume.",
-      "- `/resume list --all` browses across projects.",
-      "- `/resume <session-id>` adopts that session's own project by default.",
-      "- If `-C, --cd <dir>` points to a different project than the target session, `/resume` rejects it and suggests `/new -C <dir>` instead.",
-      `- When the resumed session changes, the bridge appends the last \`${this.config.codex.resumeReplayCount}\` thread messages by default when app-server thread history is available.`,
-      "- `/resume -n <index>` is order-dependent and should be treated as a convenience, not a stable identifier.",
-      "- Native Codex flags like `--config`, `--remote`, `--image`, `--model`, `--sandbox`, and prompt arguments are not exposed on this bridge command.",
+      "- `-h, --help` Show resume help.",
       "",
       "## Examples",
       "",
-      "- `/resume`",
-      "- `/resume list`",
-      "- `/resume <session-id>`",
-      "- `/resume -C /path/to/project`",
-      "- `/resume <session-id> --messages 8`"
+      "- `/resume <session-id>` - resume one specific session",
+      "- `/resume -` - resume the most recent session in the current scope"
     ].join("\n");
   }
 

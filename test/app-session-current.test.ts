@@ -170,6 +170,58 @@ test("resume help works regardless of -h position", async () => {
   }
 });
 
+test("resume without a selector warns and points to explicit latest aliases", async () => {
+  const app = new App(makeConfig());
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/resume"
+  });
+
+  assert.equal(typeof result, "object");
+  assert.equal((result as any).severity, "warning");
+  assert.match(
+    String((result as any).text),
+    /^# Resume\n\n- \*\*Error\*\*: pick a session explicitly, or use `--last` \/ `-` to resume the most recent session\n- \*\*Usage\*\*: `\/resume \[<session-id>\|-\|--last\|-n <index>\|list\]`\n- \*\*Examples\*\*: `\/resume --last`, `\/resume -`, `\/resume <session-id>`, `\/resume list`\n- \*\*Tip\*\*: Use `\/resume -h` to show help\.$/
+  );
+});
+
+test("resume last aliases render source as last", async () => {
+  const app = new App(makeConfig());
+  const store = (app as any).store;
+  await store.put({
+    conversationKey: "p2p:chat_test",
+    codexSessionId: "older-session",
+    project: "/tmp/project-a",
+    createdAt: "2026-04-08T00:00:00.000Z",
+    updatedAt: "2026-04-08T00:00:00.000Z"
+  });
+
+  (app as any).codex = {
+    mode: "spawn",
+    createSession: async () => "unused",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true
+  };
+
+  for (const text of ["/resume -", "/resume --last"]) {
+    const result = await app.handleIncoming({
+      chatId: "chat_test",
+      messageId: "msg_test",
+      chatType: "p2p",
+      text
+    });
+
+    assert.equal(typeof result, "string");
+    assert.match(String(result), /^# Resume Session\n\n- \*\*Source\*\*: `last`\n\n- \*\*Session\*\*: `older-session`/);
+  }
+});
+
 test("recent replay messages render as Codex/User headings with dynamic fenced text", () => {
   const app = new App(makeConfig());
 
