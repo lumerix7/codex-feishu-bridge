@@ -99,24 +99,11 @@ class AppServerCodexBackend implements CodexBackend {
     const resolvedSessionId = clientInfo.sessionId;
     let lastActivityAt = Date.now();
 
-    const sendStatus = (text: string): void => {
-      lastActivityAt = Date.now();
-      void hooks?.onStatus?.(text);
-    };
-
     const sendUpdate = (update: string): void => {
       lastActivityAt = Date.now();
       void hooks?.onUpdate?.(update);
     };
     let emitBridgeProbe = (_status: "working" | "unresponsive", _message: string): void => {};
-
-    sendStatus(
-      formatStatusWithProject(
-        this.config,
-        project,
-        sessionId ? `Resuming Codex session ${resolvedSessionId}...` : "Starting a new Codex session..."
-      )
-    );
 
     const active: ActiveAppServerRun = {
       client: clientInfo.client,
@@ -176,6 +163,24 @@ class AppServerCodexBackend implements CodexBackend {
         appendEventBlock(timeline, text);
         pendingStreamText = buildVisibleTimelineText(timeline);
         flushStreamText(true);
+      };
+
+      const emitBridgeStatus = (message: string): void => {
+        lastActivityAt = Date.now();
+        const notification = {
+          method: "bridge/status",
+          params: {
+            message,
+            runId,
+            sessionId: resolvedSessionId,
+            project
+          }
+        };
+        if (inlineBlockMode !== "off") {
+          const lines = ["```text", "⏳ Codex Status", `message: ${message}`, "```"];
+          pushOperationalBlock(lines.join("\n"));
+        }
+        void hooks?.onNotification?.(notification);
       };
 
       emitBridgeProbe = (status: "working" | "unresponsive", message: string): void => {
@@ -474,6 +479,15 @@ class AppServerCodexBackend implements CodexBackend {
         sendUpdate(text);
       };
 
+      lastActivityAt = Date.now();
+      void hooks?.onStatus?.(
+        formatStatusWithProject(
+          this.config,
+          project,
+          sessionId ? `Resuming Codex session ${resolvedSessionId}...` : "Starting a new Codex session..."
+        )
+      );
+
       const finish = (fn: () => void): void => {
         if (settled) return;
         settled = true;
@@ -522,7 +536,7 @@ class AppServerCodexBackend implements CodexBackend {
         if (method === "turn/started") {
           const turn = isRecord(params.turn) ? params.turn : {};
           active.turnId = String(turn.id || "").trim();
-          sendStatus(formatStatusWithProject(this.config, project, "Codex is thinking..."));
+          emitBridgeStatus(formatStatusWithProject(this.config, project, "Codex is thinking..."));
           if (active.cancelled && active.turnId) {
             void active.client.interruptTurn(resolvedSessionId, active.turnId).catch(() => undefined);
           }

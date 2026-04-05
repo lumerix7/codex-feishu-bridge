@@ -2865,6 +2865,18 @@ export class App {
   }
 
   private renderCodexNotificationUpdate(notification: { method: string; params: Record<string, unknown> }): string | undefined {
+    if (notification.method === "bridge/status") {
+      const message = this.readString(notification.params.message);
+      const runId = this.readString(notification.params.runId);
+      const sessionId = this.readString(notification.params.sessionId);
+      return [
+        "# ⏳ Codex Status",
+        "",
+        ...(message ? [`- **Message**: ${message}`] : []),
+        ...(runId ? [`- **Run**: \`${runId}\``] : []),
+        ...(sessionId ? [`- **Session**: \`${sessionId}\``] : [])
+      ].join("\n");
+    }
     if (notification.method === "bridge/probe") {
       const status = this.readString(notification.params.status) || "(unknown)";
       const message = this.readString(notification.params.message);
