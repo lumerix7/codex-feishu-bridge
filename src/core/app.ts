@@ -1286,20 +1286,24 @@ export class App {
       );
       await this.store.put(binding);
       await this.readCurrentModelState(resolvedProject, targetSessionId).catch(() => undefined);
-      const sections = [
-        "# Resume Session",
-        "",
-        `- **Source**: \`${resumeSource}\``,
-        ...(resumeIndex ? [`- **Index**: \`${resumeIndex}\``] : []),
-        `- **Session**: \`${binding.codexSessionId}\``,
-        `- **Project**: \`${binding.project}\``,
-        `- **Time**: ${this.formatAnyTimestamp(session?.createdAt)}`,
-        `- **Cwd**: \`${session?.cwd || "(unknown)"}\``,
-        `- **Last message**: ${session?.preview || "(no preview)"}`,
-        ...(resumeWarning ? [`- **Warning**: ${resumeWarning}`] : [])
-      ];
-      const sessionChanged = existing?.codexSessionId !== binding.codexSessionId;
       const resumedSessionId = binding.codexSessionId || targetSessionId;
+      const threadInfo =
+        this.codex.readThread
+          ? await this.codex.readThread(resumedSessionId, binding.project, false).catch(() => undefined)
+          : undefined;
+      const sections = this.renderSessionDetailText({
+        title: "Resume Session",
+        sessionId: resumedSessionId,
+        project: binding.project,
+        session,
+        threadInfo,
+        leadingLines: [
+          `- **Source**: \`${resumeSource}\``,
+          ...(resumeIndex ? [`- **Index**: \`${resumeIndex}\``] : []),
+          ...(resumeWarning ? [`- **Warning**: ${resumeWarning}`] : [])
+        ]
+      });
+      const sessionChanged = existing?.codexSessionId !== binding.codexSessionId;
       const replaySink = onStatus || onUpdate;
       if (sessionChanged && replayMessages > 0 && replaySink) {
         const recentMessages = await this.renderRecentSessionReplayMessages(resumedSessionId, replayMessages);
@@ -1307,7 +1311,7 @@ export class App {
           await replaySink(recentMessage);
         }
       }
-      return sections.join("\n");
+      return sections;
     }
 
     if (command?.name === "fork") {
@@ -1594,44 +1598,13 @@ export class App {
           ? await this.codex.readThread(existing.codexSessionId, project, false).catch(() => undefined)
           : undefined;
       const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
-      const reroute = this.latestModelReroute.get(existing.codexSessionId);
-      const effectiveModel =
-        reroute?.toModel ||
-        this.readThreadModel(threadInfo, thread);
-      const effectiveReasoning = this.readThreadReasoningEffort(threadInfo, thread);
-      const effectiveSource = this.formatThreadSource(threadInfo?.source ?? thread?.source);
-      const gitInfo = asObjectRecord(thread?.gitInfo);
-      const createdAt =
-        this.formatUnixTimestamp(thread?.createdAt) ||
-        this.formatAnyTimestamp(session?.createdAt);
-      const updatedAt =
-        this.formatUnixTimestamp(thread?.updatedAt) ||
-        this.formatAnyTimestamp(session?.createdAt);
-      const lastMessage = session?.preview || "(no preview)";
-      const threadPreview = this.readString(thread?.preview) || "(none)";
-      const sessionText = [
-        "# Current Session",
-        "",
-        `- **Session**: \`${existing.codexSessionId}\``,
-        `- **Project**: \`${project}\``,
-        ...(effectiveSource ? [`- **Source**: \`${effectiveSource}\``] : []),
-        ...(effectiveModel ? [`- **Model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`] : []),
-        ...(effectiveReasoning ? [`- **Reasoning**: \`${effectiveReasoning}\``] : []),
-        `- **Created**: ${createdAt}`,
-        `- **Updated**: ${updatedAt}`,
-        `- **Cwd**: \`${session?.cwd || this.readString(thread?.cwd) || "(unknown)"}\``,
-        `- **Last message**: ${lastMessage}`,
-        `- **Thread name**: ${escapeMarkdownInline(this.readString(thread?.name) || "(none)")}`,
-        `- **Thread preview**: ${threadPreview}`,
-        ...(this.readString(gitInfo.branch) ? [`- **Branch**: \`${this.readString(gitInfo.branch)}\``] : []),
-        `- **Flags**: ${this.formatListFlag("current")}, bound`,
-        ...(thread
-          ? [
-              `- **Thread status**: \`${this.readString(thread.status) || "(unknown)"}\``,
-              `- **Thread source**: \`${this.readString(thread.source) || "(unknown)"}\``
-            ]
-          : [])
-      ].join("\n");
+      const sessionText = this.renderSessionDetailText({
+        title: "Current Session",
+        sessionId: existing.codexSessionId,
+        project,
+        session,
+        threadInfo
+      });
       return this.withBodyFormat(sessionText, sessionBodyFormat);
     }
 
@@ -4483,6 +4456,61 @@ export class App {
       : `No native Codex sessions found for current project \`${project}\` under ${this.config.codex.sessionsDir}`;
   }
 
+  private renderSessionDetailText(options: {
+    title: string;
+    sessionId: string;
+    project: string;
+    session?: Awaited<ReturnType<typeof getSessionSummary>>;
+    threadInfo?: unknown;
+    leadingLines?: string[];
+  }): string {
+    const { title, sessionId, project, session, threadInfo, leadingLines = [] } = options;
+    const threadInfoRecord = asObjectRecord(threadInfo);
+    const threadValue = threadInfoRecord?.thread;
+    const thread = isRecord(threadValue) ? threadValue : undefined;
+    const reroute = this.latestModelReroute.get(sessionId);
+    const effectiveModel =
+      reroute?.toModel ||
+      this.readThreadModel(threadInfoRecord, thread);
+    const effectiveReasoning = this.readThreadReasoningEffort(threadInfoRecord, thread);
+    const effectiveSource = this.formatThreadSource(threadInfoRecord?.source ?? thread?.source);
+    const gitInfo = asObjectRecord(thread?.gitInfo);
+    const createdAt =
+      this.formatUnixTimestamp(thread?.createdAt) ||
+      this.formatAnyTimestamp(session?.createdAt);
+    const updatedAt =
+      this.formatUnixTimestamp(thread?.updatedAt) ||
+      this.formatAnyTimestamp(session?.createdAt);
+    const threadPreview = this.readString(thread?.preview) || "(none)";
+    return [
+      `# ${title}`,
+      "",
+      ...leadingLines,
+      ...(leadingLines.length > 0 ? [""] : []),
+      `- **Session**: \`${sessionId}\``,
+      `- **Project**: \`${project}\``,
+      ...(effectiveSource ? [`- **Source**: \`${effectiveSource}\``] : []),
+      ...(effectiveModel ? [`- **Model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`] : []),
+      ...(effectiveReasoning ? [`- **Reasoning**: \`${effectiveReasoning}\``] : []),
+      `- **Created**: ${createdAt}`,
+      `- **Updated**: ${updatedAt}`,
+      `- **Cwd**: \`${session?.cwd || this.readString(thread?.cwd) || "(unknown)"}\``,
+      `- **Last message**: ${session?.preview || "(no preview)"}`,
+      ...(this.readString(gitInfo.branch) ? [`- **Branch**: \`${this.readString(gitInfo.branch)}\``] : []),
+      `- **Flags**: ${this.formatListFlag("current")}, bound`,
+      `- **Thread name**: ${escapeMarkdownInline(this.readString(thread?.name) || "(none)")}`,
+      ...(thread
+        ? [
+            `- **Thread status**: \`${this.readString(thread.status) || "(unknown)"}\``,
+            `- **Thread source**: \`${this.formatThreadSource(thread.source) || "(unknown)"}\``
+          ]
+        : []),
+      "- **Thread preview**:",
+      "",
+      this.renderFencedBlock("text", threadPreview)
+    ].join("\n");
+  }
+
   private renderSessionList(
     title: string,
     sessions: SessionListEntry[],
@@ -4557,17 +4585,18 @@ export class App {
   ): Promise<string[]> {
     const messages = await getRecentSessionMessages(this.config.codex.sessionsDir, sessionId, limit);
     if (messages.length === 0) return [];
-    return messages.map((message, index) =>
-      [
-        `# Recent Message ${index + 1}`,
-        "",
-      `- **Role**: \`${message.role === "assistant" ? "codex" : message.role}\``,
-        "",
-        "```text",
-        message.text,
-        "```"
-      ].join("\n")
-    );
+    return messages.map((message, index) => this.renderRecentSessionReplayMessage(message, index));
+  }
+
+  private renderRecentSessionReplayMessage(
+    message: { role: "user" | "assistant"; text: string; timestamp?: string },
+    _index: number
+  ): string {
+    const title = message.role === "assistant" ? "[Codex]" : "[User]";
+    const prefix = message.timestamp
+      ? `${title} ${this.formatAnyTimestamp(message.timestamp, message.timestamp)}`
+      : title;
+    return this.renderFencedBlock("text", `${prefix}\n\n${message.text}`);
   }
 
   private formatThreadTimestamp(value: number | undefined): string | undefined {

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { App } from "../src/core/app.js";
+import { getRecentSessionMessages } from "../src/adapters/codex/session-files.js";
 
 function makeConfig() {
   return {
@@ -58,7 +62,7 @@ function makeConfig() {
   } as const;
 }
 
-test("session shows thread name directly after last message and escapes markdown", async () => {
+test("session groups thread details last and renders thread preview as fenced text", async () => {
   const app = new App(makeConfig());
   const store = (app as any).store;
   await store.put({
@@ -86,9 +90,9 @@ test("session shows thread name directly after last message and escapes markdown
         createdAt: 1_775_689_600,
         updatedAt: 1_775_689_900,
         status: "idle",
-        source: "chat"
+        source: { chat: "lark" }
       },
-      source: "chat"
+      source: { chat: "lark" }
     })
   };
 
@@ -102,6 +106,129 @@ test("session shows thread name directly after last message and escapes markdown
   assert.equal(typeof result, "string");
   assert.match(
     String(result),
-    /- \*\*Last message\*\*: \(no preview\)\n- \*\*Thread name\*\*: \\# Review \\`changes\\`\n- \*\*Thread preview\*\*: thread preview/
+    /- \*\*Source\*\*: `chat:lark`\n.*- \*\*Last message\*\*: \(no preview\)\n- \*\*Flags\*\*: `current`, bound\n- \*\*Thread name\*\*: \\# Review \\`changes\\`\n- \*\*Thread status\*\*: `idle`\n- \*\*Thread source\*\*: `chat:lark`\n- \*\*Thread preview\*\*:\n\n```text\nthread preview\n```$/s
   );
+});
+
+test("resume reuses the session detail layout with a resume title", async () => {
+  const app = new App(makeConfig());
+
+  (app as any).codex = {
+    mode: "app-server",
+    createSession: async () => "session-1",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true,
+    readThread: async () => ({
+      thread: {
+        id: "session-1",
+        name: "Resume thread",
+        preview: "thread preview",
+        cwd: "/tmp/project-a",
+        createdAt: 1_775_689_600,
+        updatedAt: 1_775_689_900,
+        status: "idle",
+        source: "chat"
+      },
+      source: "chat"
+    })
+  };
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/resume session-1"
+  });
+
+  assert.equal(typeof result, "string");
+  assert.match(String(result), /^# Resume Session\n\n- \*\*Source\*\*: `explicit`\n\n- \*\*Session\*\*: `session-1`/);
+  assert.match(String(result), /- \*\*Thread preview\*\*:\n\n```text\nthread preview\n```$/);
+});
+
+test("recent replay messages render as Codex/User headings with dynamic fenced text", () => {
+  const app = new App(makeConfig());
+
+  const assistantRendered = (app as any).renderRecentSessionReplayMessage(
+    {
+      role: "assistant",
+      text: "before ``` inside",
+      timestamp: "2026-04-09T12:27:10.194Z"
+    },
+    0
+  );
+  const userRendered = (app as any).renderRecentSessionReplayMessage(
+    { role: "user", text: "plain user text" },
+    1
+  );
+
+  assert.equal(
+    assistantRendered,
+    "````text\n[Codex] 2026-04-09T20:27:10.194+08:00\n\nbefore ``` inside\n````"
+  );
+  assert.equal(
+    userRendered,
+    "```text\n[User]\n\nplain user text\n```"
+  );
+});
+
+test("recent session messages keep consecutive duplicate text when timestamps differ", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-session-test-"));
+  const filePath = path.join(
+    root,
+    "2026",
+    "04",
+    "09",
+    "session-019d6704-c1d9-7623-a6c9-b6368155ba85.jsonl"
+  );
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(
+    filePath,
+    [
+      JSON.stringify({
+        payload: {
+          id: "019d6704-c1d9-7623-a6c9-b6368155ba85",
+          timestamp: "2026-04-09T12:00:00.000Z",
+          cwd: "/tmp/project-a"
+        }
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "agent_message",
+          message: "same text",
+          timestamp: "2026-04-09T12:01:00.000Z"
+        }
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "agent_message",
+          message: "same text",
+          timestamp: "2026-04-09T12:02:00.000Z"
+        }
+      })
+    ].join("\n"),
+    "utf8"
+  );
+
+  try {
+    const messages = await getRecentSessionMessages(root, "019d6704-c1d9-7623-a6c9-b6368155ba85", 10);
+    assert.deepEqual(messages, [
+      {
+        role: "assistant",
+        text: "same text",
+        timestamp: "2026-04-09T12:01:00.000Z"
+      },
+      {
+        role: "assistant",
+        text: "same text",
+        timestamp: "2026-04-09T12:02:00.000Z"
+      }
+    ]);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });

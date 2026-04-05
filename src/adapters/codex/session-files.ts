@@ -39,6 +39,7 @@ export interface SessionSummary {
 export interface SessionMessage {
   role: "user" | "assistant";
   text: string;
+  timestamp?: string;
 }
 
 export interface SessionListOptions {
@@ -95,7 +96,12 @@ export async function getRecentSessionMessages(
     const message = parseSessionMessage(line);
     if (!message) continue;
     const previous = messages[messages.length - 1];
-    if (previous && previous.role === message.role && previous.text === message.text) {
+    if (
+      previous &&
+      previous.role === message.role &&
+      previous.text === message.text &&
+      previous.timestamp === message.timestamp
+    ) {
       continue;
     }
     messages.push(message);
@@ -184,20 +190,30 @@ function parseSessionMessage(line: string): SessionMessage | undefined {
   try {
     const parsed = JSON.parse(line) as {
       type?: string;
+      timestamp?: string;
+      createdAt?: string;
+      created_at?: string;
       payload?: {
         type?: string;
         message?: string;
         role?: string;
+        timestamp?: string;
         content?: Array<{ type?: string; text?: string }>;
       };
     };
+    const timestamp = normalizeTimestamp(
+      parsed.payload?.timestamp ||
+      parsed.timestamp ||
+      parsed.createdAt ||
+      parsed.created_at
+    );
     if (parsed.type === "event_msg" && parsed.payload?.type === "user_message") {
       const text = normalizeMessageText(parsed.payload.message);
-      return text ? { role: "user", text } : undefined;
+      return text ? { role: "user", text, timestamp } : undefined;
     }
     if (parsed.type === "event_msg" && parsed.payload?.type === "agent_message") {
       const text = normalizeMessageText(parsed.payload.message);
-      return text ? { role: "assistant", text } : undefined;
+      return text ? { role: "assistant", text, timestamp } : undefined;
     }
     if (parsed.type === "response_item" && parsed.payload?.type === "message") {
       const role =
@@ -210,12 +226,16 @@ function parseSessionMessage(line: string): SessionMessage | undefined {
       const text = normalizeMessageText(
         parsed.payload.content?.find((item) => item.type === "input_text" || item.type === "output_text")?.text
       );
-      return text ? { role, text } : undefined;
+      return text ? { role, text, timestamp } : undefined;
     }
   } catch {
     return undefined;
   }
   return undefined;
+}
+
+function normalizeTimestamp(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function compactPreview(text: string | undefined): string | undefined {
