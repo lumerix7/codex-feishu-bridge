@@ -2242,7 +2242,7 @@ export class App {
       case "diff":
         return "🧩";
       case "skills":
-        return "🧠";
+        return "🧰";
       case "config":
         return "⚙️";
       case "new":
@@ -2268,7 +2268,7 @@ export class App {
       case "search":
         return "🔎";
       case "model":
-        return "🤖";
+        return "🧠";
       case "profile":
         return "👤";
       case "plan":
