@@ -389,7 +389,7 @@ export class App {
         "- `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project",
         "- `/approvals [mode] [-h|--help]` show or change Codex approvals for future runs",
         "- `/search [on|off] [-h|--help]` show or change live web search for this conversation",
-        "- `/model [--list [--no-hidden]|name] [--reasoning <level>] [-h|--help]` show, list, or change the native Codex model for the current session",
+        "- `/model [list [--no-hidden]|name] [--reasoning <level>] [-h|--help]` show, list, or change the native Codex model for the current session",
         "- `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation",
         "- `/plan [mode] [-h|--help]` show or change the Codex collaboration mode for this conversation",
         "",
@@ -937,7 +937,7 @@ export class App {
         return this.renderCommandError(
           "Resume",
           "missing value for `-C|--cd <dir>`",
-          "`/resume [<session-id>|--last|-n <index>|--list] [--all] [--project <path>] [-C|--cd <dir>]`"
+          "`/resume [list|<session-id>|--last|-n <index>] [--all] [--project <path>] [-C|--cd <dir>]`"
         );
       }
       if (cdProjectArg) {
@@ -954,7 +954,7 @@ export class App {
         return this.renderCommandError(
           "Resume",
           "missing value for `--messages <count>`",
-          "`/resume [<session-id>|--last|-n <index>|--list] [--messages <count>] [--all] [--project <path>] [-C|--cd <dir>]`"
+          "`/resume [list|<session-id>|--last|-n <index>] [--messages <count>] [--all] [--project <path>] [-C|--cd <dir>]`"
         );
       }
       let replayMessages = this.config.codex.resumeReplayCount;
@@ -974,15 +974,15 @@ export class App {
         return this.renderCommandError(
           "Resume",
           "missing value for `--project <path>`",
-          "`/resume --list [--all] [--project <path>]`"
+          "`/resume list [--all] [--project <path>]`"
         );
       }
-      const wantsList = resumeArgs.peek() === "--list";
+      const wantsList = resumeArgs.peek() === "list";
       if (projectScopeArg && !wantsList) {
         return this.renderCommandError(
           "Resume",
-          "use `--project <path>` with `/resume --list`, or use `-C|--cd <dir>` to switch project while resuming",
-          "`/resume --list [--project <path>]`"
+          "use `--project <path>` with `/resume list`, or use `-C|--cd <dir>` to switch project while resuming",
+          "`/resume list [--project <path>]`"
         );
       }
       if (projectScopeArg) {
@@ -991,7 +991,7 @@ export class App {
           return this.renderCommandError(
             "Resume",
             "cannot use different project paths for `--project <path>` and `-C|--cd <dir>`",
-            "`/resume --list [--project <path>]` or `/resume -C <dir>`"
+            "`/resume list [--project <path>]` or `/resume -C <dir>`"
           );
         }
         resumeProject = scopedProject;
@@ -1003,19 +1003,19 @@ export class App {
       if (resumeArgs.peek() === "--last") {
         resumeArgs.shift();
       }
-      if (allProjects && resumeArgs.peek() !== "--list") {
+      if (allProjects && resumeArgs.peek() !== "list") {
         return this.renderCommandError(
           "Resume",
-          "use `--all` with `/resume --list` to browse across projects, then resume by session id",
-          "`/resume --list --all`"
+          "use `--all` with `/resume list` to browse across projects, then resume by session id",
+          "`/resume list --all`"
         );
       }
-      if (resumeArgs.peek() === "--list") {
+      if (resumeArgs.peek() === "list") {
         resumeArgs.shift();
         if (replayMessagesArg !== undefined) {
           return this.renderCommandError(
             "Resume",
-            "use `--messages <count>` only when actually resuming a session, not with `--list`",
+            "use `--messages <count>` only when actually resuming a session, not with `list`",
             "`/resume [<session-id>|--last|-n <index>] [--messages <count>]`"
           );
         }
@@ -1023,7 +1023,7 @@ export class App {
           return this.renderCommandError(
             "Resume",
             `unsupported resume list argument \`${resumeArgs.peek()}\``,
-            "`/resume --list [--all] [--project <path>]`"
+            "`/resume list [--all] [--project <path>]`"
           );
         }
         const sessions = await this.listSessionsForCommand(
@@ -1052,7 +1052,7 @@ export class App {
         return this.renderCommandError(
           "Resume",
           `unsupported bridge option \`${resumeArgs.peek()}\``,
-          "`/resume [<session-id>|--last|-n <index>|--list] [--all] [--project <path>] [-C|--cd <dir>]`",
+          "`/resume [list|<session-id>|--last|-n <index>] [--all] [--project <path>] [-C|--cd <dir>]`",
           ["- **Note**: Use a normal follow-up message after `/resume ...` if you want to continue the bound session."]
         );
       }
@@ -1219,7 +1219,7 @@ export class App {
         return this.renderCommandError(
           "Fork",
           "missing value for `--project <path>`",
-          "`/fork [<session-id>|--last|-n <index>|--list] [--all] [--project <path>]`"
+          "`/fork [list|<session-id>|--last|-n <index>] [--all] [--project <path>]`"
         );
       }
       if (projectScopeArg) {
@@ -1232,13 +1232,13 @@ export class App {
       if (forkArgs.peek() === "--last") {
         forkArgs.shift();
       }
-      if (forkArgs.peek() === "--list") {
+      if (forkArgs.peek() === "list") {
         forkArgs.shift();
         if (!forkArgs.isEmpty()) {
           return this.renderCommandError(
             "Fork",
             `unsupported fork list argument \`${forkArgs.peek()}\``,
-            "`/fork --list [--all] [--project <path>]`"
+            "`/fork list [--all] [--project <path>]`"
           );
         }
         const sessions = await this.listSessionsForCommand(
@@ -1267,7 +1267,7 @@ export class App {
         return this.renderCommandError(
           "Fork",
           `unsupported bridge option \`${forkArgs.peek()}\``,
-          "`/fork [<session-id>|--last|-n <index>|--list] [--all] [--project <path>]`"
+          "`/fork [list|<session-id>|--last|-n <index>] [--all] [--project <path>]`"
         );
       }
 
@@ -1792,14 +1792,14 @@ export class App {
       if (modelArgs.peek() === "-h" || modelArgs.peek() === "--help") {
         return this.modelHelpText();
       }
-      if (modelArgs.peek() === "--list" || modelArgs.peek() === "list") {
+      if (modelArgs.peek() === "list") {
         modelArgs.shift();
         const includeHidden = !modelArgs.takeFlag("--no-hidden");
         if (!modelArgs.isEmpty()) {
           return this.renderCommandError(
             "Model",
             `unsupported args: \`${modelArgs.remainingText()}\``,
-            "Usage: `/model --list [--no-hidden]`"
+            "Usage: `/model list [--no-hidden]`"
           );
         }
         const project = binding?.project || this.config.project.defaultProject;
@@ -1827,7 +1827,7 @@ export class App {
         return this.renderCommandError(
           "Model",
           "missing value for `--reasoning <level>`",
-          "Usage: `/model [--list [--no-hidden]|name] [--reasoning <level>]`"
+          "Usage: `/model [list [--no-hidden]|name] [--reasoning <level>]`"
         );
       }
       const remainingModelArgs = modelArgs.remaining();
@@ -1836,14 +1836,14 @@ export class App {
         return this.renderCommandError(
           "Model",
           "missing model name or reasoning value",
-          "Usage: `/model [--list [--no-hidden]|name] [--reasoning <level>]`"
+          "Usage: `/model [list [--no-hidden]|name] [--reasoning <level>]`"
         );
       }
       if (nextValue && nextValue.startsWith("-")) {
         return this.renderCommandError(
           "Model",
           `unsupported model argument \`${nextValue}\``,
-          "Usage: `/model [--list [--no-hidden]|name] [--reasoning <level>]`"
+          "Usage: `/model [list [--no-hidden]|name] [--reasoning <level>]`"
         );
       }
       if (!binding?.codexSessionId || !this.codex.updateSessionOptions) {
@@ -4167,7 +4167,7 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/resume [<session-id>|--last|-n <index>|--list] [--messages <count>] [--all] [--project <path>] [-C|--cd <dir>]`",
+      "- `/resume [list|<session-id>|--last|-n <index>] [--messages <count>] [--all] [--project <path>] [-C|--cd <dir>]`",
       "- `/resume -h|--help`",
       "",
       "## Options",
@@ -4180,9 +4180,9 @@ export class App {
       "",
       "### List Scope",
       "",
-      "- `--list` show the current resumable session list",
-      "- `--all` expand browsing beyond the current project for `--list`",
-      "- `--project <path>` scope `--list` browsing to one project path",
+      "- `list` show the current resumable session list",
+      "- `--all` expand browsing beyond the current project for `list`",
+      "- `--project <path>` scope `list` browsing to one project path",
       "",
       "### Project",
       "",
@@ -4196,8 +4196,8 @@ export class App {
       "## Behavior",
       "",
       "- `/resume` and `/resume --last` both bind the most recent session in the current scope.",
-      "- `/resume --list` is the listing shortcut before selecting a session to resume.",
-      "- `/resume --list --all` browses across projects.",
+      "- `/resume list` is the listing shortcut before selecting a session to resume.",
+      "- `/resume list --all` browses across projects.",
       "- `/resume <session-id>` adopts that session's own project by default.",
       "- If `-C, --cd <dir>` points to a different project than the target session, `/resume` rejects it and suggests `/new -C <dir>` instead.",
       `- When the resumed session changes, the bridge appends the last \`${this.config.codex.resumeReplayCount}\` thread messages by default when app-server thread history is available.`,
@@ -4207,7 +4207,7 @@ export class App {
       "## Examples",
       "",
       "- `/resume`",
-      "- `/resume --list`",
+      "- `/resume list`",
       "- `/resume <session-id>`",
       "- `/resume -C /path/to/project`",
       "- `/resume <session-id> --messages 8`"
@@ -4222,7 +4222,7 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/fork [<session-id>|--last|-n <index>|--list] [--all] [--project <path>]`",
+      "- `/fork [list|<session-id>|--last|-n <index>] [--all] [--project <path>]`",
       "- `/fork -h|--help`",
       "",
       "## Options",
@@ -4235,7 +4235,7 @@ export class App {
       "",
       "### List Scope",
       "",
-      "- `--list` show the current forkable session list",
+      "- `list` show the current forkable session list",
       "- `--all` expand browsing beyond the current project",
       "- `--project <path>` scope browsing and latest-session lookup to one project path",
       "",
@@ -4253,7 +4253,7 @@ export class App {
       "## Examples",
       "",
       "- `/fork`",
-      "- `/fork --list`",
+      "- `/fork list`",
       "- `/fork -n 3`"
     ].join("\n");
   }
@@ -5126,12 +5126,12 @@ export class App {
       "",
       "## Usage",
       "",
-      "- `/model [--list [--no-hidden]|name] [--reasoning <level>]`",
+      "- `/model [list [--no-hidden]|name] [--reasoning <level>]`",
       "- `/model -h|--help`",
       "",
       "## Options",
       "",
-      "- `--list` show available model IDs from Codex app-server when supported",
+      "- `list` show available model IDs from Codex app-server when supported",
       "- `--no-hidden` hide models that app-server marks as hidden",
       "- `name` set the native session model override",
       "- `--reasoning <level>` set the native session reasoning override",
@@ -5140,16 +5140,16 @@ export class App {
       "",
       "## Behavior",
       "",
-      `- \`/model --list\` fetches up to \`${this.config.codex.modelListMaxCount}\` models and includes hidden models by default.`,
-      "- Use `/model --list` to see the native reasoning options each model advertises.",
+      `- \`/model list\` fetches up to \`${this.config.codex.modelListMaxCount}\` models and includes hidden models by default.`,
+      "- Use `/model list` to see the native reasoning options each model advertises.",
       "- `/model` reads the current bound session first, then falls back to native Codex config when the session does not report model or reasoning.",
       "- Changing model settings requires a bound app-server session.",
       "",
       "## Examples",
       "",
       "- `/model`",
-      "- `/model --list`",
-      "- `/model --list --no-hidden`",
+      "- `/model list`",
+      "- `/model list --no-hidden`",
       "- `/model gpt-5.4`",
       "- `/model --reasoning high`",
       "- `/model gpt-5.4 --reasoning medium`"
@@ -5200,7 +5200,7 @@ export class App {
         "",
         "- This list comes from Codex app-server `model/list`.",
         `- The bridge fetches up to \`${this.config.codex.modelListMaxCount}\` models and follows \`nextCursor\` until that cap is reached.`,
-        "- Hidden models are included by default; use `/model --list --no-hidden` to hide them.",
+        "- Hidden models are included by default; use `/model list --no-hidden` to hide them.",
         "- Exact availability still depends on your current account and server-side routing.",
         "- Use `/model <name>` to update the current native session.",
         "- Use `/model --reasoning <level>` to update the current native session reasoning."

@@ -56,7 +56,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/config [codex-toml] [--layers] [-h|--help]` show key Codex config values for the current project
 - `/approvals [mode] [-h|--help]` show or change Codex approvals for future runs
 - `/search [on|off] [-h|--help]` show or change live web search for this conversation
-- `/model [--list [--no-hidden]|name] [--reasoning <level>] [-h|--help]` show, list, or change the native Codex model for the current session
+- `/model [list [--no-hidden]|name] [--reasoning <level>] [-h|--help]` show, list, or change the native Codex model for the current session
 - `/profile [name|clear] [-h|--help]` show or change the Codex profile for this conversation
 - `/plan [mode] [-h|--help]` show or change the Codex collaboration mode for this conversation
 
@@ -88,7 +88,7 @@ Working v1 bridge:
 - `/project bind -n <index>` to bind from `/project list`, which shows the merged bound-and-trusted project set
 - `/project unbind <path>` to remove stored bridge bindings for a specific project path; the current conversation project is rejected
 - `/approvals` to switch the Codex approval mode used for future runs
-- `/model --list [--no-hidden]` to query available models from Codex app-server when supported, with a bridge-side fallback list otherwise
+- `/model list [--no-hidden]` to query available models from Codex app-server when supported, with a bridge-side fallback list otherwise
 - `/thread` to show richer app-server thread metadata for the current bound session
 - `/compact` to trigger native Codex thread compaction in `app-server` mode for the current bound session
 - `/summary` to read the native Codex conversation summary for the current bound session
@@ -213,7 +213,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - In `app-server`, the bridge completes the native `initialize` → `initialized` handshake on each subprocess connection.
 - In `app-server`, retryable overload replies (`code -32001`) are retried with jittered backoff in the bridge client.
 - In `app-server`, native `thread/list` calls now follow `nextCursor` pagination instead of reading only one page.
-- In `app-server`, `/model --list` now uses the native `model/list` RPC when available, follows `nextCursor`, and includes hidden models by default unless `--no-hidden` is passed.
+- In `app-server`, `/model list` now uses the native `model/list` RPC when available, follows `nextCursor`, and includes hidden models by default unless `--no-hidden` is passed.
 - In `app-server`, `/compact` uses the native `thread/compact/start` RPC and then reads the updated conversation summary.
 - In `app-server`, `/summary`, `/skills`, and `/config` use native `getConversationSummary`, `skills/list`, and `config/read` RPCs.
 - In `app-server`, `/diff` reads the latest cached `turn/diff/updated` notification for the bound session.
@@ -235,8 +235,8 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - `feishu.reconnectReadyDebounceMs` controls how often the bridge may send a Feishu `Reconnected` ready card after websocket recovery.
 - `feishu.titleMaxLength` controls how long Feishu card titles may grow before the bridge shortens them as `begin...end`. The checked-in default is `120`.
 - `codex.outputSoftLimit` controls when local bridge command output such as `/git`, `/rg`, `/find`, `/log`, and similar results will be cut off with `[output truncated]`. The checked-in default is `100000`.
-- `codex.modelListMaxCount` controls how many entries `/model --list` will fetch at most while following app-server `model/list` pagination. The checked-in default is `100`.
-- `session.listMaxCount` controls the maximum number of entries `/session list`, `/resume --list`, and `/fork --list` will return. The checked-in default is `100`.
+- `codex.modelListMaxCount` controls how many entries `/model list` will fetch at most while following app-server `model/list` pagination. The checked-in default is `100`.
+- `session.listMaxCount` controls the maximum number of entries `/session list`, `/resume list`, and `/fork list` will return. The checked-in default is `100`.
 - `project.listMaxCount` controls how many entries `/project list` will return at most from the merged bound-and-trusted project set. The checked-in default is `100`.
 - `/feishu ws` and `/feishu doctor` include reconnect counters so you can tell the difference between an occasional reconnect and a flapping long-connection session.
 - Outbound Feishu replies currently use interactive cards with a schema `2.0` markdown body, card title, chat-list summary, and per-reply header template color.
