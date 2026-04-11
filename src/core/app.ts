@@ -64,6 +64,11 @@ type SessionFooterState = {
   threadName?: string;
 };
 
+type ModelReasoningState = {
+  model?: string;
+  reasoning?: string;
+};
+
 class ArgCursor {
   private readonly args: string[];
 
@@ -134,7 +139,8 @@ export class App {
   private readonly latestModelReroute = new Map<string, { fromModel: string; toModel: string; reason?: string }>();
   private readonly latestTurnDiff = new Map<string, { turnId: string; diff: string }>();
   private readonly latestSessionModelState = new Map<string, SessionFooterState>();
-  private readonly latestProjectModelState = new Map<string, { model?: string; reasoning?: string }>();
+  private readonly latestSessionModelOverrides = new Map<string, ModelReasoningState>();
+  private readonly latestProjectModelState = new Map<string, ModelReasoningState>();
   private readonly warnedLocalCommandAliases = new Set<string>();
   private latestAccountUpdate?: Record<string, unknown>;
   private latestRateLimits?: Record<string, unknown>;
@@ -171,6 +177,10 @@ export class App {
         const titleInput = command ? this.renderParsedCommand(command) : message.text;
         const messageTitle = this.titleForCommand(commandName, titleInput);
         const messageTemplate = this.templateForCommand(commandName);
+        await this.readCurrentModelState(
+          currentBinding?.project || this.config.project.defaultProject,
+          currentBinding?.codexSessionId
+        ).catch(() => undefined);
         const messageFooter = this.footerForMessage(commandName, currentBinding);
         const formatForFeishu = (text: string): string =>
           commandName ? this.stripLeadingMarkdownHeading(text) : text;
@@ -1548,7 +1558,16 @@ export class App {
           `Session not found: ${targetSessionId}`
         );
       }
-      const forkResult = await this.codex.forkSession(targetSessionId, forkProject, this.resolveTurnOptions(existing));
+      await this.readCurrentModelState(forkProject, targetSessionId).catch(() => undefined);
+      const forkOptions = this.resolveTurnOptions(
+        { ...existing, codexSessionId: targetSessionId, project: forkProject },
+        forkProject
+      );
+      const forkResult = await this.codex.forkSession(
+        targetSessionId,
+        forkProject,
+        forkOptions
+      );
       const forkedThread = isRecord(forkResult?.thread) ? forkResult.thread : undefined;
       const forkedSessionId = this.readString(forkedThread?.id);
       if (!forkedSessionId) {
@@ -1792,7 +1811,8 @@ export class App {
         return "Usage: `/new [-C|--cd <dir>]`";
       }
       await sendEarlyUpdate(`Creating a new Codex session for project \`${project}\`...`);
-      const sessionId = await this.codex.createSession(project, this.resolveTurnOptions(binding));
+      await this.readCurrentModelState(project, binding?.codexSessionId).catch(() => undefined);
+      const sessionId = await this.codex.createSession(project, this.resolveTurnOptions(binding, project));
       const nextBinding = this.makeBinding(key, sessionId, project, binding);
       await this.store.put(nextBinding);
       await this.readCurrentModelState(project, sessionId).catch(() => undefined);
@@ -2147,6 +2167,10 @@ export class App {
         ...(nextValue ? { model: nextValue } : {}),
         ...(nextReasoning !== undefined ? { reasoningEffort: nextReasoning } : {})
       });
+      this.rememberSessionModelOverride(binding.codexSessionId, {
+        ...(nextValue ? { model: nextValue } : {}),
+        ...(nextReasoning !== undefined ? { reasoning: nextReasoning } : {})
+      });
       const nextState = await this.readCurrentModelState(project, binding.codexSessionId);
       return [
         "# Model",
@@ -2262,7 +2286,7 @@ export class App {
         message,
         binding?.codexSessionId,
         project,
-        this.resolveTurnOptions(binding),
+        this.resolveTurnOptions(binding, project),
         {
           onStatus: onStatus || onUpdate,
           onUpdate,
@@ -2782,12 +2806,7 @@ export class App {
     const sessionState = sessionStateId
       ? this.latestSessionModelState.get(sessionStateId)
       : undefined;
-    const projectState = this.latestProjectModelState.get(project);
-    const model =
-      (sessionStateId ? this.latestModelReroute.get(sessionStateId)?.toModel : undefined) ||
-      sessionState?.model ||
-      projectState?.model;
-    const reasoning = sessionState?.reasoning || projectState?.reasoning;
+    const { model, reasoning } = this.resolveModelReasoningFromState(project, sessionStateId);
     const modelAndReasoning =
       model && reasoning
         ? `${model} ${reasoning}`
@@ -2860,38 +2879,88 @@ export class App {
     };
   }
 
-  private resolveTurnOptions(binding?: Partial<SessionBinding>) {
+  private resolveTurnOptions(binding?: Partial<SessionBinding>, project = binding?.project || this.config.project.defaultProject) {
+    const modelState = this.resolveModelReasoningFromState(project, binding?.codexSessionId);
     return {
       searchEnabled: binding?.searchEnabled ?? this.config.project.defaultSearchEnabled,
       profile: binding?.profile,
-      planMode: binding?.planMode
+      planMode: binding?.planMode,
+      ...(modelState.model ? { model: modelState.model } : {}),
+      ...(modelState.reasoning ? { reasoningEffort: modelState.reasoning } : {})
+    };
+  }
+
+  private resolveModelReasoningFromState(project: string, sessionId?: string): ModelReasoningState {
+    const sessionState = sessionId ? this.latestSessionModelState.get(sessionId) : undefined;
+    const sessionOverride = sessionId ? this.latestSessionModelOverrides.get(sessionId) : undefined;
+    const projectState = this.latestProjectModelState.get(project);
+    return {
+      model:
+        (sessionId ? this.latestModelReroute.get(sessionId)?.toModel : undefined) ||
+        sessionOverride?.model ||
+        projectState?.model ||
+        sessionState?.model,
+      reasoning: sessionOverride?.reasoning || projectState?.reasoning || sessionState?.reasoning
     };
   }
 
   private async readCurrentModelState(
     project: string,
     sessionId?: string
-  ): Promise<{ model?: string; reasoning?: string; source: "thread" | "config" | "unknown" }> {
+  ): Promise<{ model?: string; reasoning?: string; source: "override" | "config" | "thread" | "unknown" }> {
+    let threadModel: string | undefined;
+    let threadReasoning: string | undefined;
+    let threadName: string | undefined;
+    const sessionOverride = sessionId ? this.latestSessionModelOverrides.get(sessionId) : undefined;
     if (sessionId && this.codex.readThread) {
       const threadInfo = await this.codex.readThread(sessionId, project, false).catch(() => undefined);
       const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
-      const model = this.readThreadModel(threadInfo, thread);
-      const reasoning = this.readThreadReasoningEffort(threadInfo, thread);
-      const threadName = this.readString(thread?.name);
-      if (model || reasoning || threadName) {
-        this.rememberSessionFooterState(sessionId, { model, reasoning, threadName });
-        return { model, reasoning, source: "thread" };
-      }
+      threadModel = this.readThreadModel(threadInfo, thread);
+      threadReasoning = this.readThreadReasoningEffort(threadInfo, thread);
+      threadName = this.readString(thread?.name);
     }
     if (this.codex.readConfig) {
       const configResult = await this.codex.readConfig(project, { includeLayers: false }).catch(() => undefined);
       const codexConfig = asObjectRecord(configResult?.config);
-      const model = this.readString(codexConfig.model);
-      const reasoning = this.readString(codexConfig.model_reasoning_effort);
-      if (model || reasoning) {
-        this.latestProjectModelState.set(project, { model, reasoning });
-        return { model, reasoning, source: "config" };
+      const configModel = this.readString(codexConfig.model);
+      const configReasoning = this.readString(codexConfig.model_reasoning_effort);
+      if (configModel || configReasoning) {
+        this.latestProjectModelState.set(project, { model: configModel, reasoning: configReasoning });
       }
+      const model = sessionOverride?.model || configModel || threadModel;
+      const reasoning = sessionOverride?.reasoning || configReasoning || threadReasoning;
+      if (sessionId && (threadModel || threadReasoning || threadName)) {
+        this.rememberSessionFooterState(sessionId, { model: threadModel, reasoning: threadReasoning, threadName });
+      }
+      if (model || reasoning) {
+        return {
+          model,
+          reasoning,
+          source: sessionOverride?.model || sessionOverride?.reasoning
+            ? "override"
+            : configModel || configReasoning
+              ? "config"
+              : "thread"
+        };
+      }
+    }
+    if (sessionOverride?.model || sessionOverride?.reasoning) {
+      if (sessionId && (threadModel || threadReasoning || threadName)) {
+        this.rememberSessionFooterState(sessionId, {
+          model: threadModel,
+          reasoning: threadReasoning,
+          threadName
+        });
+      }
+      return { model: sessionOverride.model, reasoning: sessionOverride.reasoning, source: "override" };
+    }
+    if (sessionId && (threadModel || threadReasoning || threadName)) {
+      this.rememberSessionFooterState(sessionId, {
+        model: threadModel,
+        reasoning: threadReasoning,
+        threadName
+      });
+      return { model: threadModel, reasoning: threadReasoning, source: "thread" };
     }
     return { source: "unknown" };
   }
@@ -2902,6 +2971,14 @@ export class App {
       model: next.model || existing.model,
       reasoning: next.reasoning || existing.reasoning,
       threadName: next.threadName || existing.threadName
+    });
+  }
+
+  private rememberSessionModelOverride(sessionId: string, next: ModelReasoningState): void {
+    const existing = this.latestSessionModelOverrides.get(sessionId) || {};
+    this.latestSessionModelOverrides.set(sessionId, {
+      model: next.model || existing.model,
+      reasoning: next.reasoning || existing.reasoning
     });
   }
 

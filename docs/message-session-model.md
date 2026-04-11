@@ -35,3 +35,12 @@ The bridge stores only:
 - timestamps
 
 It does not store a synthetic message transcript as the session source of truth.
+
+## Footer identity
+
+Feishu footers may include the native Codex session id and the native thread
+name when the app-server returns one. Thread names are display metadata only;
+the bridge does not use them as session identity.
+
+`feishu.footerThreadNameMaxLength` caps footer thread names and defaults to
+`50`. Longer names are shortened in the middle as `begin...end`.

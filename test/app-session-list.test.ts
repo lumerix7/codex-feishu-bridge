@@ -143,6 +143,192 @@ test("footer includes cached thread name after session id when available", () =>
   );
 });
 
+test("footer fills missing thread model state from Codex config", async () => {
+  const app = new App(makeConfig());
+
+  (app as any).codex = {
+    mode: "app-server",
+    createSession: async () => "session-1",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true,
+    readThread: async () => ({
+      thread: {
+        id: "session-1",
+        name: "Review changes"
+      }
+    }),
+    readConfig: async () => ({
+      config: {
+        model: "gpt-5.4",
+        model_reasoning_effort: "high"
+      }
+    })
+  };
+
+  const state = await (app as any).readCurrentModelState("/tmp/project-a", "session-1");
+  const footer = (app as any).buildCodexFooterSummaryFromState(
+    "/tmp/project-a",
+    "session-1",
+    "session-1"
+  );
+
+  assert.deepEqual(state, {
+    model: "gpt-5.4",
+    reasoning: "high",
+    source: "config"
+  });
+  assert.equal(
+    footer,
+    "gpt-5.4 high · `/tmp/project-a` · session-1 · Review changes"
+  );
+});
+
+test("footer prefers config model state over stale thread model state", async () => {
+  const app = new App(makeConfig());
+
+  (app as any).codex = {
+    mode: "app-server",
+    createSession: async () => "session-1",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true,
+    readThread: async () => ({
+      thread: {
+        id: "session-1",
+        model: "stale-thread-model",
+        reasoningEffort: "low",
+        name: "Review changes"
+      }
+    }),
+    readConfig: async () => ({
+      config: {
+        model: "gpt-5.4",
+        model_reasoning_effort: "high"
+      }
+    })
+  };
+
+  const state = await (app as any).readCurrentModelState("/tmp/project-a", "session-1");
+  const footer = (app as any).buildCodexFooterSummaryFromState(
+    "/tmp/project-a",
+    "session-1",
+    "session-1"
+  );
+
+  assert.deepEqual(state, {
+    model: "gpt-5.4",
+    reasoning: "high",
+    source: "config"
+  });
+  assert.equal(
+    footer,
+    "gpt-5.4 high · `/tmp/project-a` · session-1 · Review changes"
+  );
+});
+
+test("footer prefers successful model command override over config and thread state", async () => {
+  const app = new App(makeConfig());
+
+  (app as any).codex = {
+    mode: "app-server",
+    createSession: async () => "session-1",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true,
+    readThread: async () => ({
+      thread: {
+        id: "session-1",
+        model: "stale-thread-model",
+        reasoningEffort: "low",
+        name: "Review changes"
+      }
+    }),
+    readConfig: async () => ({
+      config: {
+        model: "config-model",
+        model_reasoning_effort: "medium"
+      }
+    })
+  };
+  (app as any).rememberSessionModelOverride("session-1", {
+    model: "override-model"
+  });
+
+  const state = await (app as any).readCurrentModelState("/tmp/project-a", "session-1");
+  const footer = (app as any).buildCodexFooterSummaryFromState(
+    "/tmp/project-a",
+    "session-1",
+    "session-1"
+  );
+
+  assert.deepEqual(state, {
+    model: "override-model",
+    reasoning: "medium",
+    source: "override"
+  });
+  assert.equal(
+    footer,
+    "override-model medium · `/tmp/project-a` · session-1 · Review changes"
+  );
+});
+
+test("turn options use the same resolved model state as the footer", async () => {
+  const app = new App(makeConfig());
+
+  (app as any).codex = {
+    mode: "app-server",
+    createSession: async () => "session-1",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true,
+    readThread: async () => ({
+      thread: {
+        id: "session-1",
+        model: "stale-thread-model",
+        reasoningEffort: "low"
+      }
+    }),
+    readConfig: async () => ({
+      config: {
+        model: "config-model",
+        model_reasoning_effort: "medium"
+      }
+    })
+  };
+  (app as any).rememberSessionModelOverride("session-1", {
+    model: "override-model"
+  });
+
+  await (app as any).readCurrentModelState("/tmp/project-a", "session-1");
+  const options = (app as any).resolveTurnOptions(
+    {
+      codexSessionId: "session-1",
+      project: "/tmp/project-a",
+      searchEnabled: true,
+      profile: "work",
+      planMode: "plan"
+    },
+    "/tmp/project-a"
+  );
+
+  assert.deepEqual(options, {
+    searchEnabled: true,
+    profile: "work",
+    planMode: "plan",
+    model: "override-model",
+    reasoningEffort: "medium"
+  });
+});
+
 test("footer truncates long cached thread names in the middle", () => {
   const config = makeConfig();
   const app = new App({

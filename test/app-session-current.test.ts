@@ -249,6 +249,77 @@ test("fork reuses the session detail layout and prefixes from", async () => {
   assert.match(String(result), /- \*\*Thread preview\*\*:\n\n```text\nforked preview\n```$/);
 });
 
+test("fork explicit session resolves model options from the target session", async () => {
+  const app = new App(makeConfig());
+  const store = (app as any).store;
+  await store.put({
+    conversationKey: "p2p:chat_test",
+    codexSessionId: "bound-session",
+    project: "/tmp/project-a",
+    createdAt: "2026-04-09T00:00:00.000Z",
+    updatedAt: "2026-04-09T00:00:00.000Z"
+  });
+
+  (app as any).rememberSessionModelOverride("bound-session", {
+    model: "bound-model",
+    reasoning: "xhigh"
+  });
+
+  let seenSourceSession = "";
+  let seenOptions: Record<string, unknown> | undefined;
+  (app as any).codex = {
+    mode: "app-server",
+    createSession: async () => "unused",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true,
+    readThread: async (sessionId: string) => ({
+      thread: {
+        id: sessionId,
+        name: `Thread ${sessionId}`,
+        model: sessionId === "target-session" ? "target-thread-model" : "bound-thread-model",
+        reasoningEffort: "low"
+      }
+    }),
+    readConfig: async () => ({
+      config: {
+        model: "target-config-model",
+        model_reasoning_effort: "medium"
+      }
+    }),
+    forkSession: async (sessionId: string, _project: string, options: Record<string, unknown>) => {
+      seenSourceSession = sessionId;
+      seenOptions = options;
+      return {
+        thread: {
+          id: "forked-session",
+          name: "Forked thread",
+          preview: "forked preview",
+          cwd: "/tmp/project-a",
+          createdAt: 1_775_689_600,
+          updatedAt: 1_775_689_900,
+          status: "idle",
+          source: { chat: "lark" }
+        }
+      };
+    }
+  };
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/fork target-session"
+  });
+
+  assert.equal(typeof result, "string");
+  assert.equal(seenSourceSession, "target-session");
+  assert.equal(seenOptions?.model, "target-config-model");
+  assert.equal(seenOptions?.reasoningEffort, "medium");
+});
+
 test("resume help works regardless of -h position", async () => {
   const app = new App(makeConfig());
 
