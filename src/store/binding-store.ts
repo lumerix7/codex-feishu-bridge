@@ -45,6 +45,8 @@ export class BindingStore {
         bindings?: Array<{
           conversationKey: string;
           codexSessionId?: string;
+          lastCodexSessionId?: string;
+          lastProject?: string;
           workspace?: string;
           project?: string;
           searchEnabled?: boolean;
@@ -60,6 +62,8 @@ export class BindingStore {
           .map((item) => ({
             conversationKey: item.conversationKey,
             codexSessionId: item.codexSessionId,
+            lastCodexSessionId: item.lastCodexSessionId,
+            lastProject: item.lastProject,
             project: item.project || item.workspace || "",
             searchEnabled: item.searchEnabled,
             profile: item.profile,

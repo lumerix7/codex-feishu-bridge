@@ -453,7 +453,7 @@ test("session detail prefers the actual latest session message over thread previ
   }
 });
 
-test("resume without a selector warns and points to explicit latest aliases", async () => {
+test("resume without a selector warns and points to explicit last aliases", async () => {
   const app = new App(makeConfig());
 
   const result = await app.handleIncoming({
@@ -467,16 +467,81 @@ test("resume without a selector warns and points to explicit latest aliases", as
   assert.equal((result as any).severity, "warning");
   assert.match(
     String((result as any).text),
-    /^# Resume\n\n- \*\*Error\*\*: pick a session explicitly, or use `-` to resume the most recent session\n- \*\*Usage\*\*: `\/resume \[<session-id>\|-\|--last\|-n <index>\|list\|-h\]`$/
+    /^# Resume\n\n- \*\*Warning\*\*: pick a session explicitly, or use `-` to resume the saved last session\n- \*\*Usage\*\*: `\/resume \[<session-id>\|-\|--last\|-n <index>\|list\|-h\]`$/
   );
 });
 
 test("resume last aliases render source as last", async () => {
+  for (const text of ["/resume -", "/resume --last"]) {
+    const app = new App(makeConfig());
+    const store = (app as any).store;
+    await store.put({
+      conversationKey: "p2p:chat_test",
+      codexSessionId: "current-session",
+      lastCodexSessionId: "older-session",
+      lastProject: "/tmp/project-a",
+      project: "/tmp/project-a",
+      createdAt: "2026-04-08T00:00:00.000Z",
+      updatedAt: "2026-04-08T00:00:00.000Z"
+    });
+
+    (app as any).codex = {
+      mode: "spawn",
+      createSession: async () => "unused",
+      runTurn: async () => {
+        throw new Error("not used");
+      },
+      stop: async () => false,
+      getSession: async () => true
+    };
+
+    const result = await app.handleIncoming({
+      chatId: "chat_test",
+      messageId: "msg_test",
+      chatType: "p2p",
+      text
+    });
+
+    assert.equal(typeof result, "string");
+    assert.match(String(result), /^# Resume Session\n\n- \*\*Source\*\*: `last`\n\n- \*\*Session\*\*: `older-session`/);
+    const binding = await store.get("p2p:chat_test");
+    assert.equal(binding?.codexSessionId, "older-session");
+    assert.equal(binding?.lastCodexSessionId, "current-session");
+  }
+});
+
+test("resume last without a saved previous session warns", async () => {
   const app = new App(makeConfig());
   const store = (app as any).store;
   await store.put({
     conversationKey: "p2p:chat_test",
-    codexSessionId: "older-session",
+    codexSessionId: "current-session",
+    project: "/tmp/project-a",
+    createdAt: "2026-04-08T00:00:00.000Z",
+    updatedAt: "2026-04-08T00:00:00.000Z"
+  });
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/resume -"
+  });
+
+  assert.equal(typeof result, "object");
+  assert.equal((result as any).severity, "warning");
+  assert.match(
+    String((result as any).text),
+    /no last session is saved for this conversation/
+  );
+});
+
+test("resume explicit session saves previous current session for resume last", async () => {
+  const app = new App(makeConfig());
+  const store = (app as any).store;
+  await store.put({
+    conversationKey: "p2p:chat_test",
+    codexSessionId: "session-a",
     project: "/tmp/project-a",
     createdAt: "2026-04-08T00:00:00.000Z",
     updatedAt: "2026-04-08T00:00:00.000Z"
@@ -492,17 +557,69 @@ test("resume last aliases render source as last", async () => {
     getSession: async () => true
   };
 
-  for (const text of ["/resume -", "/resume --last"]) {
-    const result = await app.handleIncoming({
-      chatId: "chat_test",
-      messageId: "msg_test",
-      chatType: "p2p",
-      text
-    });
+  const explicitResult = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/resume session-b"
+  });
 
-    assert.equal(typeof result, "string");
-    assert.match(String(result), /^# Resume Session\n\n- \*\*Source\*\*: `last`\n\n- \*\*Session\*\*: `older-session`/);
-  }
+  assert.equal(typeof explicitResult, "string");
+  assert.match(String(explicitResult), /^# Resume Session\n\n- \*\*Source\*\*: `explicit`\n\n- \*\*Session\*\*: `session-b`/);
+  let binding = await store.get("p2p:chat_test");
+  assert.equal(binding?.codexSessionId, "session-b");
+  assert.equal(binding?.lastCodexSessionId, "session-a");
+
+  const lastResult = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/resume -"
+  });
+
+  assert.equal(typeof lastResult, "string");
+  assert.match(String(lastResult), /^# Resume Session\n\n- \*\*Source\*\*: `last`\n\n- \*\*Session\*\*: `session-a`/);
+  binding = await store.get("p2p:chat_test");
+  assert.equal(binding?.codexSessionId, "session-a");
+  assert.equal(binding?.lastCodexSessionId, "session-b");
+});
+
+test("resume last failure keeps saved last session unchanged", async () => {
+  const app = new App(makeConfig());
+  const store = (app as any).store;
+  await store.put({
+    conversationKey: "p2p:chat_test",
+    codexSessionId: "session-a",
+    lastCodexSessionId: "missing-session",
+    lastProject: "/tmp/project-a",
+    project: "/tmp/project-a",
+    createdAt: "2026-04-08T00:00:00.000Z",
+    updatedAt: "2026-04-08T00:00:00.000Z"
+  });
+
+  (app as any).codex = {
+    mode: "spawn",
+    createSession: async () => "unused",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => false
+  };
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/resume -"
+  });
+
+  assert.equal(typeof result, "object");
+  assert.equal((result as any).severity, "error");
+  assert.match(String((result as any).text), /Session not found: missing-session/);
+  const binding = await store.get("p2p:chat_test");
+  assert.equal(binding?.codexSessionId, "session-a");
+  assert.equal(binding?.lastCodexSessionId, "missing-session");
 });
 
 test("resume explicit missing session renders as error with list hint", async () => {

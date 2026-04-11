@@ -1222,19 +1222,27 @@ export class App {
       if (resumeArgs.isEmpty() && !wantsLast) {
         return this.renderCommandError(
           "Resume",
-          "pick a session explicitly, or use `-` to resume the most recent session",
+          "pick a session explicitly, or use `-` to resume the saved last session",
           "`/resume [<session-id>|-|--last|-n <index>|list|-h]`"
         );
+      }
+      if (wantsLast && !resumeArgs.peek()) {
+        if (!existing?.lastCodexSessionId) {
+          return this.renderCommandError(
+            "Resume",
+            "no last session is saved for this conversation",
+            "`/resume <session-id>` or `/resume list`",
+            ["- **Note**: Resume one session explicitly first; successful session switches save the previous session for `/resume -`."]
+          );
+        }
+        if (existing.lastProject && !projectExplicitlySelected) {
+          resumeProject = existing.lastProject;
+        }
       }
 
       let targetSessionId =
         resumeArgs.peek() ||
-        (wantsLast
-          ? await this.findMostRecentSessionId(
-              resumeProject,
-              projectExplicitlySelected ? false : allProjects
-            )
-          : undefined) ||
+        (wantsLast ? existing?.lastCodexSessionId : undefined) ||
         (projectExplicitlySelected ? undefined : existing?.codexSessionId);
       let resumeSource = resumeArgs.peek() ? "explicit" : "last";
       let resumeWarning: string | undefined;
@@ -2640,12 +2648,13 @@ export class App {
     extraLines: string[] = [],
     severity: AppResponse["severity"] = "warning"
   ): AppResponse {
+    const label = severity === "error" ? "Error" : "Warning";
     return {
       severity,
       text: [
       `# ${title}`,
       "",
-      `- **Error**: ${error}`,
+      `- **${label}**: ${error}`,
       ...(usage ? [`- **Usage**: ${usage}`] : []),
       ...extraLines
       ].join("\n")
@@ -2804,9 +2813,16 @@ export class App {
     defaults?: Partial<SessionBinding>
   ): SessionBinding {
     const now = new Date().toISOString();
+    const switchingSession =
+      Boolean(defaults?.codexSessionId) &&
+      defaults?.codexSessionId !== codexSessionId;
     return {
       conversationKey,
       codexSessionId,
+      lastCodexSessionId: switchingSession
+        ? defaults?.codexSessionId
+        : defaults?.lastCodexSessionId,
+      lastProject: switchingSession ? defaults?.project : defaults?.lastProject,
       project,
       searchEnabled: defaults?.searchEnabled ?? this.config.project.defaultSearchEnabled,
       profile: defaults?.profile,
@@ -4461,7 +4477,7 @@ export class App {
       "",
       "#### Options",
       "",
-      "- `-, --last` Resume the most recent session in the current scope.",
+      "- `-, --last` Resume the saved last session for this conversation.",
       "- `-n <index>` Resume the Nth session from the current `/session list` ordering.",
       `- \`--messages <count>\` Append the last \`${this.config.codex.resumeReplayCount}\` thread messages by default after a successful session change.`,
       "- `-C, --cd <dir>` Require the resumed session to stay in that project.",
@@ -4482,7 +4498,7 @@ export class App {
       "## Examples",
       "",
       "- `/resume <session-id>` - resume one specific session",
-      "- `/resume -` - resume the most recent session in the current scope"
+      "- `/resume -` - resume the saved last session for this conversation"
     ].join("\n");
   }
 
