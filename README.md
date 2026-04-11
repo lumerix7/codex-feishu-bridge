@@ -242,6 +242,7 @@ For local testing without Feishu, run `npm run cli -- --chat-id test-terminal`. 
 - `feishu.wsReconnectWarnThreshold` is the doctor threshold for repeated reconnects after startup.
 - `feishu.reconnectReadyDebounceMs` controls how often the bridge may send a Feishu `Reconnected` ready card after websocket recovery.
 - `feishu.titleMaxLength` controls how long Feishu card titles may grow before the bridge shortens them as `begin...end`. The checked-in default is `120`.
+- `feishu.footerThreadNameMaxLength` controls how long footer thread names may grow before the bridge shortens them as `begin...end`. The checked-in default is `50`.
 - `codex.outputSoftLimit` controls when local bridge command output such as `/git`, `/rg`, `/find`, `/log`, and similar results will be cut off with `[output truncated]`. The checked-in default is `100000`.
 - `codex.modelListMaxCount` controls how many entries `/model list` will fetch at most while following app-server `model/list` pagination. The checked-in default is `100`.
 - `session.listMaxCount` controls the maximum number of entries `/session list`, `/resume list`, and `/fork list` will return. The checked-in default is `100`.
@@ -271,7 +272,7 @@ but new config should use the structured schema.
   - `## Feishu`
 - In the update-only view, non-OK update states are emphasized.
 - Time values shown by the bridge now use local ISO timestamps with timezone offsets, for example:
-  - `2026-03-01T10:35:00.000+08:00`
+  - `2026-03-01T10:35:00+08:00`
 - Rate-limit reset times in `/status` now use that same local ISO format.
 
 ## Streaming Replies

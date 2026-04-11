@@ -40,6 +40,7 @@ export interface AppConfig {
     sendRetryMultiplier: number;
     sendRetryMaxDelayMs: number;
     titleMaxLength: number;
+    footerThreadNameMaxLength: number;
   };
   codex: {
     bin: string;
@@ -98,6 +99,7 @@ interface JsonConfigShape {
       maxDelayMs?: unknown;
     };
     titleMaxLength?: unknown;
+    footerThreadNameMaxLength?: unknown;
   };
   codex?: {
     bin?: unknown;
@@ -280,6 +282,13 @@ export function loadConfig(): AppConfig {
         jsonConfig,
         ["feishu", "titleMaxLength"],
         { min: 8 }
+      ),
+      footerThreadNameMaxLength: readIntegerSetting(
+        "FEISHU_FOOTER_THREAD_NAME_MAX_LENGTH",
+        50,
+        jsonConfig,
+        ["feishu", "footerThreadNameMaxLength"],
+        { min: 0 }
       )
     },
     codex: {

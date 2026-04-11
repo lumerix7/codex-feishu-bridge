@@ -26,7 +26,8 @@ function makeConfig() {
       sendRetryBaseDelayMs: 100,
       sendRetryMultiplier: 2,
       sendRetryMaxDelayMs: 1000,
-      titleMaxLength: 80
+      titleMaxLength: 80,
+      footerThreadNameMaxLength: 50
     },
     codex: {
       bin: "codex",
@@ -115,9 +116,89 @@ test("session list renders thread name column after last message", () => {
     rendered,
     /\| 1 \| \/tmp\/project-a \| .* \| session-1 \| chat \| last message \| Review changes \| - \|/
   );
-  assert.match(rendered, /2026-04-09T20:00:00\.000\+08:00/);
-  assert.doesNotMatch(rendered, /2026-04-09T18:00:00\.000\+08:00/);
+  assert.match(rendered, /2026-04-09T20:00:00\+08:00/);
+  assert.doesNotMatch(rendered, /2026-04-09T18:00:00\+08:00/);
+  assert.doesNotMatch(rendered, /2026-04-09T20:00:00\.000\+08:00/);
   assert.doesNotMatch(rendered, /Thread preview/);
+});
+
+test("footer includes cached thread name after session id when available", () => {
+  const app = new App(makeConfig());
+
+  (app as any).rememberSessionFooterState("session-1", {
+    model: "gpt-5.4",
+    reasoning: "medium",
+    threadName: "# Review `changes`"
+  });
+
+  const footer = (app as any).buildCodexFooterSummaryFromState(
+    "/tmp/project-a",
+    "session-1",
+    "session-1"
+  );
+
+  assert.equal(
+    footer,
+    "gpt-5.4 medium · `/tmp/project-a` · session-1 · \\# Review \\`changes\\`"
+  );
+});
+
+test("footer truncates long cached thread names in the middle", () => {
+  const config = makeConfig();
+  const app = new App({
+    ...config,
+    feishu: {
+      ...config.feishu,
+      footerThreadNameMaxLength: 12
+    }
+  });
+  const longName = "h".repeat(60) + "t".repeat(10);
+
+  (app as any).rememberSessionFooterState("session-1", {
+    threadName: longName
+  });
+
+  const footer = (app as any).buildCodexFooterSummaryFromState(
+    "/tmp/project-a",
+    "session-1",
+    "session-1"
+  );
+
+  assert.equal(
+    footer,
+    "`/tmp/project-a` · session-1 · hhhhh...tttt"
+  );
+});
+
+test("footer truncation respects small configured thread name limits", () => {
+  const config = makeConfig();
+  const app = new App({
+    ...config,
+    feishu: {
+      ...config.feishu,
+      footerThreadNameMaxLength: 4
+    }
+  });
+
+  (app as any).rememberSessionFooterState("session-1", {
+    threadName: "abcdefghijklmnopqrstuvwxyz"
+  });
+
+  const footer = (app as any).buildCodexFooterSummaryFromState(
+    "/tmp/project-a",
+    "session-1",
+    "session-1"
+  );
+
+  assert.equal(footer, "`/tmp/project-a` · session-1 · a...");
+});
+
+test("local ISO footer timestamp omits fractional seconds", () => {
+  const app = new App(makeConfig());
+  const rendered = (app as any).formatLocalIsoTimestamp(new Date(2026, 3, 11, 10, 42, 4, 809));
+
+  assert.match(rendered, /^2026-04-11T10:42:04[+-]\d{2}:\d{2}$/);
+  assert.doesNotMatch(rendered, /\.809/);
 });
 
 test("session list accepts --all without treating it as a leftover list argument", async () => {

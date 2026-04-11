@@ -40,6 +40,12 @@ type LocalProjectCommand = {
   args: string[];
 };
 
+type SessionFooterState = {
+  model?: string;
+  reasoning?: string;
+  threadName?: string;
+};
+
 class ArgCursor {
   private readonly args: string[];
 
@@ -109,7 +115,7 @@ export class App {
   private readonly latestPlan = new Map<string, { explanation?: string; plan: Array<Record<string, unknown>> }>();
   private readonly latestModelReroute = new Map<string, { fromModel: string; toModel: string; reason?: string }>();
   private readonly latestTurnDiff = new Map<string, { turnId: string; diff: string }>();
-  private readonly latestSessionModelState = new Map<string, { model?: string; reasoning?: string }>();
+  private readonly latestSessionModelState = new Map<string, SessionFooterState>();
   private readonly latestProjectModelState = new Map<string, { model?: string; reasoning?: string }>();
   private readonly warnedLocalCommandAliases = new Set<string>();
   private latestAccountUpdate?: Record<string, unknown>;
@@ -820,6 +826,9 @@ export class App {
       await sendEarlyUpdate(`Renaming Codex session \`${targetSessionId}\`...`);
       threadInfo = await this.codex.setSessionName(targetSessionId, targetProject, nextName);
       const renamedThread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+      this.rememberSessionFooterState(targetSessionId, {
+        threadName: this.readString(renamedThread?.name) || nextName
+      });
       if (existing?.codexSessionId === targetSessionId) {
         const nextBinding = { ...existing, updatedAt: new Date().toISOString() };
         await this.store.put(nextBinding);
@@ -1542,6 +1551,11 @@ export class App {
       await this.store.put(binding);
       const session = await getSessionSummary(this.config.codex.sessionsDir, forkedSessionId).catch(() => undefined);
       const threadInfo = { ...forkResult, thread: forkedThread };
+      this.rememberSessionFooterState(forkedSessionId, {
+        model: this.readThreadModel(threadInfo, forkedThread),
+        reasoning: this.readThreadReasoningEffort(threadInfo, forkedThread),
+        threadName: this.readString(forkedThread?.name)
+      });
       const lastMessage = await this.readSessionLastMessageText(forkedSessionId);
       return this.renderSessionDetailText({
         title: "Fork Session",
@@ -2299,6 +2313,7 @@ export class App {
           ? { ...binding, updatedAt: new Date().toISOString() }
           : this.makeBinding(key, result.sessionId, project, binding);
       await this.store.put(nextBinding);
+      await this.readCurrentModelState(nextBinding.project, result.sessionId).catch(() => undefined);
       return result.output;
     } finally {
       this.cancelPendingApproval(key, "run finished");
@@ -2772,7 +2787,10 @@ export class App {
             ? reasoning
             : undefined;
     const formattedProject = `\`${project}\``;
-    return [modelAndReasoning, formattedProject, displayedSessionId]
+    const threadName = sessionState?.threadName
+      ? escapeMarkdownInline(this.truncateMiddle(sessionState.threadName, this.config.feishu.footerThreadNameMaxLength))
+      : undefined;
+    return [modelAndReasoning, formattedProject, displayedSessionId, threadName]
       .filter((item): item is string => Boolean(item))
       .join(" · ");
   }
@@ -2798,13 +2816,12 @@ export class App {
     const hours = String(date.getHours()).padStart(2, "0");
     const minutes = String(date.getMinutes()).padStart(2, "0");
     const seconds = String(date.getSeconds()).padStart(2, "0");
-    const millis = String(date.getMilliseconds()).padStart(3, "0");
     const offsetMinutes = -date.getTimezoneOffset();
     const sign = offsetMinutes >= 0 ? "+" : "-";
     const absoluteOffset = Math.abs(offsetMinutes);
     const offsetHours = String(Math.floor(absoluteOffset / 60)).padStart(2, "0");
     const offsetMins = String(absoluteOffset % 60).padStart(2, "0");
-    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${millis}${sign}${offsetHours}:${offsetMins}`;
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetMins}`;
   }
 
   private makeBinding(
@@ -2850,8 +2867,9 @@ export class App {
       const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
       const model = this.readThreadModel(threadInfo, thread);
       const reasoning = this.readThreadReasoningEffort(threadInfo, thread);
-      if (model || reasoning) {
-        this.latestSessionModelState.set(sessionId, { model, reasoning });
+      const threadName = this.readString(thread?.name);
+      if (model || reasoning || threadName) {
+        this.rememberSessionFooterState(sessionId, { model, reasoning, threadName });
         return { model, reasoning, source: "thread" };
       }
     }
@@ -2866,6 +2884,25 @@ export class App {
       }
     }
     return { source: "unknown" };
+  }
+
+  private rememberSessionFooterState(sessionId: string, next: SessionFooterState): void {
+    const existing = this.latestSessionModelState.get(sessionId) || {};
+    this.latestSessionModelState.set(sessionId, {
+      model: next.model || existing.model,
+      reasoning: next.reasoning || existing.reasoning,
+      threadName: next.threadName || existing.threadName
+    });
+  }
+
+  private truncateMiddle(value: string, maxLength: number): string {
+    if (value.length <= maxLength) return value;
+    if (maxLength <= 3) return value.slice(0, maxLength);
+    const tailLength = Math.floor((maxLength - 3) / 2);
+    const headLength = maxLength - 3 - tailLength;
+    return tailLength > 0
+      ? `${value.slice(0, headLength)}...${value.slice(-tailLength)}`
+      : `${value.slice(0, headLength)}...`;
   }
 
   private async resolveProject(
@@ -4657,6 +4694,11 @@ export class App {
       this.readThreadModel(threadInfoRecord, thread);
     const effectiveReasoning = this.readThreadReasoningEffort(threadInfoRecord, thread);
     const effectiveSource = this.formatThreadSource(threadInfoRecord?.source ?? thread?.source);
+    this.rememberSessionFooterState(sessionId, {
+      model: effectiveModel,
+      reasoning: effectiveReasoning,
+      threadName: this.readString(thread?.name)
+    });
     const gitInfo = asObjectRecord(thread?.gitInfo);
     const createdAt =
       this.formatUnixTimestamp(thread?.createdAt) ||

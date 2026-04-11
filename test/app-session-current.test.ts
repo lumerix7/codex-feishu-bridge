@@ -30,7 +30,8 @@ function makeConfig() {
       sendRetryBaseDelayMs: 100,
       sendRetryMultiplier: 2,
       sendRetryMaxDelayMs: 1000,
-      titleMaxLength: 80
+      titleMaxLength: 80,
+      footerThreadNameMaxLength: 50
     },
     codex: {
       bin: "codex",
@@ -666,7 +667,7 @@ test("recent replay messages render as Codex/User headings with dynamic fenced t
   );
 
   assert.deepEqual(assistantRendered, {
-    text: "[Codex] 2026-04-09T20:27:10.194+08:00\n\nbefore ``` inside",
+    text: "[Codex] 2026-04-09T20:27:10+08:00\n\nbefore ``` inside",
     bodyFormat: "raw-text"
   });
   assert.deepEqual(userRendered, {
