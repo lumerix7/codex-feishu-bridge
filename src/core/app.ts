@@ -152,13 +152,15 @@ export class App {
           let queuedStreamingSnapshot: string | undefined;
           let streamDrain = Promise.resolve();
           const streamKey = `${message.chatId}:${message.threadId || "root"}:${message.messageId}:${commandName || "codex"}`;
-          const sendStatusSafely = async (update: string): Promise<void> => {
+          const sendStatusSafely = async (update: string | AppResponse): Promise<void> => {
             statusChain = statusChain.then(async () => {
               try {
                 const latestBinding =
                   (await this.store.get(conversationKeyFor(message))) || currentBinding;
-                const formattedUpdate = formatForFeishu(update);
-                const codexStatusHeading = !commandName
+                const updateText = typeof update === "string" ? update : update.text;
+                const updateBodyFormat = typeof update === "string" ? undefined : update.bodyFormat;
+                const formattedUpdate = updateBodyFormat ? updateText : formatForFeishu(updateText);
+                const codexStatusHeading = !commandName && !updateBodyFormat
                   ? this.extractLeadingMarkdownHeading(formattedUpdate)
                   : undefined;
                 const statusTitle = codexStatusHeading
@@ -186,14 +188,15 @@ export class App {
                   text: statusText,
                   replyToMessageId: message.messageId,
                   threadId: message.threadId,
-                  streaming: false
+                  streaming: false,
+                  bodyFormat: updateBodyFormat
                 });
               } catch (error) {
                 console.error("failed to send Feishu update", {
                   messageId: message.messageId,
                   chatId: message.chatId,
                   threadId: message.threadId,
-                textPreview: this.previewText(update),
+                textPreview: this.previewText(typeof update === "string" ? update : update.text),
                 error
                 });
               }
@@ -349,7 +352,7 @@ export class App {
   async handleIncoming(
     message: IncomingMessage,
     onUpdate?: (update: string) => Promise<void>,
-    onStatus?: (text: string) => Promise<void>
+    onStatus?: (text: string | AppResponse) => Promise<void>
   ): Promise<string | AppResponse> {
     if (message.chatType !== "p2p") {
       return "Only direct messages are supported right now.";
@@ -1319,11 +1322,10 @@ export class App {
         ]
       });
       const sessionChanged = existing?.codexSessionId !== binding.codexSessionId;
-      const replaySink = onStatus || onUpdate;
-      if (sessionChanged && replayMessages > 0 && replaySink) {
+      if (sessionChanged && replayMessages > 0 && onStatus) {
         const recentMessages = await this.renderRecentSessionReplayMessages(resumedSessionId, replayMessages);
         for (const recentMessage of recentMessages) {
-          await replaySink(recentMessage);
+          await onStatus(recentMessage);
         }
       }
       return sections;
@@ -4591,7 +4593,7 @@ export class App {
   private async renderRecentSessionReplayMessages(
     sessionId: string,
     limit: number
-  ): Promise<string[]> {
+  ): Promise<AppResponse[]> {
     const messages = await getRecentSessionMessages(this.config.codex.sessionsDir, sessionId, limit);
     if (messages.length === 0) return [];
     return messages.map((message, index) => this.renderRecentSessionReplayMessage(message, index));
@@ -4600,12 +4602,15 @@ export class App {
   private renderRecentSessionReplayMessage(
     message: { role: "user" | "assistant"; text: string; timestamp?: string },
     _index: number
-  ): string {
+  ): AppResponse {
     const title = message.role === "assistant" ? "[Codex]" : "[User]";
     const prefix = message.timestamp
       ? `${title} ${this.formatAnyTimestamp(message.timestamp, message.timestamp)}`
       : title;
-    return this.renderFencedBlock("text", `${prefix}\n\n${message.text}`);
+    return {
+      text: `${prefix}\n\n${message.text}`,
+      bodyFormat: "raw-text"
+    };
   }
 
   private formatThreadTimestamp(value: number | undefined): string | undefined {

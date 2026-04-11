@@ -285,14 +285,14 @@ test("recent replay messages render as Codex/User headings with dynamic fenced t
     1
   );
 
-  assert.equal(
-    assistantRendered,
-    "````text\n[Codex] 2026-04-09T20:27:10.194+08:00\n\nbefore ``` inside\n````"
-  );
-  assert.equal(
-    userRendered,
-    "```text\n[User]\n\nplain user text\n```"
-  );
+  assert.deepEqual(assistantRendered, {
+    text: "[Codex] 2026-04-09T20:27:10.194+08:00\n\nbefore ``` inside",
+    bodyFormat: "raw-text"
+  });
+  assert.deepEqual(userRendered, {
+    text: "[User]\n\nplain user text",
+    bodyFormat: "raw-text"
+  });
 });
 
 test("recent session messages keep consecutive duplicate text when timestamps differ", async () => {
