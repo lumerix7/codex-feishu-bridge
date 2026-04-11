@@ -79,6 +79,7 @@ mkdir -p "${GLOBAL_ROOT}" "${GLOBAL_BIN_DIR}"
 rm -rf "${GLOBAL_PKG_DIR}"
 mkdir -p "${GLOBAL_PKG_DIR}"
 tar -xzf "./${PACK_FILE}" -C "${GLOBAL_PKG_DIR}" --strip-components=1
+cp package-lock.json "${GLOBAL_PKG_DIR}/package-lock.json"
 cp -a node_modules "${GLOBAL_PKG_DIR}/"
 ln -sf "${GLOBAL_PKG_DIR}/bin/codex-feishu-bridge.js" "${GLOBAL_BIN_DIR}/codex-feishu-bridge"
 chmod +x "${GLOBAL_PKG_DIR}/bin/codex-feishu-bridge.js" "${GLOBAL_BIN_DIR}/codex-feishu-bridge"

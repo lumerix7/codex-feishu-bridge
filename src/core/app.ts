@@ -47,10 +47,36 @@ type DependencyUpdateStatus = PackageUpdateStatus & {
   declared?: string;
 };
 
+type DependencyAuditFinding = {
+  packageName: string;
+  severity: string;
+  isDirect: boolean;
+  range?: string;
+  title?: string;
+  url?: string;
+  fixAvailable: boolean;
+};
+
+type DependencyAuditStatus = {
+  status: string;
+  counts: {
+    info: number;
+    low: number;
+    moderate: number;
+    high: number;
+    critical: number;
+    total: number;
+  };
+  auditedTotal?: number;
+  findings: DependencyAuditFinding[];
+  detail: string;
+};
+
 type StatusUpdateReport = {
   codex: PackageUpdateStatus;
   feishu: DependencyUpdateStatus;
   dotenv: DependencyUpdateStatus;
+  audit: DependencyAuditStatus;
 };
 
 type LocalProjectCommand = {
@@ -5325,10 +5351,11 @@ export class App {
     currentDotenvVersion: string | undefined,
     declaredDotenvRange: string | undefined
   ): Promise<StatusUpdateReport> {
-    const [latestCodexVersion, latestFeishuSdkVersion, latestDotenvVersion] = await Promise.all([
+    const [latestCodexVersion, latestFeishuSdkVersion, latestDotenvVersion, audit] = await Promise.all([
       this.readLatestNpmPackageVersion("@openai/codex"),
       this.readLatestNpmPackageVersion("@larksuiteoapi/node-sdk"),
-      this.readLatestNpmPackageVersion("dotenv")
+      this.readLatestNpmPackageVersion("dotenv"),
+      this.readNpmAuditStatus()
     ]);
     return {
       codex: {
@@ -5353,14 +5380,15 @@ export class App {
         latest: latestDotenvVersion,
         status: this.describeUpdateStatus(currentDotenvVersion, latestDotenvVersion),
         detail: "This is the dependency used by the bridge to load environment variables."
-      }
+      },
+      audit
     };
   }
 
   private hasAvailableStatusUpdate(updateStatus: StatusUpdateReport): boolean {
     return [updateStatus.codex, updateStatus.feishu, updateStatus.dotenv].some(
       (item) => item.status === "update available"
-    );
+    ) || updateStatus.audit.counts.total > 0;
   }
 
   private renderStatusUpdateReport(updateStatus: StatusUpdateReport): string {
@@ -5393,8 +5421,157 @@ export class App {
       ...(updateStatus.dotenv.declared ? [`- **Declared**: \`${updateStatus.dotenv.declared}\``] : []),
       `- **Installed**: \`${updateStatus.dotenv.current || "(unknown)"}\``,
       `- **Latest**: \`${updateStatus.dotenv.latest || "(unavailable)"}\``,
-      `- **Note**: ${updateStatus.dotenv.detail}`
+      `- **Note**: ${updateStatus.dotenv.detail}`,
+      "",
+      "### Security Audit",
+      "",
+      `- **Status**: ${this.formatAuditStatusBadge(updateStatus.audit)}`,
+      ...(typeof updateStatus.audit.auditedTotal === "number"
+        ? [`- **Audited**: \`${updateStatus.audit.auditedTotal} packages\``]
+        : []),
+      `- **Vulnerabilities**: ${this.formatAuditCounts(updateStatus.audit)}`,
+      ...this.renderAuditFindings(updateStatus.audit),
+      `- **Note**: ${updateStatus.audit.detail}`
     ].join("\n");
+  }
+
+  private async readNpmAuditStatus(): Promise<DependencyAuditStatus> {
+    const packageRoot = new URL("../..", import.meta.url);
+    try {
+      const { stdout } = await execFileAsync("npm", ["audit", "--json"], {
+        cwd: packageRoot,
+        timeout: 20_000,
+        maxBuffer: 1024 * 1024
+      });
+      return this.parseNpmAuditStatus(stdout);
+    } catch (error) {
+      const stdout = this.readExecStdout(error);
+      if (stdout) return this.parseNpmAuditStatus(stdout);
+      return {
+        status: "unavailable",
+        counts: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+        findings: [],
+        detail: "npm audit could not be read in this environment."
+      };
+    }
+  }
+
+  private parseNpmAuditStatus(raw: string): DependencyAuditStatus {
+    try {
+      const parsed = JSON.parse(raw) as {
+        error?: { code?: string; summary?: string; detail?: string };
+        vulnerabilities?: Record<string, {
+          name?: string;
+          severity?: string;
+          isDirect?: boolean;
+          via?: Array<{ title?: string; url?: string; severity?: string; range?: string }> | string[];
+          range?: string;
+          fixAvailable?: boolean | object;
+        }>;
+        metadata?: {
+          vulnerabilities?: Partial<DependencyAuditStatus["counts"]>;
+          dependencies?: { total?: number };
+        };
+      };
+      if (parsed.error) {
+        const summary = parsed.error.summary || "npm audit returned an error.";
+        const detail = parsed.error.detail ? ` ${parsed.error.detail}` : "";
+        return {
+          status: "unavailable",
+          counts: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+          findings: [],
+          detail: `${summary}${detail}`.trim()
+        };
+      }
+      const counts = {
+        info: parsed.metadata?.vulnerabilities?.info || 0,
+        low: parsed.metadata?.vulnerabilities?.low || 0,
+        moderate: parsed.metadata?.vulnerabilities?.moderate || 0,
+        high: parsed.metadata?.vulnerabilities?.high || 0,
+        critical: parsed.metadata?.vulnerabilities?.critical || 0,
+        total: parsed.metadata?.vulnerabilities?.total || 0
+      };
+      const findings = Object.entries(parsed.vulnerabilities || {})
+        .map(([packageName, vulnerability]) => {
+          const advisory = Array.isArray(vulnerability.via)
+            ? vulnerability.via.find((item): item is { title?: string; url?: string; severity?: string; range?: string } => typeof item === "object" && item !== null)
+            : undefined;
+          return {
+            packageName: vulnerability.name || packageName,
+            severity: vulnerability.severity || advisory?.severity || "unknown",
+            isDirect: Boolean(vulnerability.isDirect),
+            range: vulnerability.range || advisory?.range,
+            title: advisory?.title,
+            url: advisory?.url,
+            fixAvailable: Boolean(vulnerability.fixAvailable)
+          };
+        })
+        .sort((left, right) => this.auditSeverityRank(right.severity) - this.auditSeverityRank(left.severity));
+      return {
+        status: counts.total > 0 ? "vulnerabilities found" : "clean",
+        counts,
+        auditedTotal: parsed.metadata?.dependencies?.total,
+        findings,
+        detail: counts.total > 0
+          ? "Security advisories come from npm audit and may include transitive dependencies."
+          : "npm audit reported no known vulnerabilities."
+      };
+    } catch {
+      return {
+        status: "unavailable",
+        counts: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+        findings: [],
+        detail: "npm audit returned output that could not be parsed."
+      };
+    }
+  }
+
+  private readExecStdout(error: unknown): string | undefined {
+    const maybeError = error as { stdout?: unknown };
+    return typeof maybeError.stdout === "string" ? maybeError.stdout : undefined;
+  }
+
+  private formatAuditStatusBadge(audit: DependencyAuditStatus): string {
+    if (audit.counts.total > 0) {
+      return `**${this.formatAuditTotal(audit)}**`;
+    }
+    return audit.status === "clean" ? "`clean`" : `**${audit.status}**`;
+  }
+
+  private formatAuditTotal(audit: DependencyAuditStatus): string {
+    return `${audit.counts.total} ${audit.counts.total === 1 ? "vulnerability" : "vulnerabilities"}`;
+  }
+
+  private formatAuditCounts(audit: DependencyAuditStatus): string {
+    if (audit.counts.total === 0) return "`0`";
+    const counts = ["critical", "high", "moderate", "low", "info"]
+      .map((severity) => {
+        const count = audit.counts[severity as keyof DependencyAuditStatus["counts"]];
+        return count > 0 ? `${count} ${severity}` : undefined;
+      })
+      .filter((item): item is string => Boolean(item))
+      .join(", ");
+    return `⚠️ ${counts}`;
+  }
+
+  private renderAuditFindings(audit: DependencyAuditStatus): string[] {
+    if (audit.findings.length === 0) return [];
+    const findings = audit.findings.slice(0, 5).map((finding) => {
+      const scope = finding.isDirect ? "direct" : "transitive";
+      const fix = finding.fixAvailable ? ", fix available" : "";
+      const range = finding.range ? `, range \`${finding.range}\`` : "";
+      const title = finding.title ? ` - ${finding.title}` : "";
+      const url = finding.url ? ` (${finding.url})` : "";
+      return `- **Finding**: \`${finding.packageName}\` (${scope}, ${finding.severity}${fix}${range})${title}${url}`;
+    });
+    if (audit.findings.length > findings.length) {
+      findings.push(`- **Finding**: ${audit.findings.length - findings.length} more not shown`);
+    }
+    return findings;
+  }
+
+  private auditSeverityRank(severity: string): number {
+    return { critical: 5, high: 4, moderate: 3, low: 2, info: 1 }[severity] || 0;
   }
 
   private async readInstalledPackageVersion(packageName: string): Promise<string | undefined> {

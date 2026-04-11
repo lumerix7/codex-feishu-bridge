@@ -128,7 +128,7 @@ Working v1 bridge:
 - `/config codex-toml` to show a redacted raw view of `~/.codex/config.toml`
 - `/log [-n N] [--since <expr>] [--grep <text>]` to tail recent bridge service logs from systemd journal
 - `/feishu`, `/feishu ws`, `/feishu send`, and `/feishu doctor` to inspect Feishu websocket readiness, outbound retry/failure counters, and a quick transport health verdict
-- `/status check-update` to show a minimal Codex and dependency update view with current vs latest published npm versions
+- `/status check-update` to show a minimal Codex and dependency update view with current vs latest published npm versions plus npm audit advisories
 - backend modes: `app-server` and `spawn`
 
 ## Feishu Transport Notes
@@ -274,6 +274,7 @@ but new config should use the structured schema.
   - `## Dependencies`
     - `### Feishu`
     - `### dotenv`
+    - `### Security Audit`
 - In the update-only view, non-OK update states are emphasized and available updates use a warning card.
 - Time values shown by the bridge now use local ISO timestamps with timezone offsets, for example:
   - `2026-03-01T10:35:00+08:00`

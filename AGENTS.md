@@ -39,7 +39,7 @@
 - Warning: Feishu clients can still render some large fenced outputs differently across desktop/mobile even when outbound chunking is correct; keep the canonical note in `docs/feishu-rendering-caveats.md`.
 - Reserve `--raw-markdown` for source-shaped replies; keep short state/mutation commands rendered normally.
 - Keep `/rename` native in `app-server`.
-- `/status check-update` keeps dependency checks under `## Dependencies` subsections and renders available updates as warning cards.
+- `/status check-update` keeps dependency checks and npm audit advisories under `## Dependencies` subsections and renders available updates or vulnerabilities as warning cards.
 - Useful runtime checks:
   - `systemctl --user status codex-feishu-bridge.service`
   - `systemctl --user cat codex-feishu-bridge.service`

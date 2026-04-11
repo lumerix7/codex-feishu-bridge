@@ -253,6 +253,23 @@ test("status check-update report groups dependencies and marks available updates
       latest: "16.6.1",
       status: "up to date",
       detail: "Dotenv detail."
+    },
+    audit: {
+      status: "vulnerabilities found",
+      counts: { info: 0, low: 0, moderate: 1, high: 0, critical: 0, total: 1 },
+      auditedTotal: 82,
+      findings: [
+        {
+          packageName: "follow-redirects",
+          severity: "moderate",
+          isDirect: false,
+          range: "<=1.15.11",
+          title: "follow-redirects leaks Custom Authentication Headers to Cross-Domain Redirect Targets",
+          url: "https://github.com/advisories/GHSA-r4q5-vmmm-2653",
+          fixAvailable: true
+        }
+      ],
+      detail: "Audit detail."
     }
   };
 
@@ -260,6 +277,9 @@ test("status check-update report groups dependencies and marks available updates
 
   assert.match(text, /## Dependencies\n\n### Feishu/);
   assert.match(text, /### dotenv/);
+  assert.match(text, /### Security Audit/);
+  assert.match(text, /- \*\*Vulnerabilities\*\*: ⚠️ 1 moderate/);
+  assert.match(text, /`follow-redirects` \(transitive, moderate, fix available, range `<=1\.15\.11`\)/);
   assert.match(text, /- \*\*Status\*\*: ⬆️ update available/);
   assert.equal((app as any).hasAvailableStatusUpdate(updateStatus), true);
 });
@@ -278,6 +298,12 @@ test("status update metadata includes dotenv dependency", async () => {
       dotenv: "16.7.0"
     }[packageName];
   };
+  (app as any).readNpmAuditStatus = async () => ({
+    status: "clean",
+    counts: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+    findings: [],
+    detail: "npm audit reported no known vulnerabilities."
+  });
 
   const updateStatus = await (app as any).readStatusUpdates(
     "1.0.0",
@@ -290,7 +316,67 @@ test("status update metadata includes dotenv dependency", async () => {
   assert.equal(updateStatus.dotenv.packageName, "dotenv");
   assert.equal(updateStatus.dotenv.declared, "^16.6.1");
   assert.equal(updateStatus.dotenv.status, "update available");
+  assert.equal(updateStatus.audit.status, "clean");
   assert.equal((app as any).hasAvailableStatusUpdate(updateStatus), true);
+});
+
+test("status update metadata includes transitive npm audit vulnerabilities", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const app = new App(makeConfig(projectDir, storePath));
+  const audit = (app as any).parseNpmAuditStatus(JSON.stringify({
+    vulnerabilities: {
+      "follow-redirects": {
+        name: "follow-redirects",
+        severity: "moderate",
+        isDirect: false,
+        via: [
+          {
+            title: "follow-redirects leaks Custom Authentication Headers to Cross-Domain Redirect Targets",
+            url: "https://github.com/advisories/GHSA-r4q5-vmmm-2653",
+            severity: "moderate",
+            range: "<=1.15.11"
+          }
+        ],
+        range: "<=1.15.11",
+        fixAvailable: true
+      }
+    },
+    metadata: {
+      vulnerabilities: { info: 0, low: 0, moderate: 1, high: 0, critical: 0, total: 1 },
+      dependencies: { total: 82 }
+    }
+  }));
+
+  assert.equal(audit.status, "vulnerabilities found");
+  assert.equal(audit.counts.total, 1);
+  assert.equal(audit.auditedTotal, 82);
+  assert.equal(audit.findings[0].packageName, "follow-redirects");
+  assert.equal(audit.findings[0].isDirect, false);
+  assert.equal(audit.findings[0].fixAvailable, true);
+});
+
+test("status update metadata treats npm audit error output as unavailable", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const app = new App(makeConfig(projectDir, storePath));
+  const audit = (app as any).parseNpmAuditStatus(JSON.stringify({
+    error: {
+      code: "ENOLOCK",
+      summary: "This command requires an existing lockfile.",
+      detail: "Try creating one first with: npm i --package-lock-only"
+    }
+  }));
+
+  assert.equal(audit.status, "unavailable");
+  assert.equal(audit.counts.total, 0);
+  assert.match(audit.detail, /requires an existing lockfile/);
 });
 
 test("local command execution failures are errors while usage issues remain warnings", async () => {
