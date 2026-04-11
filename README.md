@@ -4,6 +4,30 @@ Feishu-native control surface for real Codex sessions.
 
 Routes Feishu messages into local Codex sessions and streams Codex output back without inventing a second conversation layer.
 
+## Quick Start
+
+For the full local install plus Feishu app/robot setup, see [`docs/bridge-install-setup-guide.md`](./docs/bridge-install-setup-guide.md).
+
+Install or update the bridge from this checkout:
+
+```bash
+./install.sh --yes
+```
+
+Then fill in Feishu credentials in:
+
+```bash
+~/.config/codex-feishu-bridge/bridge.env
+```
+
+For local development without the user service:
+
+```bash
+cp .env.example .env
+npm install
+npm run dev
+```
+
 ## Goal
 
 `codex-feishu-bridge` forwards Feishu input into real Codex sessions and sends Codex output back to Feishu. Codex native sessions are the single source of truth for conversation state.
@@ -123,28 +147,6 @@ Useful official references:
 - Scenario examples: <https://open.feishu.cn/document/server-side-sdk/python--sdk/scenario-example>
 - Message create API: <https://open.feishu.cn/document/server-docs/im-v1/message/create>
 - CardKit streaming updates: <https://open.feishu.cn/document/cardkit-v1/streaming-updates-openapi-overview>
-
-## Run
-
-1. Copy `.env.example` to `.env` and fill in Feishu credentials.
-2. Install dependencies with `npm install`.
-3. Start the bridge with `npm run dev`.
-
-For a full local install from the current checkout, including package install, build, user unit install, and hard restart:
-
-```bash
-./install.sh
-```
-
-Useful flags:
-- `./install.sh --yes`
-- `./install.sh --help`
-
-Or:
-
-```bash
-npm run install:local
-```
 
 ## User Service
 
