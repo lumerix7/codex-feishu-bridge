@@ -20,6 +20,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 ## Scope
 
 ### In scope
+
 - Feishu bot websocket ingress
 - DM-first message handling
 - Feishu conversation/thread to Codex session binding
@@ -29,6 +30,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - Small local metadata store for bindings and active-run locks
 
 ### Out of scope (initially)
+
 - Broad plugin platform
 - Independent long-term memory system
 - Synthetic conversation storage
@@ -39,6 +41,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 ## Commands
 
 ### Core
+
 - `/help` show commands
 - `/status [check-update] [-h|--help]` show current session and run state
 - `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
@@ -66,9 +69,10 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/project [list|bind [options]|unbind <path>] [-h|--help]` show the current project or manage project bindings
 - `/git [args...]` run `git` directly in the current bound project
 - `/cat`, `/cp`, `/find`, `/head`, `/ln`, `/ls`, `/mkdir`, `/mv`, `/pwd`, `/readlink`, `/rg`, `/rmdir`, `/sha256sum`, `/tail`, `/tar`, `/touch`, `/tree`, `/trash`, `/trash-list`, `/trash-restore`, `/wc` run local project commands
-- `commands.map` can expose extra local slash commands such as `/todo` -> `todoist-cli`
+- `commands.alias` can expose or expand local slash commands such as `/todo` -> `todoist-cli` or `/ls` -> `ls -A`; `commands.direct` exposes identity commands such as `/systemctl`
 
 ### Diagnostics
+
 - `/thread [--turns] [-h|--help]` show app-server thread metadata for the current bound session
 - `/feishu [ws|send|doctor] [-h|--help]` show Feishu websocket and outbound send diagnostics
 - `/log [-n <count>] [--since <expr>] [--grep <text>] [-h|--help]` show recent bridge service logs from systemd journal
@@ -83,7 +87,7 @@ Working v1 bridge:
 - `/help` `/status` `/thread` `/compact` `/rename` `/summary` `/diff` `/skills` `/config` `/new` `/resume` `/session` `/stop` `/project` `/approvals` `/feishu` `/log`
 - `/search` `/model` `/profile`
 - `/git` `/cat` `/cp` `/find` `/head` `/ln` `/ls` `/mkdir` `/pwd` `/readlink` `/rg` `/rmdir` `/sha256sum` `/tail` `/tar` `/touch` `/tree` `/trash` `/trash-list` `/trash-restore` `/wc`
-- extra local slash commands can be configured with `commands.map` in `config.json`
+- extra local slash commands can be configured with `commands.alias` and `commands.direct` in `config.json`; legacy `commands.map` is still accepted as aliases
 - `/new -C <path>` to switch/bind to another project and create a fresh session in one step
 - `/project bind <path>` to rebind a conversation to another directory under the allowed project roots
 - `/project bind -n <index>` to bind from `/project list`, which shows the merged bound-and-trusted project set

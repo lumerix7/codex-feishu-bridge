@@ -114,7 +114,7 @@ function stripMarkdownLink(arg: string): string {
   return match[1];
 }
 
-function tokenizeCommandText(text: string): { tokens: string[]; parseError?: string } {
+export function tokenizeCommandText(text: string): { tokens: string[]; parseError?: string } {
   const tokens: string[] = [];
   let current = "";
   let quote: "'" | '"' | undefined;

@@ -55,6 +55,8 @@
     "listMaxCount": 100
   },
   "commands": {
+    "alias": {},
+    "direct": [],
     "map": {}
   },
   "status": {

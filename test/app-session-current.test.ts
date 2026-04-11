@@ -6,6 +6,8 @@ import test from "node:test";
 import { App } from "../src/core/app.js";
 import { getRecentSessionMessages } from "../src/adapters/codex/session-files.js";
 
+let storeCounter = 0;
+
 function makeConfig() {
   return {
     port: 3300,
@@ -56,9 +58,11 @@ function makeConfig() {
       listMaxCount: 100
     },
     commands: {
-      map: {}
+      map: {},
+      alias: {},
+      direct: []
     },
-    storePath: "/tmp/codex-feishu-bridge-store.json"
+    storePath: `/tmp/codex-feishu-bridge-session-current-store-${process.pid}-${storeCounter++}.json`
   } as const;
 }
 

@@ -68,6 +68,8 @@ export interface AppConfig {
   };
   commands: {
     map: Record<string, string>;
+    alias: Record<string, string>;
+    direct: string[];
   };
   storePath: string;
 }
@@ -129,6 +131,8 @@ interface JsonConfigShape {
   };
   commands?: {
     map?: unknown;
+    alias?: unknown;
+    direct?: unknown;
   };
   status?: {
     includeProject?: unknown;
@@ -387,7 +391,9 @@ export function loadConfig(): AppConfig {
       )
     },
     commands: {
-      map: readStringMapSetting(jsonConfig, ["commands", "map"])
+      map: readStringMapSetting(jsonConfig, ["commands", "map"]),
+      alias: readStringMapSetting(jsonConfig, ["commands", "alias"]),
+      direct: readStringArraySetting(jsonConfig, ["commands", "direct"])
     },
     storePath: readTextSetting("STORE_PATH", ".data/bindings.json", jsonConfig, ["paths", "storePath"])
   };
@@ -563,6 +569,24 @@ function readStringMapSetting(
     })
     .filter(([key, value]) => key.length > 0 && value.length > 0);
   return Object.fromEntries(entries);
+}
+
+function readStringArraySetting(
+  jsonConfig: JsonConfigShape | undefined,
+  jsonPath: string[]
+): string[] {
+  const jsonValue = readJsonValue(jsonConfig, jsonPath);
+  if (!Array.isArray(jsonValue)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      jsonValue
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim().replace(/^\/+/, ""))
+        .filter(Boolean)
+    )
+  );
 }
 
 function readJsonValue(

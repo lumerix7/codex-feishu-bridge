@@ -56,7 +56,9 @@ function makeConfig(projectDir: string, storePath: string) {
       listMaxCount: 100
     },
     commands: {
-      map: {}
+      map: {},
+      alias: {},
+      direct: []
     },
     storePath
   } as const;
@@ -117,6 +119,94 @@ test("local commands use a running preamble card and raw-text final output", asy
   assert.equal(gitResult?.bodyFormat, "raw-text");
   assert.equal(gitResult?.severity, undefined);
   assert.equal(gitResult?.text, "?? README.md\n");
+});
+
+test("local command alias can prepend args and direct commands run unchanged", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+  await fs.writeFile(path.join(projectDir, ".hidden"), "hidden\n");
+
+  const app = new App({
+    ...makeConfig(projectDir, storePath),
+    commands: {
+      map: {},
+      alias: {
+        ll: "ls -A"
+      },
+      direct: ["node"]
+    }
+  });
+
+  const updates: string[] = [];
+  const lsResult = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_ls_alias",
+    chatType: "p2p",
+    text: "/ll"
+  }, async (update) => {
+    updates.push(update);
+  });
+
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0], "Running `ll`...\n\n```text\nll\n```");
+  assert.equal(typeof lsResult, "object");
+  assert.equal(lsResult?.bodyFormat, "raw-text");
+  assert.match(lsResult?.text || "", /\.hidden/);
+
+  const nodeResult = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_node_allow",
+    chatType: "p2p",
+    text: `/node -e "process.stdout.write('allowed')"`
+  });
+
+  assert.equal(typeof nodeResult, "object");
+  assert.equal(nodeResult?.bodyFormat, "raw-text");
+  assert.equal(nodeResult?.text, "allowed");
+});
+
+test("malformed local command alias is ignored with a warning", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const app = new App({
+    ...makeConfig(projectDir, storePath),
+    commands: {
+      map: {},
+      alias: {
+        broken: "\"unterminated"
+      },
+      direct: []
+    }
+  });
+  const warnings: unknown[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+
+  try {
+    const result = (app as any).resolveLocalProjectCommand("broken");
+    const repeatedResult = (app as any).resolveLocalProjectCommand("broken");
+
+    assert.equal(result, undefined);
+    assert.equal(repeatedResult, undefined);
+    assert.equal(warnings.length, 1);
+    assert.deepEqual(warnings[0], [
+      "invalid local command alias ignored",
+      {
+        commandName: "broken",
+        alias: "\"unterminated",
+        parseError: "unterminated double quote"
+      }
+    ]);
+  } finally {
+    console.warn = originalWarn;
+  }
 });
 
 test("severity templates normalize warning to orange and error to red", async () => {
@@ -194,6 +284,16 @@ test("wrapped commands prepend code for non-zero exits and mark them as errors",
   assert.equal(gitDiffResult?.bodyFormat, "raw-text");
   assert.match(gitDiffResult?.text || "", /^Code: 1\n\n/);
   assert.match(gitDiffResult?.text || "", /diff --git /);
+
+  const signalResult = await (app as any).runWrappedCommand({
+    command: "node",
+    args: ["-e", "process.kill(process.pid, 'SIGTERM')"],
+    project: projectDir,
+    failureMessage: "node command failed"
+  });
+  assert.equal(signalResult?.severity, "error");
+  assert.equal(signalResult?.bodyFormat, "raw-text");
+  assert.match(signalResult?.text || "", /^Code: SIGTERM\n\n/);
 });
 
 test("log runtime failures are errors", async () => {

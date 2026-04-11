@@ -8,7 +8,7 @@ import { createCodexBackend } from "../adapters/codex/codex-runtime.js";
 import { FeishuGateway } from "../adapters/feishu/feishu-gateway.js";
 import { AppConfig } from "../config/env.js";
 import { conversationKeyFor } from "./conversation-key.js";
-import { BUILTIN_COMMAND_NAMES, parseCommand } from "./command-router.js";
+import { BUILTIN_COMMAND_NAMES, parseCommand, tokenizeCommandText } from "./command-router.js";
 import { BindingStore } from "../store/binding-store.js";
 import { ActiveRun, IncomingMessage, OutgoingBodyFormat, OutgoingMessage, SessionBinding } from "../types/domain.js";
 import { getRecentSessionMessages, getSessionSummary, listRecentSessions } from "../adapters/codex/session-files.js";
@@ -32,6 +32,11 @@ type AppResponse = {
   text: string;
   bodyFormat?: OutgoingBodyFormat;
   severity?: "warning" | "error";
+};
+
+type LocalProjectCommand = {
+  command: string;
+  args: string[];
 };
 
 class ArgCursor {
@@ -105,6 +110,7 @@ export class App {
   private readonly latestTurnDiff = new Map<string, { turnId: string; diff: string }>();
   private readonly latestSessionModelState = new Map<string, { model?: string; reasoning?: string }>();
   private readonly latestProjectModelState = new Map<string, { model?: string; reasoning?: string }>();
+  private readonly warnedLocalCommandAliases = new Set<string>();
   private latestAccountUpdate?: Record<string, unknown>;
   private latestRateLimits?: Record<string, unknown>;
 
@@ -1933,20 +1939,24 @@ export class App {
       return this.readBridgeLogs(query);
     }
 
-    const wrappedProjectCommand = command?.name === "git"
-      ? { displayName: "git", command: "git" }
+    const resolvedProjectCommand = command?.name === "git"
+      ? { command: "git", args: [] }
       : command
-        ? {
-            displayName: command.name,
-            command: this.resolveLocalProjectCommand(command.name)
-          }
+        ? this.resolveLocalProjectCommand(command.name)
         : undefined;
+    const wrappedProjectCommand = command && resolvedProjectCommand
+      ? {
+          displayName: command.name,
+          ...resolvedProjectCommand
+        }
+      : undefined;
     if (command && wrappedProjectCommand?.command) {
       const project = binding?.project || this.config.project.defaultProject;
       return this.runWrappedProjectCommand(
         sendEarlyUpdate,
         wrappedProjectCommand.displayName,
         wrappedProjectCommand.command,
+        wrappedProjectCommand.args,
         command.args,
         message.text,
         project
@@ -2352,7 +2362,12 @@ export class App {
   }
 
   private configuredLocalCommandNames(): string[] {
-    return Object.keys(this.config.commands.map);
+    return Array.from(
+      new Set([
+        ...Object.keys(this.commandAliases()),
+        ...this.config.commands.direct
+      ])
+    );
   }
 
   private builtinLocalProjectCommandNames(): string[] {
@@ -2385,11 +2400,36 @@ export class App {
     return Boolean(this.resolveLocalProjectCommand(commandName));
   }
 
-  private resolveLocalProjectCommand(commandName: string): string | undefined {
-    if (this.builtinLocalProjectCommandNames().includes(commandName)) {
-      return commandName;
+  private commandAliases(): Record<string, string> {
+    return {
+      ...this.config.commands.map,
+      ...this.config.commands.alias
+    };
+  }
+
+  private resolveLocalProjectCommand(commandName: string): LocalProjectCommand | undefined {
+    const alias = this.commandAliases()[commandName];
+    if (alias) {
+      const parsed = tokenizeCommandText(alias);
+      if (!parsed.parseError && parsed.tokens.length > 0) {
+        const [aliasCommand, ...aliasArgs] = parsed.tokens;
+        return {
+          command: aliasCommand,
+          args: aliasArgs
+        };
+      }
+      this.warnInvalidLocalCommandAlias(commandName, alias, parsed.parseError || "empty alias");
     }
-    return this.config.commands.map[commandName];
+    if (
+      this.builtinLocalProjectCommandNames().includes(commandName) ||
+      this.config.commands.direct.includes(commandName)
+    ) {
+      return {
+        command: commandName,
+        args: []
+      };
+    }
+    return undefined;
   }
 
   private localProjectCommandNames(): string[] {
@@ -2398,6 +2438,17 @@ export class App {
       ...this.configuredLocalCommandNames()
     ]);
     return Array.from(names).sort((left, right) => left.localeCompare(right));
+  }
+
+  private warnInvalidLocalCommandAlias(commandName: string, alias: string, parseError: string): void {
+    const key = `${commandName}\0${alias}\0${parseError}`;
+    if (this.warnedLocalCommandAliases.has(key)) return;
+    this.warnedLocalCommandAliases.add(key);
+    console.warn("invalid local command alias ignored", {
+      commandName,
+      alias,
+      parseError
+    });
   }
 
   private localProjectCommandHelpText(): string {
@@ -5794,10 +5845,10 @@ export class App {
       const output = this.combineCommandOutput(maybe.stdout, maybe.stderr);
       const formatted = this.renderWrappedCommandOutput(
         output || maybe.message || options.failureMessage,
-        maybe.code
+        maybe.code ?? maybe.signal
       );
       return {
-        severity: maybe.code === undefined || maybe.code === 0 || maybe.code === "0" ? undefined : "error",
+        severity: (maybe.code == null && !maybe.signal) || maybe.code === 0 || maybe.code === "0" ? undefined : "error",
         text: formatted,
         bodyFormat: "raw-text"
       };
@@ -5808,14 +5859,16 @@ export class App {
     sendEarlyUpdate: (text: string) => Promise<void>,
     displayCommandName: string,
     command: string,
+    commandArgs: string[],
     args: string[],
     rawInput: string,
     project: string
   ): Promise<string | AppResponse> {
-    await sendEarlyUpdate(this.renderLocalCommandPreamble(command, args, rawInput));
+    const execArgs = [...commandArgs, ...args];
+    await sendEarlyUpdate(this.renderLocalCommandPreamble(displayCommandName, execArgs, rawInput));
     return this.runWrappedCommand({
       command,
-      args,
+      args: execArgs,
       project,
       failureMessage: `${displayCommandName} command failed`
     });
