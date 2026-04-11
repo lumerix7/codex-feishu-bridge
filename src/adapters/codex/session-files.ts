@@ -32,6 +32,7 @@ export interface SessionSummary {
   sessionId: string;
   filePath: string;
   createdAt?: string;
+  updatedAt?: string;
   cwd?: string;
   preview?: string;
 }
@@ -67,7 +68,7 @@ export async function listRecentSessions(
       if (item.cwd === options.cwd) return true;
       return options.includeUnknownCwd === true && !item.cwd;
     })
-    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
+    .sort((a, b) => (b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || ""))
     .slice(0, Math.max(1, limit));
 }
 
@@ -142,6 +143,7 @@ async function readSessionSummary(filePath: string): Promise<SessionSummary | un
       sessionId,
       filePath,
       createdAt: parsed.payload?.timestamp,
+      updatedAt: extractSessionUpdatedAt(lines) || parsed.payload?.timestamp,
       cwd: parsed.payload?.cwd,
       preview: extractSessionPreview(lines)
     };
@@ -179,6 +181,31 @@ function extractSessionPreview(lines: string[]): string | undefined {
         const preview = compactPreview(text);
         if (preview) return preview;
       }
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+function extractSessionUpdatedAt(lines: string[]): string | undefined {
+  for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
+    try {
+      const parsed = JSON.parse(lines[idx]) as {
+        timestamp?: string;
+        createdAt?: string;
+        created_at?: string;
+        payload?: {
+          timestamp?: string;
+        };
+      };
+      const timestamp = normalizeTimestamp(
+        parsed.payload?.timestamp ||
+        parsed.timestamp ||
+        parsed.createdAt ||
+        parsed.created_at
+      );
+      if (timestamp) return timestamp;
     } catch {
       continue;
     }

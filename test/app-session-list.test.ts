@@ -99,6 +99,7 @@ test("session list renders thread name column after last message", () => {
       sessionId: "session-1",
       cwd: "/tmp/project-a",
       createdAt: "2026-04-09T10:00:00.000Z",
+      updatedAt: "2026-04-09T12:00:00.000Z",
       preview: "last message",
       threadName: "Review changes",
       threadPreview: "thread preview",
@@ -114,6 +115,8 @@ test("session list renders thread name column after last message", () => {
     rendered,
     /\| 1 \| \/tmp\/project-a \| .* \| session-1 \| chat \| last message \| Review changes \| - \|/
   );
+  assert.match(rendered, /2026-04-09T20:00:00\.000\+08:00/);
+  assert.doesNotMatch(rendered, /2026-04-09T18:00:00\.000\+08:00/);
   assert.doesNotMatch(rendered, /Thread preview/);
 });
 

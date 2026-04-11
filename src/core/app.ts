@@ -21,6 +21,7 @@ const GIT_COMMAND_TIMEOUT_MS = 30_000;
 type SessionListEntry = {
   sessionId: string;
   createdAt?: string;
+  updatedAt?: string;
   cwd?: string;
   preview?: string;
   threadName?: string;
@@ -4328,6 +4329,7 @@ export class App {
             return {
               ...session,
               createdAt: session.createdAt || summary.createdAt,
+              updatedAt: session.updatedAt || summary.updatedAt || summary.createdAt,
               cwd: session.cwd || summary.cwd,
               preview: summary.preview || session.preview
             };
@@ -4661,6 +4663,7 @@ export class App {
       this.formatAnyTimestamp(session?.createdAt);
     const updatedAt =
       this.formatUnixTimestamp(thread?.updatedAt) ||
+      this.formatAnyTimestamp(session?.updatedAt) ||
       this.formatAnyTimestamp(session?.createdAt);
     const renderedLastMessage =
       lastMessage ||
@@ -4726,7 +4729,7 @@ export class App {
         isCurrentSession ? "bound" : ""
       ].filter(Boolean);
       lines.push(
-        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.source || "-")} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(session.threadName || "-")} | ${escapeMarkdownCell(flags.length > 0 ? flags.map((flag) => this.formatListFlag(flag)).join(", ") : "-")} |`
+        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.updatedAt || session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.source || "-")} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(session.threadName || "-")} | ${escapeMarkdownCell(flags.length > 0 ? flags.map((flag) => this.formatListFlag(flag)).join(", ") : "-")} |`
       );
     }
     return lines.join("\n");
@@ -4754,7 +4757,7 @@ export class App {
       const bProject = b.cwd || "";
       const byProject = aProject.localeCompare(bProject, undefined, { sensitivity: "base" });
       if (byProject !== 0) return byProject;
-      const byTime = (b.createdAt || "").localeCompare(a.createdAt || "");
+      const byTime = (b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || "");
       if (byTime !== 0) return byTime;
       return a.sessionId.localeCompare(b.sessionId, undefined, { sensitivity: "base" });
     });
@@ -4767,6 +4770,7 @@ export class App {
     return {
       sessionId,
       createdAt: this.formatThreadTimestamp(this.readNumber(thread.createdAt)),
+      updatedAt: this.formatThreadTimestamp(this.readNumber(thread.updatedAt)),
       cwd: this.readString(thread.cwd),
       threadName: this.readString(thread.name),
       threadPreview: this.readString(thread.preview),
