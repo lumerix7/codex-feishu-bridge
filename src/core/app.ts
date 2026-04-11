@@ -623,7 +623,7 @@ export class App {
       const project = existing?.project || this.config.project.defaultProject;
       const sessionId = existing?.codexSessionId;
       if (!sessionId) {
-        return "# Thread\n\n- **Error**: no session is currently bound.";
+        return "# Thread\n\n- **ERROR**: no session is currently bound.";
       }
       const includeTurns = command.args.includes("--turns");
       const threadInfo =
@@ -632,7 +632,7 @@ export class App {
           : undefined;
       const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
       if (!thread) {
-        return "# Thread\n\n- **Error**: app-server thread details are unavailable for the current backend/session.";
+        return "# Thread\n\n- **ERROR**: app-server thread details are unavailable for the current backend/session.";
       }
       const configResult =
         this.codex.readConfig
@@ -1131,10 +1131,14 @@ export class App {
         );
       }
       if (cdProjectArg) {
-        resumeProject = await this.resolveProject(
-          cdProjectArg,
-          existing?.project || this.config.project.defaultProject
-        );
+        try {
+          resumeProject = await this.resolveProject(
+            cdProjectArg,
+            existing?.project || this.config.project.defaultProject
+          );
+        } catch (error) {
+          return this.renderProjectResolutionError("Resume", error, "`/resume -C <dir>`", cdProjectArg, "new");
+        }
         projectExplicitlySelected = true;
       }
 
@@ -1176,7 +1180,12 @@ export class App {
         );
       }
       if (projectScopeArg) {
-        const scopedProject = await this.resolveProject(projectScopeArg, resumeProject);
+        let scopedProject: string;
+        try {
+          scopedProject = await this.resolveProject(projectScopeArg, resumeProject);
+        } catch (error) {
+          return this.renderProjectResolutionError("Resume", error, "`/resume list --project <path>`");
+        }
         if (projectExplicitlySelected && scopedProject !== resumeProject) {
           return this.renderCommandError(
             "Resume",
@@ -1249,7 +1258,7 @@ export class App {
           ["- **Note**: Use a normal follow-up message after `/resume ...` if you want to continue the bound session."]
         );
       }
-      if (resumeArgs.isEmpty() && !wantsLast) {
+      if (resumeArgs.isEmpty() && !wantsLast && !projectExplicitlySelected) {
         return this.renderCommandError(
           "Resume",
           "pick a session explicitly, or use `-` to resume the saved last session",
@@ -1273,8 +1282,11 @@ export class App {
       let targetSessionId =
         resumeArgs.peek() ||
         (wantsLast ? existing?.lastCodexSessionId : undefined) ||
+        (projectExplicitlySelected
+          ? await this.findMostRecentSessionId(resumeProject, false)
+          : undefined) ||
         (projectExplicitlySelected ? undefined : existing?.codexSessionId);
-      let resumeSource = resumeArgs.peek() ? "explicit" : "last";
+      let resumeSource = resumeArgs.peek() ? "explicit" : wantsLast ? "last" : projectExplicitlySelected ? "latest" : "current";
       let resumeWarning: string | undefined;
       let resumeIndex: number | undefined;
 
@@ -1326,11 +1338,11 @@ export class App {
         if (projectExplicitlySelected) {
           return this.renderCommandError(
             "Resume",
-            `no native Codex sessions found for project \`${resumeProject}\``,
+            `No native Codex sessions found for project \`${resumeProject}\``,
             `\`/new -C ${resumeProject}\``,
             [
               `- **Sessions dir**: \`${this.config.codex.sessionsDir}\``,
-              "- **Note**: Use `/new -C <dir>` to start a fresh session there."
+              `- **Note**: Use \`/new -C ${resumeProject}\` to start a fresh session there.`
             ]
           );
         }
@@ -1404,7 +1416,7 @@ export class App {
         leadingLines: [
           `- **Source**: \`${resumeSource}\``,
           ...(resumeIndex ? [`- **Index**: \`${resumeIndex}\``] : []),
-          ...(resumeWarning ? [`- **Warning**: ${resumeWarning}`] : [])
+          ...(resumeWarning ? [`- **WARNING**: ${resumeWarning}`] : [])
         ],
         flags: ["current", "bound"]
       });
@@ -1598,7 +1610,7 @@ export class App {
           `- **Source**: \`${forkSource}\``,
           ...(forkIndex ? [`- **Index**: \`${forkIndex}\``] : []),
           `- **From**: \`${targetSessionId}\``,
-          ...(forkWarning ? [`- **Warning**: ${forkWarning}`] : [])
+          ...(forkWarning ? [`- **WARNING**: ${forkWarning}`] : [])
         ],
         flags: ["current", "bound"]
       });
@@ -1800,15 +1812,28 @@ export class App {
         return `Cannot create a new session while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
       }
       let project = binding?.project || this.config.project.defaultProject;
+      const createMissing = newArgs.takeFlag("-m", "--mkdir");
       const newProjectArg = newArgs.takeOption("-C", "--cd");
       if (newProjectArg === "") {
-          return "Usage: `/new [-C|--cd <dir>]`";
+        return this.renderCommandError(
+          "New",
+          "missing value for `-C|--cd <dir>`",
+          "`/new [-C|--cd <dir>] [-m|--mkdir]`"
+        );
       }
       if (newProjectArg) {
-        project = await this.resolveProject(newProjectArg, project);
+        try {
+          project = await this.resolveProject(newProjectArg, project, createMissing);
+        } catch (error) {
+          return this.renderProjectResolutionError("New", error, "`/new -C <dir> [-m|--mkdir]`", newProjectArg, "new");
+        }
       }
       if (!newArgs.isEmpty()) {
-        return "Usage: `/new [-C|--cd <dir>]`";
+        return this.renderCommandError(
+          "New",
+          `unsupported new argument \`${newArgs.peek()}\``,
+          "`/new [-C|--cd <dir>] [-m|--mkdir]`"
+        );
       }
       await sendEarlyUpdate(`Creating a new Codex session for project \`${project}\`...`);
       await this.readCurrentModelState(project, binding?.codexSessionId).catch(() => undefined);
@@ -1895,7 +1920,7 @@ export class App {
           return [
             "# Project",
             "",
-            `- **Error**: refusing to unbind the current conversation project \`${project}\``,
+            `- **ERROR**: refusing to unbind the current conversation project \`${project}\``,
             "- Bind this conversation to another project first if you want to remove stored bindings for this project."
           ].join("\n");
         }
@@ -1969,7 +1994,7 @@ export class App {
         "",
         `- **Project**: \`${project}\``,
         `- **Trusted**: \`${trustedProjects.includes(project) ? "yes" : "no"}\``,
-        ...(bindWarning ? [`- **Warning**: ${bindWarning}`] : [])
+        ...(bindWarning ? [`- **WARNING**: ${bindWarning}`] : [])
       ].join("\n");
     }
 
@@ -2698,7 +2723,7 @@ export class App {
     extraLines: string[] = [],
     severity: AppResponse["severity"] = "warning"
   ): AppResponse {
-    const label = severity === "error" ? "Error" : "Warning";
+    const label = severity === "error" ? "ERROR" : "WARNING";
     return {
       severity,
       text: [
@@ -2709,6 +2734,30 @@ export class App {
       ...extraLines
       ].join("\n")
     };
+  }
+
+  private renderProjectResolutionError(
+    title: string,
+    error: unknown,
+    usage: string,
+    requested?: string,
+    createCommand?: "new"
+  ): AppResponse {
+    const message = error instanceof Error ? error.message : String(error || "Unknown project error");
+    const missingMatch = /^Project does not exist: (.+)$/.exec(message);
+    if (!missingMatch) {
+      return this.renderCommandError(title, message, usage, [], "error");
+    }
+    const project = missingMatch[1];
+    return this.renderCommandError(
+      title,
+      `Project does not exist: \`${project}\``,
+      usage,
+      createCommand === "new" && requested
+        ? [`- **Note**: Use \`/new -C ${requested} -m\` to create the project directory and start a fresh session.`]
+        : [],
+      "error"
+    );
   }
 
   private stripLeadingMarkdownHeading(text: string): string {
@@ -3186,7 +3235,7 @@ export class App {
       return [
         "# Approval Reply",
         "",
-        `- **Error**: ${parsed.error}`,
+        `- **ERROR**: ${parsed.error}`,
         "- Reply again with one of the listed answers, or use `/stop` to cancel the run."
       ].join("\n");
     }
@@ -3402,7 +3451,7 @@ export class App {
         "# 📍 Codex Event",
         "",
         "- **Type**: `turn/failed`",
-        ...(message ? [`- **Error**: ${message}`] : [])
+        ...(message ? [`- **ERROR**: ${message}`] : [])
       ].join("\n");
     }
     if (notification.method === "turn/completed") {
@@ -4606,7 +4655,9 @@ export class App {
       "- `-, --last` Resume the saved last session for this conversation.",
       "- `-n <index>` Resume the Nth session from the current `/session list` ordering.",
       `- \`--messages <count>\` Append the last \`${this.config.codex.resumeReplayCount}\` thread messages by default after a successful session change.`,
-      "- `-C, --cd <dir>` Require the resumed session to stay in that project.",
+      "- `-C, --cd <dir>` Resume within one project path.",
+      "- If no selector is provided with `-C|--cd <dir>`, resume the latest session in that project.",
+      "- If `<session-id>` belongs to another project, `/resume` reports an error instead of rebinding it across projects.",
       "",
       "### `/resume list [options]` - List resumable sessions.",
       "",
@@ -4624,7 +4675,8 @@ export class App {
       "## Examples",
       "",
       "- `/resume <session-id>` - resume one specific session",
-      "- `/resume -` - resume the saved last session for this conversation"
+      "- `/resume -` - resume the saved last session for this conversation",
+      "- `/resume -C /path/to/project` - resume the latest session in one project"
     ].join("\n");
   }
 
@@ -5626,27 +5678,28 @@ export class App {
     return [
       "# New",
       "",
-      "Create and bind a fresh Codex session for the current bound project.",
+      "Create and bind a fresh Codex session.",
       "",
       "## Usage",
       "",
-      "- `/new [-C|--cd <dir>]`",
-      "- `/new -h|--help`",
+      "### `/new [options]` - Create a fresh session.",
       "",
-      "## Options",
+      "- Uses the current bound project unless `-C|--cd <dir>` is provided.",
       "",
-      "- `-C, --cd <dir>` switch the conversation project before creating the new session",
-      "- `-h, --help` show new-session help",
+      "#### Options",
       "",
-      "## Behavior",
+      "- `-C, --cd <dir>` Create the session in one project path.",
+      "- `-m, --mkdir` Create the `-C|--cd <dir>` directory if it does not exist; no error if it already exists.",
       "",
-      "- Uses the current bound project from `/project` unless you pass `-C` or `--cd`.",
-      "- Carries the current conversation search, model, profile, and plan settings into the new session.",
+      "### General",
+      "",
+      "- `-h, --help` Show new-session help.",
       "",
       "## Examples",
       "",
-      "- `/new`",
-      "- `/new -C /path/to/project`"
+      "- `/new` - create a fresh session in the current project",
+      "- `/new -C /path/to/project` - create a fresh session in one existing project",
+      "- `/new -C /path/to/project -m` - create the project directory first"
     ].join("\n");
   }
 

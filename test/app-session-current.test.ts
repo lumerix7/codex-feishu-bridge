@@ -338,6 +338,9 @@ test("resume help works regardless of -h position", async () => {
 
     assert.equal(typeof result, "string");
     assert.match(String(result), /^# Resume\n\nResume a session\./);
+    assert.match(String(result), /- `-C, --cd <dir>` Resume within one project path\./);
+    assert.match(String(result), /resume the latest session in that project/);
+    assert.match(String(result), /If `<session-id>` belongs to another project/);
   }
 });
 
@@ -539,7 +542,7 @@ test("resume without a selector warns and points to explicit last aliases", asyn
   assert.equal((result as any).severity, "warning");
   assert.match(
     String((result as any).text),
-    /^# Resume\n\n- \*\*Warning\*\*: pick a session explicitly, or use `-` to resume the saved last session\n- \*\*Usage\*\*: `\/resume \[<session-id>\|-\|--last\|-n <index>\|list\|-h\]`$/
+    /^# Resume\n\n- \*\*WARNING\*\*: pick a session explicitly, or use `-` to resume the saved last session\n- \*\*Usage\*\*: `\/resume \[<session-id>\|-\|--last\|-n <index>\|list\|-h\]`$/
   );
 });
 
@@ -717,8 +720,202 @@ test("resume explicit missing session renders as error with list hint", async ()
   assert.equal((result as any).severity, "error");
   assert.match(
     String((result as any).text),
-    /^# Resume\n\n- \*\*Error\*\*: Session not found: missing-session\n- \*\*Note\*\*: Use `\/resume list` or `\/session list` to find resumable sessions\.$/
+    /^# Resume\n\n- \*\*ERROR\*\*: Session not found: missing-session\n- \*\*Note\*\*: Use `\/resume list` or `\/session list` to find resumable sessions\.$/
   );
+});
+
+test("resume cd missing project renders command error with new mkdir hint", async () => {
+  const app = new App(makeConfig());
+  const missingProject = `/tmp/codex-feishu-bridge-missing-${process.pid}-${Date.now()}`;
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: `/resume -C ${missingProject}`
+  });
+
+  assert.equal(typeof result, "object");
+  assert.equal((result as any).severity, "error");
+  assert.match(
+    String((result as any).text),
+    new RegExp(
+      `^# Resume\\n\\n- \\*\\*ERROR\\*\\*: Project does not exist: \`${missingProject}\`\\n- \\*\\*Usage\\*\\*: \`/resume -C <dir>\`\\n- \\*\\*Note\\*\\*: Use \`/new -C ${missingProject} -m\` to create the project directory and start a fresh session\\.$`
+    )
+  );
+});
+
+test("resume cd without session selector resumes latest project session", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-resume-cd-"));
+  const projectDir = path.join(root, "project-a");
+  await fs.mkdir(projectDir, { recursive: true });
+  const sessionsDir = path.join(root, "sessions");
+  const filePath = path.join(sessionsDir, "2026", "04", "09", "session-project-latest.jsonl");
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(
+    filePath,
+    [
+      JSON.stringify({
+        payload: {
+          id: "session-project-latest",
+          timestamp: "2026-04-09T12:00:00.000Z",
+          cwd: projectDir
+        }
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "agent_message",
+          message: "latest project response",
+          timestamp: "2026-04-09T12:01:00.000Z"
+        }
+      })
+    ].join("\n")
+  );
+  const config = {
+    ...makeConfig(),
+    codex: {
+      ...makeConfig().codex,
+      sessionsDir
+    }
+  };
+  const app = new App(config);
+  (app as any).codex = {
+    mode: "spawn",
+    createSession: async () => "unused",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async (sessionId: string) => sessionId === "session-project-latest"
+  };
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: `/resume -C ${projectDir}`
+  });
+
+  assert.equal(typeof result, "string");
+  assert.match(String(result), /^# Resume Session\n\n- \*\*Source\*\*: `latest`\n\n- \*\*Session\*\*: `session-project-latest`/);
+  assert.match(String(result), new RegExp(`- \\*\\*Project\\*\\*: \`${projectDir}\``));
+});
+
+test("resume cd without project sessions reports new first", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-empty-project-"));
+  const projectDir = path.join(root, "project-a");
+  await fs.mkdir(projectDir, { recursive: true });
+  const sessionsDir = path.join(root, "sessions");
+  const config = {
+    ...makeConfig(),
+    codex: {
+      ...makeConfig().codex,
+      sessionsDir
+    }
+  };
+  const app = new App(config);
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: `/resume -C ${projectDir}`
+  });
+
+  assert.equal(typeof result, "object");
+  assert.equal((result as any).severity, "warning");
+  assert.match(String((result as any).text), new RegExp(`No native Codex sessions found for project \`${projectDir}\``));
+  assert.match(String((result as any).text), new RegExp(`Use \`/new -C ${projectDir}\` to start a fresh session there\\.`));
+});
+
+test("new cd missing project errors unless mkdir is requested", async () => {
+  const app = new App(makeConfig());
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-new-"));
+  const missingProject = path.join(root, "created-project");
+  let createdInProject = "";
+  (app as any).codex = {
+    mode: "spawn",
+    createSession: async (project: string) => {
+      createdInProject = project;
+      return "new-session";
+    },
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true
+  };
+
+  const missingResult = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: `/new -C ${missingProject}`
+  });
+
+  assert.equal(typeof missingResult, "object");
+  assert.equal((missingResult as any).severity, "error");
+  assert.match(String((missingResult as any).text), /Project does not exist:/);
+  assert.match(String((missingResult as any).text), /\/new -C .* -m/);
+
+  const createdResult = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: `/new -C ${missingProject} -m`
+  });
+
+  assert.equal(typeof createdResult, "string");
+  assert.match(String(createdResult), /^# New Session\n\n- \*\*Session\*\*: `new-session`/);
+  assert.equal(createdInProject, missingProject);
+  const stats = await fs.stat(missingProject);
+  assert.equal(stats.isDirectory(), true);
+});
+
+test("new mkdir does not error when project already exists", async () => {
+  const app = new App(makeConfig());
+  const existingProject = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-existing-"));
+  let createdInProject = "";
+  (app as any).codex = {
+    mode: "spawn",
+    createSession: async (project: string) => {
+      createdInProject = project;
+      return "new-session";
+    },
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true
+  };
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: `/new -C ${existingProject} -m`
+  });
+
+  assert.equal(typeof result, "string");
+  assert.match(String(result), /^# New Session\n\n- \*\*Session\*\*: `new-session`/);
+  assert.equal(createdInProject, existingProject);
+});
+
+test("new help uses grouped usage and documents mkdir", async () => {
+  const app = new App(makeConfig());
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/new -h"
+  });
+
+  assert.equal(typeof result, "string");
+  assert.match(String(result), /^# New\n\nCreate and bind a fresh Codex session\.\n\n## Usage\n\n### `\/new \[options\]` - Create a fresh session\./);
+  assert.match(String(result), /- `-m, --mkdir` Create the `-C\|--cd <dir>` directory if it does not exist; no error if it already exists\./);
+  assert.match(String(result), /- `\/new -C \/path\/to\/project -m` - create the project directory first/);
 });
 
 test("recent replay messages render as Codex/User headings with dynamic fenced text", () => {
