@@ -505,6 +505,33 @@ test("resume last aliases render source as last", async () => {
   }
 });
 
+test("resume explicit missing session renders as error with list hint", async () => {
+  const app = new App(makeConfig());
+  (app as any).codex = {
+    mode: "spawn",
+    createSession: async () => "unused",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => false
+  };
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/resume missing-session"
+  });
+
+  assert.equal(typeof result, "object");
+  assert.equal((result as any).severity, "error");
+  assert.match(
+    String((result as any).text),
+    /^# Resume\n\n- \*\*Error\*\*: Session not found: missing-session\n- \*\*Note\*\*: Use `\/resume list` or `\/session list` to find resumable sessions\.$/
+  );
+});
+
 test("recent replay messages render as Codex/User headings with dynamic fenced text", () => {
   const app = new App(makeConfig());
 

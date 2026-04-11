@@ -1335,7 +1335,10 @@ export class App {
       if (!sessionExists) {
         return this.renderCommandError(
           "Resume",
-          `Session not found: ${targetSessionId}`
+          `Session not found: ${targetSessionId}`,
+          undefined,
+          ["- **Note**: Use `/resume list` or `/session list` to find resumable sessions."],
+          "error"
         );
       }
       const binding = this.makeBinding(
@@ -2634,10 +2637,11 @@ export class App {
     title: string,
     error: string,
     usage?: string,
-    extraLines: string[] = []
+    extraLines: string[] = [],
+    severity: AppResponse["severity"] = "warning"
   ): AppResponse {
     return {
-      severity: "warning",
+      severity,
       text: [
       `# ${title}`,
       "",
