@@ -43,7 +43,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 - `/status [check-update] [-h|--help]` show current session and run state
 - `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session
 - `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork
-- `/session [list [options]] [-h|--help]` show the current session or browse recent sessions
+- `/session [<session-id>|list [options]] [-h|--help]` show the current session, inspect a specific session, or browse recent sessions
 - `/resume [<session-id>|options] [-h|--help]` bind a session, or start fresh with `/new -C <dir>` for a different project
 - `/stop [-h|--help]` stop the current active run
 

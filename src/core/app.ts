@@ -388,7 +388,7 @@ export class App {
         "- `/status [check-update] [-h|--help]` show current session and run state",
         "- `/new [-C|--cd <dir>] [-h|--help]` create and bind a fresh Codex session",
         "- `/fork [<session-id>|options] [-h|--help]` fork a Codex session and bind the new fork",
-        "- `/session [list [options]] [-h|--help]` show the current session or browse recent sessions",
+        "- `/session [<session-id>|list [options]] [-h|--help]` show the current session, inspect a specific session, or browse recent sessions",
         "- `/resume [<session-id>|options] [-h|--help]` bind a session, or start fresh with `/new -C <dir>` for a different project",
         "- `/stop [-h|--help]` stop the current active run",
         "",
@@ -1319,7 +1319,8 @@ export class App {
           `- **Source**: \`${resumeSource}\``,
           ...(resumeIndex ? [`- **Index**: \`${resumeIndex}\``] : []),
           ...(resumeWarning ? [`- **Warning**: ${resumeWarning}`] : [])
-        ]
+        ],
+        flags: ["current", "bound"]
       });
       const sessionChanged = existing?.codexSessionId !== binding.codexSessionId;
       if (sessionChanged && replayMessages > 0 && onStatus) {
@@ -1495,7 +1496,8 @@ export class App {
           ...(forkIndex ? [`- **Index**: \`${forkIndex}\``] : []),
           `- **From**: \`${targetSessionId}\``,
           ...(forkWarning ? [`- **Warning**: ${forkWarning}`] : [])
-        ]
+        ],
+        flags: ["current", "bound"]
       });
     }
 
@@ -1503,23 +1505,23 @@ export class App {
       const sessionArgs = new ArgCursor(command.args);
       const rawMarkdownOnly = sessionArgs.takeFlag("--raw-markdown");
       const sessionBodyFormat: OutgoingBodyFormat | undefined = rawMarkdownOnly ? "raw-markdown" : undefined;
-      const allProjects = sessionArgs.takeFlag("--all");
-      const currentProject = existing?.project || this.config.project.defaultProject;
-      const projectScopeArg = sessionArgs.takeOption("--project");
-      if (projectScopeArg === "") {
-        return this.withBodyFormat(this.renderCommandError(
-          "Session",
-          "missing value for `--project <path>`",
-          "`/session [list [options]] [-h|--help]`"
-        ), sessionBodyFormat);
-      }
-      if (sessionArgs.peek() === "-h" || sessionArgs.peek() === "--help") {
+      if (sessionArgs.takeFlag("-h", "--help")) {
         return this.withBodyFormat(this.sessionsHelpText(), sessionBodyFormat);
       }
+      const currentProject = existing?.project || this.config.project.defaultProject;
       const remainingSessionArgs = sessionArgs.remaining();
       const isLegacyNumericList = remainingSessionArgs.length === 1 && /^\d+$/.test(remainingSessionArgs[0] || "");
       const isList = sessionArgs.peek() === "list" || isLegacyNumericList;
       if (isList) {
+        const allProjects = sessionArgs.takeFlag("--all");
+        const projectScopeArg = sessionArgs.takeOption("--project");
+        if (projectScopeArg === "") {
+          return this.withBodyFormat(this.renderCommandError(
+            "Session",
+            "missing value for `--project <path>`",
+            "`/session [<session-id>|list [options]] [-h|--help]`"
+          ), sessionBodyFormat);
+        }
         const listArgs = new ArgCursor(isLegacyNumericList ? remainingSessionArgs : remainingSessionArgs.slice(1));
         const interactiveOnly = listArgs.takeFlag("--interactive-only");
         const nonInteractiveOnly = listArgs.takeFlag("--non-interactive-only");
@@ -1598,12 +1600,58 @@ export class App {
         return this.withBodyFormat(rendered, sessionBodyFormat);
       }
 
-      if (!sessionArgs.isEmpty()) {
+      if ((sessionArgs.peek() || "").startsWith("-")) {
         return this.withBodyFormat(this.renderCommandError(
           "Session",
-          `unsupported session subcommand \`${sessionArgs.peek()}\``,
-          "`/session [list [options]] [-h|--help]`"
+          `unsupported bridge option \`${sessionArgs.peek()}\``,
+          "`/session [<session-id>|list [options]|-h]`"
         ), sessionBodyFormat);
+      }
+
+      if (!sessionArgs.isEmpty()) {
+        const targetSessionId = sessionArgs.shift();
+        if (!targetSessionId) {
+          return this.withBodyFormat(this.renderCommandError(
+            "Session",
+            "missing session id",
+            "`/session [<session-id>|list [options]|-h]`"
+          ), sessionBodyFormat);
+        }
+        if (!sessionArgs.isEmpty()) {
+          return this.withBodyFormat(this.renderCommandError(
+            "Session",
+            `unsupported session argument \`${sessionArgs.peek()}\``,
+            "`/session <session-id> [--raw-markdown]`"
+          ), sessionBodyFormat);
+        }
+        const session = await getSessionSummary(this.config.codex.sessionsDir, targetSessionId);
+        const threadInfo =
+          this.codex.readThread
+            ? await this.codex.readThread(targetSessionId, currentProject, false).catch(() => undefined)
+            : undefined;
+        const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+        const resolvedProjectSource = session?.cwd || this.readString(thread?.cwd);
+        const resolvedProject =
+          resolvedProjectSource
+            ? await this.resolveProject(resolvedProjectSource, currentProject)
+            : currentProject;
+        if (!session && !threadInfo) {
+          const sessionExists = await this.codex.getSession(targetSessionId).catch(() => false);
+          if (!sessionExists) {
+            return this.withBodyFormat(this.renderCommandError(
+              "Session",
+              `Session not found: ${targetSessionId}`
+            ), sessionBodyFormat);
+          }
+        }
+        return this.withBodyFormat(this.renderSessionDetailText({
+          title: "Session",
+          sessionId: targetSessionId,
+          project: resolvedProject,
+          session,
+          threadInfo,
+          flags: existing?.codexSessionId === targetSessionId ? ["current", "bound"] : []
+        }), sessionBodyFormat);
       }
 
       if (!existing?.codexSessionId) {
@@ -1624,7 +1672,8 @@ export class App {
         sessionId: existing.codexSessionId,
         project,
         session,
-        threadInfo
+        threadInfo,
+        flags: ["current", "bound"]
       });
       return this.withBodyFormat(sessionText, sessionBodyFormat);
     }
@@ -4379,47 +4428,43 @@ export class App {
     return [
       "# Session",
       "",
-      "Inspect the current bound session or browse recent native Codex sessions.",
+      "Inspect the current bound session, inspect one specific native Codex session, or browse recent sessions.",
       "",
       "## Usage",
       "",
-      "- `/session [list [-n <count>] [--all] [--project <path>] [--interactive-only|--non-interactive-only|--all-sources|--source <source>]] [--raw-markdown]`",
-      "- `/session -h|--help [--raw-markdown]`",
+      "### `/session [<session-id>]` - Show session details.",
       "",
-      "## Options",
+      "- `/session` Show the current bound session for this conversation.",
+      "- `<session-id>` Show one specific session id without rebinding.",
       "",
-      "### List",
+      "#### Options",
       "",
-      "- `list` browse recent sessions",
-      `- ` + "`-n <count>`" + ` limit the list size; accepts values from ` + "`1`" + ` to ` + `\`${this.config.codex.sessionListMaxCount}\``,
-      "- `--all` include sessions from other projects",
-      "- `--project <path>` filter to one specific project path",
+      "- `--raw-markdown` Return fenced source markdown instead of rendered markdown.",
       "",
-      "### Source Filters",
+      "### `/session list [options]` - List recent sessions.",
       "",
-      "- `--interactive-only` show interactive sources only in `app-server` mode",
-      "- `--non-interactive-only` show non-interactive sources only in `app-server` mode",
-      "- `--all-sources` include all source kinds in `app-server` mode",
-      `- ` + "`--source <source>`" + ` filter by one native source kind: ` + SESSION_SOURCE_KINDS.map((item) => `\`${item}\``).join(", "),
+      "- `/session list` Browse recent sessions instead of rendering one session detail view.",
+      "",
+      "#### Options",
+      "",
+      `- ` + "`-n <count>`" + ` Limit the list size; accepts values from ` + "`1`" + ` to ` + `\`${this.config.codex.sessionListMaxCount}\`.`,
+      "- `--all` Expand browsing beyond the current project.",
+      "- `--project <path>` Scope the list to one specific project path.",
+      "- `--interactive-only` Show interactive sources only in `app-server` mode.",
+      "- `--non-interactive-only` Show non-interactive sources only in `app-server` mode.",
+      "- `--all-sources` Include all source kinds in `app-server` mode.",
+      `- ` + "`--source <source>`" + ` Filter by one native source kind: ` + SESSION_SOURCE_KINDS.map((item) => `\`${item}\``).join(", ") + ".",
       "",
       "### General",
       "",
-      "- `-h, --help` show session help",
-      "- `--raw-markdown` return fenced source markdown instead of rendered markdown",
-      "",
-      "## Behavior",
-      "",
-      "- `/session` shows the current bound session for this conversation.",
-      `- \`/session list\` shows up to \`${this.config.codex.sessionListMaxCount}\` sessions for the current project.`,
-      "- In `app-server` mode, `/session list` uses native `thread/list` and defaults to `--all-sources`.",
-      "- Session tables pin the current bound session first, then sort current project first, project asc, and time desc.",
-      "- Use `/resume <session-id>` to bind one of the listed sessions.",
+      "- `--raw-markdown` Return fenced source markdown instead of rendered markdown.",
+      "- `-h, --help` Show session help.",
       "",
       "## Examples",
       "",
-      "- `/session`",
-      "- `/session list --source exec`",
-      "- `/session list --all`"
+      "- `/session` - show the current bound session for this conversation",
+      "- `/session <session-id>` - inspect one specific session without rebinding",
+      "- `/session list` - browse recent sessions for the current project"
     ].join("\n");
   }
 
@@ -4468,8 +4513,9 @@ export class App {
     session?: Awaited<ReturnType<typeof getSessionSummary>>;
     threadInfo?: unknown;
     leadingLines?: string[];
+    flags?: string[];
   }): string {
-    const { title, sessionId, project, session, threadInfo, leadingLines = [] } = options;
+    const { title, sessionId, project, session, threadInfo, leadingLines = [], flags = [] } = options;
     const threadInfoRecord = asObjectRecord(threadInfo);
     const threadValue = threadInfoRecord?.thread;
     const thread = isRecord(threadValue) ? threadValue : undefined;
@@ -4508,7 +4554,7 @@ export class App {
       "",
       this.renderFencedBlock("text", lastMessage),
       ...(this.readString(gitInfo.branch) ? [`- **Branch**: \`${this.readString(gitInfo.branch)}\``] : []),
-      `- **Flags**: ${this.formatListFlag("current")}, bound`,
+      `- **Flags**: ${flags.length > 0 ? flags.map((flag) => this.formatListFlag(flag)).join(", ") : "-"}`,
       `- **Thread name**: ${escapeMarkdownInline(this.readString(thread?.name) || "(none)")}`,
       ...(thread
         ? [

@@ -217,6 +217,74 @@ test("resume help works regardless of -h position", async () => {
   }
 });
 
+test("session help works regardless of -h position", async () => {
+  const app = new App(makeConfig());
+
+  for (const text of [
+    "/session -h",
+    "/session session-1 -h",
+    "/session -h session-1",
+    "/session list --source exec -h"
+  ]) {
+    const result = await app.handleIncoming({
+      chatId: "chat_test",
+      messageId: "msg_test",
+      chatType: "p2p",
+      text
+    });
+
+    assert.equal(typeof result, "string");
+    assert.match(String(result), /^# Session\n\nInspect the current bound session, inspect one specific native Codex session, or browse recent sessions\./);
+  }
+});
+
+test("session with an explicit session id renders that session without bound flags", async () => {
+  const app = new App(makeConfig());
+  const store = (app as any).store;
+  await fs.mkdir("/tmp/project-b", { recursive: true });
+  await store.put({
+    conversationKey: "p2p:chat_test",
+    codexSessionId: "session-1",
+    project: "/tmp/project-a",
+    createdAt: "2026-04-09T00:00:00.000Z",
+    updatedAt: "2026-04-09T00:00:00.000Z"
+  });
+
+  (app as any).codex = {
+    mode: "app-server",
+    createSession: async () => "unused",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async (sessionId: string) => sessionId === "session-2",
+    readThread: async (sessionId: string) => ({
+      thread: {
+        id: sessionId,
+        name: `Thread ${sessionId}`,
+        preview: `preview ${sessionId}`,
+        cwd: "/tmp/project-b",
+        createdAt: 1_775_689_600,
+        updatedAt: 1_775_689_900,
+        status: "idle",
+        source: { chat: "lark" }
+      },
+      source: { chat: "lark" }
+    })
+  };
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/session session-2"
+  });
+
+  assert.equal(typeof result, "string");
+  assert.match(String(result), /^# Session\n\n- \*\*Session\*\*: `session-2`\n- \*\*Project\*\*: `\/tmp\/project-b`/);
+  assert.match(String(result), /- \*\*Flags\*\*: -\n- \*\*Thread name\*\*: Thread session-2/);
+});
+
 test("resume without a selector warns and points to explicit latest aliases", async () => {
   const app = new App(makeConfig());
 
