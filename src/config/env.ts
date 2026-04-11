@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 if (!process.env.FEISHU_APP_ID) {
-  loadEnv();
+  loadEnv({ quiet: true });
 }
 
 function required(name: string): string {
