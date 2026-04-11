@@ -106,7 +106,7 @@ test("session groups thread details last and renders last message and thread pre
   assert.equal(typeof result, "string");
   assert.match(
     String(result),
-    /- \*\*Source\*\*: `chat:lark`\n.*- \*\*Last message\*\*:\n\n```text\nthread preview\n```\n- \*\*Flags\*\*: `current`, bound\n- \*\*Thread name\*\*: \\# Review \\`changes\\`\n- \*\*Thread status\*\*: `idle`\n- \*\*Thread source\*\*: `chat:lark`\n- \*\*Thread preview\*\*:\n\n```text\nthread preview\n```$/s
+    /- \*\*Source\*\*: `chat:lark`\n.*- \*\*Last user message\*\*:\n\n```text\n\(no preview\)\n```\n- \*\*Last message\*\*:\n\n```text\nthread preview\n```\n- \*\*Flags\*\*: `current`, bound\n- \*\*Thread name\*\*: \\# Review \\`changes\\`\n- \*\*Thread status\*\*: `idle`\n- \*\*Thread source\*\*: `chat:lark`\n- \*\*Thread preview\*\*:\n\n```text\nthread preview\n```$/s
   );
 });
 
@@ -191,6 +191,7 @@ test("resume reuses the session detail layout with a resume title", async () => 
 
   assert.equal(typeof result, "string");
   assert.match(String(result), /^# Resume Session\n\n- \*\*Source\*\*: `explicit`\n\n- \*\*Session\*\*: `session-1`/);
+  assert.match(String(result), /- \*\*Last user message\*\*:\n\n```text\n\(no preview\)\n```/);
   assert.match(String(result), /- \*\*Last message\*\*:\n\n```text\nthread preview\n```/);
   assert.match(String(result), /- \*\*Thread preview\*\*:\n\n```text\nthread preview\n```$/);
 });
@@ -238,6 +239,7 @@ test("fork reuses the session detail layout and prefixes from", async () => {
 
   assert.equal(typeof result, "string");
   assert.match(String(result), /^# Fork Session\n\n- \*\*Source\*\*: `current`\n- \*\*From\*\*: `session-1`\n\n- \*\*Session\*\*: `session-2`/);
+  assert.match(String(result), /- \*\*Last user message\*\*:\n\n```text\n\(no preview\)\n```/);
   assert.match(String(result), /- \*\*Last message\*\*:\n\n```text\nforked preview\n```/);
   assert.match(String(result), /- \*\*Thread preview\*\*:\n\n```text\nforked preview\n```$/);
 });
@@ -351,6 +353,100 @@ test("session with an explicit session id renders that session without bound fla
   assert.equal(typeof result, "string");
   assert.match(String(result), /^# Session\n\n- \*\*Session\*\*: `session-2`\n- \*\*Project\*\*: `\/tmp\/project-b`/);
   assert.match(String(result), /- \*\*Flags\*\*: -\n- \*\*Thread name\*\*: Thread session-2/);
+});
+
+test("session detail prefers the actual latest session message over thread preview", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-session-detail-"));
+  const projectDir = path.join(root, "project-a");
+  await fs.mkdir(projectDir, { recursive: true });
+  const filePath = path.join(root, "2026", "04", "09", "session-1.jsonl");
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(
+    filePath,
+    [
+      JSON.stringify({
+        payload: {
+          id: "session-1",
+          timestamp: "2026-04-09T12:00:00.000Z",
+          cwd: projectDir
+        }
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "user_message",
+          message: "First question"
+        }
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "agent_message",
+          message: "Actual latest assistant message"
+        }
+      })
+    ].join("\n")
+  );
+
+  const config = {
+    ...makeConfig(),
+    codex: {
+      ...makeConfig().codex,
+      sessionsDir: root
+    },
+    project: {
+      ...makeConfig().project,
+      allowedRoots: [root],
+      defaultProject: projectDir
+    },
+    storePath: path.join(root, "store.json")
+  } as const;
+  const app = new App(config);
+  const store = (app as any).store;
+  await store.put({
+    conversationKey: "p2p:chat_test",
+    codexSessionId: "session-1",
+    project: projectDir,
+    createdAt: "2026-04-09T00:00:00.000Z",
+    updatedAt: "2026-04-09T00:00:00.000Z"
+  });
+
+  (app as any).codex = {
+    mode: "app-server",
+    createSession: async () => "unused",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true,
+    readThread: async () => ({
+      thread: {
+        id: "session-1",
+        name: "Thread session-1",
+        preview: "thread preview only",
+        cwd: projectDir,
+        createdAt: 1_775_689_600,
+        updatedAt: 1_775_689_900,
+        status: "idle",
+        source: { chat: "lark" }
+      },
+      source: { chat: "lark" }
+    })
+  };
+
+  for (const text of ["/session", "/session session-1"]) {
+    const result = await app.handleIncoming({
+      chatId: "chat_test",
+      messageId: "msg_test",
+      chatType: "p2p",
+      text
+    });
+
+    assert.equal(typeof result, "string");
+    assert.match(String(result), /- \*\*Last user message\*\*:\n\n```text\nFirst question\n```/);
+    assert.match(String(result), /- \*\*Last message\*\*:\n\n```text\nActual latest assistant message\n```/);
+    assert.match(String(result), /- \*\*Thread preview\*\*:\n\n```text\nthread preview only\n```$/);
+  }
 });
 
 test("resume without a selector warns and points to explicit latest aliases", async () => {

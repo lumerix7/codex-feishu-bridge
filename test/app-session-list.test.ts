@@ -104,10 +104,35 @@ test("session list renders thread name column after last message", () => {
 
   assert.match(
     rendered,
-    /\| # \| Project \| Updated \| Session \| Source \| Last message \| Thread name \| Thread preview \| Flags \|/
+    /\| # \| Project \| Updated \| Session \| Source \| Last user message \| Thread name \| Flags \|/
   );
   assert.match(
     rendered,
-    /\| 1 \| \/tmp\/project-a \| .* \| session-1 \| chat \| last message \| Review changes \| thread preview \| - \|/
+    /\| 1 \| \/tmp\/project-a \| .* \| session-1 \| chat \| last message \| Review changes \| - \|/
   );
+  assert.doesNotMatch(rendered, /Thread preview/);
+});
+
+test("session list accepts --all without treating it as a leftover list argument", async () => {
+  const app = new App(makeConfig());
+
+  (app as any).codex = {
+    mode: "spawn",
+    createSession: async () => "unused",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true
+  };
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/session list --all"
+  });
+
+  assert.equal(typeof result, "string");
+  assert.doesNotMatch(String(result), /unsupported session list argument/);
 });

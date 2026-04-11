@@ -1345,12 +1345,15 @@ export class App {
         this.codex.readThread
           ? await this.codex.readThread(resumedSessionId, binding.project, false).catch(() => undefined)
           : undefined;
+      const lastMessage = await this.readSessionLastMessageText(resumedSessionId);
       const sections = this.renderSessionDetailText({
         title: "Resume Session",
         sessionId: resumedSessionId,
         project: binding.project,
         session,
         threadInfo,
+        lastMessage,
+        lastUserMessage: session?.preview,
         leadingLines: [
           `- **Source**: \`${resumeSource}\``,
           ...(resumeIndex ? [`- **Index**: \`${resumeIndex}\``] : []),
@@ -1521,12 +1524,15 @@ export class App {
       await this.store.put(binding);
       const session = await getSessionSummary(this.config.codex.sessionsDir, forkedSessionId).catch(() => undefined);
       const threadInfo = { ...forkResult, thread: forkedThread };
+      const lastMessage = await this.readSessionLastMessageText(forkedSessionId);
       return this.renderSessionDetailText({
         title: "Fork Session",
         sessionId: forkedSessionId,
         project: binding.project,
         session,
         threadInfo,
+        lastMessage,
+        lastUserMessage: session?.preview,
         leadingLines: [
           `- **Source**: \`${forkSource}\``,
           ...(forkIndex ? [`- **Index**: \`${forkIndex}\``] : []),
@@ -1558,7 +1564,11 @@ export class App {
             "`/session [<session-id>|list [options]] [-h|--help]`"
           ), sessionBodyFormat);
         }
-        const listArgs = new ArgCursor(isLegacyNumericList ? remainingSessionArgs : remainingSessionArgs.slice(1));
+        const listArgs = new ArgCursor(
+          isLegacyNumericList
+            ? sessionArgs.remaining()
+            : sessionArgs.remaining().slice(1)
+        );
         const interactiveOnly = listArgs.takeFlag("--interactive-only");
         const nonInteractiveOnly = listArgs.takeFlag("--non-interactive-only");
         const allSources = listArgs.takeFlag("--all-sources");
@@ -1680,12 +1690,15 @@ export class App {
             ), sessionBodyFormat);
           }
         }
+        const lastMessage = await this.readSessionLastMessageText(targetSessionId);
         return this.withBodyFormat(this.renderSessionDetailText({
           title: "Session",
           sessionId: targetSessionId,
           project: resolvedProject,
           session,
           threadInfo,
+          lastMessage,
+          lastUserMessage: session?.preview,
           flags: existing?.codexSessionId === targetSessionId ? ["current", "bound"] : []
         }), sessionBodyFormat);
       }
@@ -1702,13 +1715,15 @@ export class App {
         this.codex.readThread
           ? await this.codex.readThread(existing.codexSessionId, project, false).catch(() => undefined)
           : undefined;
-      const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+      const lastMessage = await this.readSessionLastMessageText(existing.codexSessionId);
       const sessionText = this.renderSessionDetailText({
         title: "Current Session",
         sessionId: existing.codexSessionId,
         project,
         session,
         threadInfo,
+        lastMessage,
+        lastUserMessage: session?.preview,
         flags: ["current", "bound"]
       });
       return this.withBodyFormat(sessionText, sessionBodyFormat);
@@ -4546,8 +4561,20 @@ export class App {
     threadInfo?: unknown;
     leadingLines?: string[];
     flags?: string[];
+    lastMessage?: string;
+    lastUserMessage?: string;
   }): string {
-    const { title, sessionId, project, session, threadInfo, leadingLines = [], flags = [] } = options;
+    const {
+      title,
+      sessionId,
+      project,
+      session,
+      threadInfo,
+      leadingLines = [],
+      flags = [],
+      lastMessage,
+      lastUserMessage
+    } = options;
     const threadInfoRecord = asObjectRecord(threadInfo);
     const threadValue = threadInfoRecord?.thread;
     const thread = isRecord(threadValue) ? threadValue : undefined;
@@ -4564,8 +4591,13 @@ export class App {
     const updatedAt =
       this.formatUnixTimestamp(thread?.updatedAt) ||
       this.formatAnyTimestamp(session?.createdAt);
-    const lastMessage =
+    const renderedLastMessage =
+      lastMessage ||
       this.readString(thread?.preview) ||
+      this.readString(session?.preview) ||
+      "(no preview)";
+    const renderedLastUserMessage =
+      lastUserMessage ||
       this.readString(session?.preview) ||
       "(no preview)";
     const threadPreview = this.readString(thread?.preview) || "(none)";
@@ -4582,9 +4614,12 @@ export class App {
       `- **Created**: ${createdAt}`,
       `- **Updated**: ${updatedAt}`,
       `- **Cwd**: \`${session?.cwd || this.readString(thread?.cwd) || "(unknown)"}\``,
+      "- **Last user message**:",
+      "",
+      this.renderFencedBlock("text", renderedLastUserMessage),
       "- **Last message**:",
       "",
-      this.renderFencedBlock("text", lastMessage),
+      this.renderFencedBlock("text", renderedLastMessage),
       ...(this.readString(gitInfo.branch) ? [`- **Branch**: \`${this.readString(gitInfo.branch)}\``] : []),
       `- **Flags**: ${flags.length > 0 ? flags.map((flag) => this.formatListFlag(flag)).join(", ") : "-"}`,
       `- **Thread name**: ${escapeMarkdownInline(this.readString(thread?.name) || "(none)")}`,
@@ -4610,8 +4645,8 @@ export class App {
     const lines = [
       `# ${title}`,
       "",
-      "| # | Project | Updated | Session | Source | Last message | Thread name | Thread preview | Flags |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+      "| # | Project | Updated | Session | Source | Last user message | Thread name | Flags |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- |"
     ];
     for (const [index, session] of sortedSessions.entries()) {
       const isCurrentSession = session.sessionId === boundSessionId;
@@ -4620,7 +4655,7 @@ export class App {
         isCurrentSession ? "bound" : ""
       ].filter(Boolean);
       lines.push(
-        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.source || "-")} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(session.threadName || "-")} | ${escapeMarkdownCell(session.threadPreview || "-")} | ${escapeMarkdownCell(flags.length > 0 ? flags.map((flag) => this.formatListFlag(flag)).join(", ") : "-")} |`
+        `| ${index + 1} | ${escapeMarkdownCell(session.cwd || "(unknown)")} | ${escapeMarkdownCell(this.formatAnyTimestamp(session.createdAt))} | ${escapeMarkdownCell(session.sessionId)} | ${escapeMarkdownCell(session.source || "-")} | ${escapeMarkdownCell(session.preview || "(no preview)")} | ${escapeMarkdownCell(session.threadName || "-")} | ${escapeMarkdownCell(flags.length > 0 ? flags.map((flag) => this.formatListFlag(flag)).join(", ") : "-")} |`
       );
     }
     return lines.join("\n");
@@ -4675,6 +4710,11 @@ export class App {
     const messages = await getRecentSessionMessages(this.config.codex.sessionsDir, sessionId, limit);
     if (messages.length === 0) return [];
     return messages.map((message, index) => this.renderRecentSessionReplayMessage(message, index));
+  }
+
+  private async readSessionLastMessageText(sessionId: string): Promise<string | undefined> {
+    const messages = await getRecentSessionMessages(this.config.codex.sessionsDir, sessionId, 1).catch(() => []);
+    return messages[0]?.text;
   }
 
   private renderRecentSessionReplayMessage(
