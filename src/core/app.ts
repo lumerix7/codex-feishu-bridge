@@ -35,6 +35,24 @@ type AppResponse = {
   severity?: "warning" | "error";
 };
 
+type PackageUpdateStatus = {
+  packageName: string;
+  current?: string;
+  latest?: string;
+  status: string;
+  detail: string;
+};
+
+type DependencyUpdateStatus = PackageUpdateStatus & {
+  declared?: string;
+};
+
+type StatusUpdateReport = {
+  codex: PackageUpdateStatus;
+  feishu: DependencyUpdateStatus;
+  dotenv: DependencyUpdateStatus;
+};
+
 type LocalProjectCommand = {
   command: string;
   args: string[];
@@ -467,35 +485,27 @@ export class App {
       }
       await sendEarlyUpdate(
         checkUpdates
-          ? "Collecting status and checking npm registry for Codex and Feishu SDK updates..."
+          ? "Collecting status and checking npm registry for Codex and dependency updates..."
           : "Collecting current Codex, bridge, and Feishu status..."
       );
       const project = existing?.project || this.config.project.defaultProject;
       const runtimeMeta = await getCodexRuntimeMeta(this.config.codex.home);
       const feishuSdkVersion = await this.readInstalledPackageVersion("@larksuiteoapi/node-sdk");
       const feishuSdkRange = await this.readDeclaredPackageRange("@larksuiteoapi/node-sdk");
+      const dotenvVersion = await this.readInstalledPackageVersion("dotenv");
+      const dotenvRange = await this.readDeclaredPackageRange("dotenv");
       if (checkUpdates) {
-        const updateStatus = await this.readStatusUpdates(runtimeMeta.version, feishuSdkVersion, feishuSdkRange);
-        return [
-          "# Bridge Status",
-          "",
-          "## Codex",
-          "",
-          `- **Status**: ${this.formatUpdateStatusBadge(updateStatus.codex.status)}`,
-          `- **Package**: \`${updateStatus.codex.packageName}\``,
-          `- **Current**: \`${updateStatus.codex.current || "(unknown)"}\``,
-          `- **Latest**: \`${updateStatus.codex.latest || "(unavailable)"}\``,
-          `- **Note**: ${updateStatus.codex.detail}`,
-          "",
-          "## Feishu",
-          "",
-          `- **Status**: ${this.formatUpdateStatusBadge(updateStatus.feishu.status)}`,
-          `- **Package**: \`${updateStatus.feishu.packageName}\``,
-          ...(updateStatus.feishu.declared ? [`- **Declared**: \`${updateStatus.feishu.declared}\``] : []),
-          `- **Installed**: \`${updateStatus.feishu.current || "(unknown)"}\``,
-          `- **Latest**: \`${updateStatus.feishu.latest || "(unavailable)"}\``,
-          `- **Note**: ${updateStatus.feishu.detail}`
-        ].join("\n");
+        const updateStatus = await this.readStatusUpdates(
+          runtimeMeta.version,
+          feishuSdkVersion,
+          feishuSdkRange,
+          dotenvVersion,
+          dotenvRange
+        );
+        const text = this.renderStatusUpdateReport(updateStatus);
+        return this.hasAvailableStatusUpdate(updateStatus)
+          ? { text, severity: "warning" }
+          : text;
       }
       const sessionId = existing?.codexSessionId || "(none)";
       const session =
@@ -5002,7 +5012,7 @@ export class App {
       "",
       "## Options",
       "",
-      "- `check-update` show the lightweight update-only view for Codex and Feishu package versions",
+      "- `check-update` show the lightweight update-only view for Codex and dependency package versions",
       "- `-h, --help` show status help",
       "",
       "## Behavior",
@@ -5182,21 +5192,14 @@ export class App {
   private async readStatusUpdates(
     currentCodexVersion: string | undefined,
     currentFeishuSdkVersion: string | undefined,
-    declaredFeishuSdkRange: string | undefined
-  ): Promise<{
-    codex: { packageName: string; current?: string; latest?: string; status: string; detail: string };
-    feishu: {
-      packageName: string;
-      declared?: string;
-      current?: string;
-      latest?: string;
-      status: string;
-      detail: string;
-    };
-  }> {
-    const [latestCodexVersion, latestFeishuSdkVersion] = await Promise.all([
+    declaredFeishuSdkRange: string | undefined,
+    currentDotenvVersion: string | undefined,
+    declaredDotenvRange: string | undefined
+  ): Promise<StatusUpdateReport> {
+    const [latestCodexVersion, latestFeishuSdkVersion, latestDotenvVersion] = await Promise.all([
       this.readLatestNpmPackageVersion("@openai/codex"),
-      this.readLatestNpmPackageVersion("@larksuiteoapi/node-sdk")
+      this.readLatestNpmPackageVersion("@larksuiteoapi/node-sdk"),
+      this.readLatestNpmPackageVersion("dotenv")
     ]);
     return {
       codex: {
@@ -5213,8 +5216,56 @@ export class App {
         latest: latestFeishuSdkVersion,
         status: this.describeUpdateStatus(currentFeishuSdkVersion, latestFeishuSdkVersion),
         detail: "This is the Node SDK dependency used by the bridge for Feishu websocket and HTTPS APIs."
+      },
+      dotenv: {
+        packageName: "dotenv",
+        declared: declaredDotenvRange,
+        current: currentDotenvVersion,
+        latest: latestDotenvVersion,
+        status: this.describeUpdateStatus(currentDotenvVersion, latestDotenvVersion),
+        detail: "This is the dependency used by the bridge to load environment variables."
       }
     };
+  }
+
+  private hasAvailableStatusUpdate(updateStatus: StatusUpdateReport): boolean {
+    return [updateStatus.codex, updateStatus.feishu, updateStatus.dotenv].some(
+      (item) => item.status === "update available"
+    );
+  }
+
+  private renderStatusUpdateReport(updateStatus: StatusUpdateReport): string {
+    return [
+      "# Bridge Status",
+      "",
+      "## Codex",
+      "",
+      `- **Status**: ${this.formatUpdateStatusBadge(updateStatus.codex.status)}`,
+      `- **Package**: \`${updateStatus.codex.packageName}\``,
+      `- **Current**: \`${updateStatus.codex.current || "(unknown)"}\``,
+      `- **Latest**: \`${updateStatus.codex.latest || "(unavailable)"}\``,
+      `- **Note**: ${updateStatus.codex.detail}`,
+      "",
+      "## Dependencies",
+      "",
+      "### Feishu",
+      "",
+      `- **Status**: ${this.formatUpdateStatusBadge(updateStatus.feishu.status)}`,
+      `- **Package**: \`${updateStatus.feishu.packageName}\``,
+      ...(updateStatus.feishu.declared ? [`- **Declared**: \`${updateStatus.feishu.declared}\``] : []),
+      `- **Installed**: \`${updateStatus.feishu.current || "(unknown)"}\``,
+      `- **Latest**: \`${updateStatus.feishu.latest || "(unavailable)"}\``,
+      `- **Note**: ${updateStatus.feishu.detail}`,
+      "",
+      "### dotenv",
+      "",
+      `- **Status**: ${this.formatUpdateStatusBadge(updateStatus.dotenv.status)}`,
+      `- **Package**: \`${updateStatus.dotenv.packageName}\``,
+      ...(updateStatus.dotenv.declared ? [`- **Declared**: \`${updateStatus.dotenv.declared}\``] : []),
+      `- **Installed**: \`${updateStatus.dotenv.current || "(unknown)"}\``,
+      `- **Latest**: \`${updateStatus.dotenv.latest || "(unavailable)"}\``,
+      `- **Note**: ${updateStatus.dotenv.detail}`
+    ].join("\n");
   }
 
   private async readInstalledPackageVersion(packageName: string): Promise<string | undefined> {
@@ -5266,6 +5317,9 @@ export class App {
   }
 
   private formatUpdateStatusBadge(status: string): string {
+    if (status === "update available") {
+      return "⬆️ update available";
+    }
     return status === "up to date" ? `\`${status}\`` : `**${status}**`;
   }
 

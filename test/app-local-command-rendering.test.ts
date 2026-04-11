@@ -223,6 +223,76 @@ test("severity templates normalize warning to orange and error to red", async ()
   assert.equal((app as any).templateForSeverity("wathet", undefined), "wathet");
 });
 
+test("status check-update report groups dependencies and marks available updates", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const app = new App(makeConfig(projectDir, storePath));
+  const updateStatus = {
+    codex: {
+      packageName: "@openai/codex",
+      current: "1.0.0",
+      latest: "1.0.0",
+      status: "up to date",
+      detail: "Codex detail."
+    },
+    feishu: {
+      packageName: "@larksuiteoapi/node-sdk",
+      declared: "^1.60.0",
+      current: "1.60.0",
+      latest: "1.61.0",
+      status: "update available",
+      detail: "Feishu detail."
+    },
+    dotenv: {
+      packageName: "dotenv",
+      declared: "^16.6.1",
+      current: "16.6.1",
+      latest: "16.6.1",
+      status: "up to date",
+      detail: "Dotenv detail."
+    }
+  };
+
+  const text = (app as any).renderStatusUpdateReport(updateStatus);
+
+  assert.match(text, /## Dependencies\n\n### Feishu/);
+  assert.match(text, /### dotenv/);
+  assert.match(text, /- \*\*Status\*\*: ⬆️ update available/);
+  assert.equal((app as any).hasAvailableStatusUpdate(updateStatus), true);
+});
+
+test("status update metadata includes dotenv dependency", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const app = new App(makeConfig(projectDir, storePath));
+  (app as any).readLatestNpmPackageVersion = async (packageName: string) => {
+    return {
+      "@openai/codex": "1.0.0",
+      "@larksuiteoapi/node-sdk": "1.60.0",
+      dotenv: "16.7.0"
+    }[packageName];
+  };
+
+  const updateStatus = await (app as any).readStatusUpdates(
+    "1.0.0",
+    "1.60.0",
+    "^1.60.0",
+    "16.6.1",
+    "^16.6.1"
+  );
+
+  assert.equal(updateStatus.dotenv.packageName, "dotenv");
+  assert.equal(updateStatus.dotenv.declared, "^16.6.1");
+  assert.equal(updateStatus.dotenv.status, "update available");
+  assert.equal((app as any).hasAvailableStatusUpdate(updateStatus), true);
+});
+
 test("local command execution failures are errors while usage issues remain warnings", async () => {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
   const projectDir = path.join(tempRoot, "project");
