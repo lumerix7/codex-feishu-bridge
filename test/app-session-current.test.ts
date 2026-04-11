@@ -110,6 +110,52 @@ test("session groups thread details last and renders last message and thread pre
   );
 });
 
+test("session detail keeps hyphens readable while escaping markdown punctuation", async () => {
+  const app = new App(makeConfig());
+  const store = (app as any).store;
+  await store.put({
+    conversationKey: "p2p:chat_test",
+    codexSessionId: "session-1",
+    project: "/tmp/project-a",
+    createdAt: "2026-04-09T00:00:00.000Z",
+    updatedAt: "2026-04-09T00:00:00.000Z"
+  });
+
+  (app as any).codex = {
+    mode: "app-server",
+    createSession: async () => "session-1",
+    runTurn: async () => {
+      throw new Error("not used");
+    },
+    stop: async () => false,
+    getSession: async () => true,
+    readThread: async () => ({
+      thread: {
+        id: "session-1",
+        name: "review-since-0407 #tag",
+        preview: "thread preview",
+        cwd: "/tmp/project-a",
+        createdAt: 1_775_689_600,
+        updatedAt: 1_775_689_900,
+        status: "idle",
+        source: { chat: "lark" }
+      },
+      source: { chat: "lark" }
+    })
+  };
+
+  const result = await app.handleIncoming({
+    chatId: "chat_test",
+    messageId: "msg_test",
+    chatType: "p2p",
+    text: "/session"
+  });
+
+  assert.equal(typeof result, "string");
+  assert.match(String(result), /- \*\*Thread name\*\*: review-since-0407 \\#tag/);
+  assert.doesNotMatch(String(result), /review\\-since\\-0407/);
+});
+
 test("resume reuses the session detail layout with a resume title", async () => {
   const app = new App(makeConfig());
 
@@ -235,6 +281,28 @@ test("session help works regardless of -h position", async () => {
 
     assert.equal(typeof result, "string");
     assert.match(String(result), /^# Session\n\nInspect the current bound session, inspect one specific native Codex session, or browse recent sessions\./);
+  }
+});
+
+test("rename help works regardless of -h position", async () => {
+  const app = new App(makeConfig());
+
+  for (const text of [
+    "/rename -h",
+    "/rename 'Review changes' -h",
+    "/rename --session session-1 -h",
+    "/rename -h --session session-1",
+    "/rename 'Review changes' --session session-1 -h"
+  ]) {
+    const result = await app.handleIncoming({
+      chatId: "chat_test",
+      messageId: "msg_test",
+      chatType: "p2p",
+      text
+    });
+
+    assert.equal(typeof result, "string");
+    assert.match(String(result), /^# Rename\n\nShow or change a native Codex thread name\./);
   }
 });
 

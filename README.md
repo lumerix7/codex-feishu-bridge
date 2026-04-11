@@ -50,7 +50,7 @@ Routes Feishu messages into local Codex sessions and streams Codex output back w
 ### Codex
 
 - `/compact [-h|--help]` compact the current bound Codex session
-- `/rename ['name'|-- name] [-h|--help]` show or change the current bound Codex thread name
+- `/rename [--session <session-id>] ['name'|-- name] [-h|--help]` show or change a native Codex thread name
 - `/summary [-h|--help]` show the current bound Codex conversation summary
 - `/diff [-h|--help]` show the latest app-server turn diff for the current bound session
 - `/skills [list|reload] [-h|--help]` show Codex skills visible for the current project
@@ -92,7 +92,7 @@ Working v1 bridge:
 - `/model list [--no-hidden]` to query available models from Codex app-server when supported, with a bridge-side fallback list otherwise
 - `/thread` to show richer app-server thread metadata for the current bound session
 - `/compact` to trigger native Codex thread compaction in `app-server` mode for the current bound session
-- `/rename` to show the native Codex thread name for the current bound session; prefer `/rename 'name'` for normal titles and `/rename -- <name>` for literal remaining text
+- `/rename` to show the native Codex thread name for the current bound session; use `--session <session-id>` to inspect or rename another session without rebinding
 - `/summary` to read the native Codex conversation summary for the current bound session
 - `/diff` to show the latest `turn/diff/updated` payload cached by the bridge
 - `/skills` to query native Codex `skills/list` for the current project

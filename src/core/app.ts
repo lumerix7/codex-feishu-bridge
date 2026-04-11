@@ -395,7 +395,7 @@ export class App {
         "## Codex",
         "",
         "- `/compact [-h|--help]` compact the current bound Codex session",
-        "- `/rename [name|-- name] [-h|--help]` show or change the current bound Codex thread name",
+        "- `/rename [--session <session-id>] ['name'|-- name] [-h|--help]` show or change a native Codex thread name",
         "- `/summary [-h|--help]` show the current bound Codex conversation summary",
         "- `/diff [-h|--help]` show the latest app-server turn diff for the current bound session",
         "- `/skills [list|reload] [-h|--help]` show Codex skills visible for the current project",
@@ -708,28 +708,63 @@ export class App {
     }
 
     if (command?.name === "rename") {
-      const renameArgs = new ArgCursor(command.args);
-      if (renameArgs.peek() === "-h" || renameArgs.peek() === "--help") {
+      const endOfOptionsIndex = command.args.indexOf("--");
+      const optionTokens =
+        endOfOptionsIndex >= 0
+          ? command.args.slice(0, endOfOptionsIndex)
+          : command.args;
+      const literalNameTokens =
+        endOfOptionsIndex >= 0
+          ? command.args.slice(endOfOptionsIndex + 1)
+          : undefined;
+      const renameArgs = new ArgCursor(optionTokens);
+      if (renameArgs.takeFlag("-h", "--help")) {
         return this.renameHelpText();
       }
-      if (!existing?.codexSessionId) {
-        return "No session is currently bound. Use `/new`, `/resume`, or `/session list` first.";
+      const explicitSessionId = renameArgs.takeOption("--session");
+      if (explicitSessionId === "") {
+        return this.renderCommandError(
+          "Rename",
+          "missing value for `--session <session-id>`",
+          "`/rename [--session <session-id>] ['name'|-- name] [-h|--help]`"
+        );
       }
-      const project = existing.project || this.config.project.defaultProject;
-      if (renameArgs.isEmpty()) {
-        const threadInfo =
-          this.codex.readThread
-            ? await this.codex.readThread(existing.codexSessionId, project, false).catch(() => undefined)
-            : undefined;
-        const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+      const currentProject = existing?.project || this.config.project.defaultProject;
+      const targetSessionId = explicitSessionId || existing?.codexSessionId;
+      if (!targetSessionId) {
+        return "No session is currently bound. Use `/new`, `/resume`, or `/session list` first, or pass `/rename --session <session-id>`.";
+      }
+      let session = await getSessionSummary(this.config.codex.sessionsDir, targetSessionId).catch(() => undefined);
+      let targetProject = session?.cwd
+        ? await this.resolveProject(session.cwd, currentProject)
+        : currentProject;
+      let threadInfo =
+        this.codex.readThread
+          ? await this.codex.readThread(targetSessionId, targetProject, false).catch(() => undefined)
+          : undefined;
+      const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+      const threadProject = this.readString(thread?.cwd);
+      if (!session?.cwd && threadProject) {
+        targetProject = await this.resolveProject(threadProject, currentProject);
+      }
+      if (!session && !threadInfo) {
+        const sessionExists = await this.codex.getSession(targetSessionId).catch(() => false);
+        if (!sessionExists) {
+          return this.renderCommandError(
+            "Rename",
+            `Session not found: ${targetSessionId}`
+          );
+        }
+      }
+      if (renameArgs.isEmpty() && !literalNameTokens) {
         return [
           "# Rename",
           "",
-          `- **Session**: \`${existing.codexSessionId}\``,
+          `- **Session**: \`${targetSessionId}\``,
           `- **Name**: ${escapeMarkdownInline(this.readString(thread?.name) || "(none)")}`
         ].join("\n");
       }
-      if (activeRun) {
+      if (activeRun && targetSessionId === existing?.codexSessionId) {
         return `Cannot rename while run=${activeRun.runId} is ${activeRun.status}. Use /stop first.`;
       }
       if (!this.codex.setSessionName) {
@@ -742,29 +777,28 @@ export class App {
         ].join("\n");
       }
       let nextName = "";
-      if (renameArgs.peek() === "--") {
-        renameArgs.shift();
-        nextName = renameArgs.remainingText();
+      if (literalNameTokens) {
+        nextName = literalNameTokens.join(" ").trim();
         if (!nextName) {
           return this.renderCommandError(
             "Rename",
             "missing rename text after `--`",
-            "Usage: `/rename [name|-- name] [-h|--help]`"
+            "`/rename [--session <session-id>] ['name'|-- name] [-h|--help]`"
           );
         }
       } else {
         const positionalArgs = renameArgs.remaining();
         if (positionalArgs.length === 1 && !(positionalArgs[0] || "").startsWith("-")) {
           nextName = positionalArgs[0] || "";
-        } else {
+        } else if (positionalArgs.length > 0) {
           const detail =
             positionalArgs.length > 1
-              ? "multiple bare rename arguments require `--`"
-              : "missing `--` before rename text";
+              ? "multiple bare rename arguments require quotes or `--`"
+              : `unsupported rename option \`${positionalArgs[0]}\``;
           return this.renderCommandError(
             "Rename",
             detail,
-            "Usage: `/rename [name|-- name] [-h|--help]`",
+            "`/rename [--session <session-id>] ['name'|-- name] [-h|--help]`",
             ["- Use `/rename 'New title'` for one parsed argument, or `/rename -- New title` for literal remaining text."]
           );
         }
@@ -773,19 +807,21 @@ export class App {
         return this.renderCommandError(
           "Rename",
           "missing rename text",
-          "Usage: `/rename [name|-- name] [-h|--help]`"
+          "`/rename [--session <session-id>] ['name'|-- name] [-h|--help]`"
         );
       }
-      await sendEarlyUpdate(`Renaming Codex session \`${existing.codexSessionId}\`...`);
-      const threadInfo = await this.codex.setSessionName(existing.codexSessionId, project, nextName);
-      const thread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
-      const nextBinding = { ...existing, updatedAt: new Date().toISOString() };
-      await this.store.put(nextBinding);
+      await sendEarlyUpdate(`Renaming Codex session \`${targetSessionId}\`...`);
+      threadInfo = await this.codex.setSessionName(targetSessionId, targetProject, nextName);
+      const renamedThread = isRecord(threadInfo?.thread) ? threadInfo.thread : undefined;
+      if (existing?.codexSessionId === targetSessionId) {
+        const nextBinding = { ...existing, updatedAt: new Date().toISOString() };
+        await this.store.put(nextBinding);
+      }
       return [
         "# Rename",
         "",
-        `- **Session**: \`${existing.codexSessionId}\``,
-        `- **Name**: ${escapeMarkdownInline(this.readString(thread?.name) || nextName)}`
+        `- **Session**: \`${targetSessionId}\``,
+        `- **Name**: ${escapeMarkdownInline(this.readString(renamedThread?.name) || nextName)}`
       ].join("\n");
     }
 
@@ -4437,10 +4473,6 @@ export class App {
       "- `/session` Show the current bound session for this conversation.",
       "- `<session-id>` Show one specific session id without rebinding.",
       "",
-      "#### Options",
-      "",
-      "- `--raw-markdown` Return fenced source markdown instead of rendered markdown.",
-      "",
       "### `/session list [options]` - List recent sessions.",
       "",
       "- `/session list` Browse recent sessions instead of rendering one session detail view.",
@@ -5275,32 +5307,30 @@ export class App {
     return [
       "# Rename",
       "",
-      "Show or change the current bound Codex thread name.",
+      "Show or change a native Codex thread name.",
       "",
       "## Usage",
       "",
-      "- `/rename`",
-      "- `/rename 'name'`",
-      "- `/rename -- [name]`",
-      "- `/rename -h|--help`",
+      "### `/rename` - Show the current bound session thread name.",
       "",
-      "## Options",
+      "### `/rename [options] ['name'|-- name]` - Show or change one thread name.",
       "",
-      "- `'name'` is the recommended form for normal rename text",
-      "- `name` set the native thread name when shell-style parsing leaves one positional argument",
-      "- `--` stop option parsing; everything after it becomes the new thread name",
-      "- `-h, --help` show rename help",
+      "#### Options",
       "",
-      "## Behavior",
+      "- `--session <session-id>` Target one explicit session id without rebinding.",
+      "- `'name'` Set the thread name when shell-style parsing leaves one positional argument.",
+      "- `--` Stop option parsing; everything after it becomes the new thread name.",
       "",
-      "- Requires a currently bound session.",
-      "- Uses native Codex `thread/name/set` in `app-server` mode.",
-      "- `/rename` without a name shows the current thread name.",
+      "### General",
+      "",
+      "- `-h, --help` Show rename help.",
       "",
       "## Examples",
       "",
-      "- `/rename`",
-      "- `/rename 'Review changes'`"
+      "- `/rename` - show the current bound session thread name",
+      "- `/rename 'Review changes'` - rename the current bound session thread",
+      "- `/rename --session session-123 'Review changes'` - rename one explicit session without rebinding",
+      "- `/rename -- -h` - set the current bound session thread name to `-h`"
     ].join("\n");
   }
 
