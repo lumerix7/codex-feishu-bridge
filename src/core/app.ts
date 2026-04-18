@@ -526,13 +526,14 @@ export class App {
       );
       const project = existing?.project || this.config.project.defaultProject;
       const runtimeMeta = await getCodexRuntimeMeta(this.config.codex.home);
+      const currentCodexVersion = await this.resolveCurrentCodexVersion(runtimeMeta);
       const feishuSdkVersion = await this.readInstalledPackageVersion("@larksuiteoapi/node-sdk");
       const feishuSdkRange = await this.readDeclaredPackageRange("@larksuiteoapi/node-sdk");
       const dotenvVersion = await this.readInstalledPackageVersion("dotenv");
       const dotenvRange = await this.readDeclaredPackageRange("dotenv");
       if (checkUpdates) {
         const updateStatus = await this.readStatusUpdates(
-          runtimeMeta.version,
+          currentCodexVersion,
           feishuSdkVersion,
           feishuSdkRange,
           dotenvVersion,
@@ -595,7 +596,7 @@ export class App {
         "",
         "## Codex",
         "",
-        ...(runtimeMeta.version ? [`- **Codex**: \`${runtimeMeta.version}\``] : []),
+        ...(currentCodexVersion ? [`- **Codex**: \`${currentCodexVersion}\``] : []),
         `- **Model**: \`${effectiveModel}\`${reroute?.reason ? ` (${reroute.reason})` : ""}`,
         `- **Reasoning**: \`${effectiveReasoning}\``,
         `- **Directory**: \`${project}\``,
@@ -5363,7 +5364,7 @@ export class App {
         current: currentCodexVersion,
         latest: latestCodexVersion,
         status: this.describeUpdateStatus(currentCodexVersion, latestCodexVersion),
-        detail: "Current version comes from the local Codex runtime metadata used by the bridge."
+        detail: "Current version comes from the configured Codex CLI executable, falling back to local runtime metadata if needed."
       },
       feishu: {
         packageName: "@larksuiteoapi/node-sdk",
@@ -5612,6 +5613,27 @@ export class App {
     } catch {
       return undefined;
     }
+  }
+
+  private async resolveCurrentCodexVersion(runtimeMeta: { version?: string }): Promise<string | undefined> {
+    return (await this.readConfiguredCodexCliVersion()) || runtimeMeta.version;
+  }
+
+  private async readConfiguredCodexCliVersion(): Promise<string | undefined> {
+    try {
+      const { stdout, stderr } = await execFileAsync(this.config.codex.bin, ["--version"], {
+        timeout: 5_000,
+        maxBuffer: 64 * 1024
+      });
+      return this.parseCodexCliVersion(`${stdout}\n${stderr}`);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private parseCodexCliVersion(raw: string): string | undefined {
+    const match = raw.match(/\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/);
+    return match?.[1];
   }
 
   private describeUpdateStatus(currentVersion?: string, latestVersion?: string): string {

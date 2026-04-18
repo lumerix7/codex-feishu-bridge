@@ -320,6 +320,45 @@ test("status update metadata includes dotenv dependency", async () => {
   assert.equal((app as any).hasAvailableStatusUpdate(updateStatus), true);
 });
 
+test("status update prefers configured Codex CLI version over runtime metadata", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const app = new App(makeConfig(projectDir, storePath));
+  (app as any).readConfiguredCodexCliVersion = async () => "0.121.0";
+
+  const version = await (app as any).resolveCurrentCodexVersion({ version: "0.120.0" });
+
+  assert.equal(version, "0.121.0");
+});
+
+test("status update falls back to Codex runtime metadata when CLI version is unavailable", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const app = new App(makeConfig(projectDir, storePath));
+  (app as any).readConfiguredCodexCliVersion = async () => undefined;
+
+  const version = await (app as any).resolveCurrentCodexVersion({ version: "0.120.0" });
+
+  assert.equal(version, "0.120.0");
+});
+
+test("status update parses codex-cli version output", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
+  const projectDir = path.join(tempRoot, "project");
+  const storePath = path.join(tempRoot, "store.json");
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const app = new App(makeConfig(projectDir, storePath));
+
+  assert.equal((app as any).parseCodexCliVersion("codex-cli 0.121.0\n"), "0.121.0");
+});
+
 test("status update metadata includes transitive npm audit vulnerabilities", async () => {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-feishu-bridge-local-"));
   const projectDir = path.join(tempRoot, "project");
